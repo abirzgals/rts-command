@@ -85,3 +85,30 @@ export function isWorldWalkable(wx: number, wz: number): boolean {
   const [gx, gz] = worldToGrid(wx, wz)
   return isWalkable(gx, gz)
 }
+
+// ── Dynamic unit obstacle overlay ───────────────────────────
+// Extra cost from units occupying cells. Updated each frame before pathfinding.
+export const dynamicCost = new Float32Array(GRID_RES * GRID_RES)
+const UNIT_COST = 2.0 // units make cells slightly expensive but not impassable
+
+export function clearDynamicCosts() {
+  dynamicCost.fill(0)
+}
+
+/** Mark cells near a unit as high-cost for pathfinding */
+export function markUnitObstacle(wx: number, wz: number, radius: number) {
+  const [cx, cz] = worldToGrid(wx, wz)
+  const r = Math.max(1, Math.ceil(radius / CELL_SIZE))
+  for (let dz = -r; dz <= r; dz++) {
+    for (let dx = -r; dx <= r; dx++) {
+      const gx = cx + dx
+      const gz = cz + dz
+      if (gx >= 0 && gx < GRID_RES && gz >= 0 && gz < GRID_RES) {
+        const i = gz * GRID_RES + gx
+        if (walkable[i] === 1) {
+          dynamicCost[i] = UNIT_COST
+        }
+      }
+    }
+  }
+}

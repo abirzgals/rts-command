@@ -61,7 +61,7 @@ export const UNIT_DEFS: Record<number, UnitDef> = {
   },
   [UT_TANK]: {
     name: 'Tank',
-    hp: 160, speed: 2.0, armor: 2, radius: 0.8, supply: 3,
+    hp: 160, speed: 2.0, armor: 2, radius: 1.2, supply: 3,
     attack: { damage: 30, range: 8, cooldown: 2.5, splash: 1.5 },
     cost: { minerals: 150, gas: 75 }, buildTime: 30,
     meshPool: 2,

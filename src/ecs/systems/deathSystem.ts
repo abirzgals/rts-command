@@ -5,6 +5,7 @@ import {
   SupplyCost, ResourceNode, Producer, UnitTypeC, PathFollower,
 } from '../components'
 import { getPool } from '../../render/meshPools'
+import { getAnimManager } from '../../render/animatedMeshManager'
 import { gameState } from '../../game/state'
 import { spatialHash } from '../../globals'
 import { unblockCells } from '../../pathfinding/navGrid'
@@ -46,10 +47,16 @@ export function deathSystem(world: IWorld, _dt: number) {
       removePath(PathFollower.pathId[eid])
     }
 
-    // Remove from mesh pool
+    // Remove from mesh pool or animated manager
     if (hasComponent(world, MeshRef, eid)) {
-      const pool = getPool(MeshRef.poolId[eid])
-      if (pool) pool.remove(eid)
+      const poolId = MeshRef.poolId[eid]
+      const animMgr = getAnimManager(poolId)
+      if (animMgr) {
+        animMgr.remove(eid)
+      } else {
+        const pool = getPool(poolId)
+        if (pool) pool.remove(eid)
+      }
     }
 
     // Remove from spatial hash

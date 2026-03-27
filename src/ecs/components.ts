@@ -128,6 +128,20 @@ export const Projectile = defineComponent({
   speed: Types.f32,
 })
 
+// Artillery projectile (tank shells) — follows parabolic arc
+export const ArcProjectile = defineComponent({
+  startX: Types.f32,
+  startZ: Types.f32,
+  targetX: Types.f32,
+  targetZ: Types.f32,
+  elapsed: Types.f32,
+  duration: Types.f32,
+  arcHeight: Types.f32,
+  damage: Types.f32,
+  splash: Types.f32,
+  targetEid: Types.ui32,
+})
+
 // ── Collision size (for spatial hash) ────────────────────────
 export const CollisionRadius = defineComponent({
   value: Types.f32,

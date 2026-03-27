@@ -5,8 +5,8 @@ import { createMeshPools } from './render/meshPools'
 import { initInput } from './input/input'
 import { spawnUnit, spawnBuilding, spawnResourceNode, spawnObstacle } from './ecs/archetypes'
 import {
-  FACTION_PLAYER, FACTION_ENEMY, UT_WORKER,
-  BT_COMMAND_CENTER, BT_SUPPLY_DEPOT,
+  FACTION_PLAYER, FACTION_ENEMY, UT_WORKER, UT_MARINE, UT_TANK,
+  BT_COMMAND_CENTER, BT_SUPPLY_DEPOT, BT_BARRACKS, BT_FACTORY,
   RES_MINERALS, RES_GAS,
 } from './game/config'
 
@@ -28,6 +28,11 @@ import { supplySystem } from './ecs/systems/supplySystem'
 import { aiSystem } from './ecs/systems/aiSystem'
 import { selectionVisualSystem } from './ecs/systems/selectionVisualSystem'
 import { pathfindingSystem } from './ecs/systems/pathfindingSystem'
+import { animationSystem } from './ecs/systems/animationSystem'
+import { updateAllAnimations } from './render/animatedMeshManager'
+import { initDebugOverlay, updateDebugOverlay } from './render/debugOverlay'
+import { updateEffects } from './render/effects'
+import { initHPBars, updateHPBars } from './render/hpBars'
 
 // UI
 import { updateHUD } from './ui/hud'
@@ -39,32 +44,46 @@ const world: IWorld = createWorld()
 // ── Init ─────────────────────────────────────────────────────
 const canvas = document.getElementById('game-canvas') as HTMLCanvasElement
 
-// 1. Generate terrain data (heightmap + terrain types)
-generateTerrain()
+// ── Async init ───────────────────────────────────────────────
+let rtsCamera: RTSCamera
 
-// 2. Init Three.js renderer + lighting
-initRenderer(canvas)
+async function init() {
+  // 1. Generate terrain data
+  generateTerrain()
 
-// 3. Create terrain mesh from heightmap data
-const terrainMeshObj = createTerrainMesh()
-setGroundPlane(terrainMeshObj)
+  // 2. Init Three.js renderer + lighting
+  initRenderer(canvas)
 
-// 4. Init navigation grid from terrain
-initNavGrid()
+  // 3. Create terrain mesh from heightmap data
+  const terrainMeshObj = createTerrainMesh()
+  setGroundPlane(terrainMeshObj)
 
-// 5. Create mesh pools for units/buildings
-createMeshPools()
+  // 4. Init navigation grid from terrain
+  initNavGrid()
 
-// 6. Init input handling
-initInput(world)
+  // 5. Load 3D models and create mesh pools
+  await createMeshPools()
 
-// 7. Camera
-const rtsCamera = new RTSCamera()
-rtsCamera.target.set(-80, getTerrainHeight(-80, -80), -80)
-rtsCamera.setHeightFunction(getTerrainHeight)
+  // 6. Init input handling
+  initInput(world)
 
-// ── Spawn initial map ────────────────────────────────────────
-setupMap(world)
+  // 7. Camera
+  rtsCamera = new RTSCamera()
+  rtsCamera.target.set(-80, getTerrainHeight(-80, -80), -80)
+  rtsCamera.setHeightFunction(getTerrainHeight)
+
+  // 8. Debug overlay + HP bars
+  initDebugOverlay()
+  initHPBars()
+
+  // 9. Spawn initial map
+  setupMap(world)
+
+  // 9. Start game loop
+  requestAnimationFrame(gameLoop)
+}
+
+init()
 
 function setupMap(world: IWorld) {
   const px = -80, pz = -80
@@ -77,6 +96,22 @@ function setupMap(world: IWorld) {
   for (let i = 0; i < 5; i++) {
     const angle = (i / 5) * Math.PI * 2
     spawnUnit(world, UT_WORKER, FACTION_PLAYER, px + Math.cos(angle) * 3, pz + Math.sin(angle) * 3)
+  }
+
+  // Starting barracks + factory (pre-built)
+  spawnBuilding(world, BT_BARRACKS, FACTION_PLAYER, px + 6, pz - 3, true)
+  spawnBuilding(world, BT_FACTORY, FACTION_PLAYER, px + 6, pz + 5, true)
+
+  // Starting marines
+  for (let i = 0; i < 6; i++) {
+    const angle = (i / 6) * Math.PI * 2
+    spawnUnit(world, UT_MARINE, FACTION_PLAYER, px + 10 + Math.cos(angle) * 3, pz + Math.sin(angle) * 3)
+  }
+
+  // Starting tanks
+  for (let i = 0; i < 3; i++) {
+    const angle = (i / 3) * Math.PI * 2
+    spawnUnit(world, UT_TANK, FACTION_PLAYER, px + 15 + Math.cos(angle) * 2, pz + Math.sin(angle) * 2)
   }
 
   // Player mineral patches
@@ -248,13 +283,16 @@ function gameLoop(time: number) {
   pathfindingSystem(world, dt)
   movementSystem(world, dt)
   deathSystem(world, dt)
+  animationSystem(world, dt)
   renderSystem(world, dt)
+  updateAllAnimations(dt)
+  updateEffects(dt)
   selectionVisualSystem(world, dt)
+  updateDebugOverlay(world)
 
   renderer.render(scene, camera)
 
+  updateHPBars(world)
   updateHUD(world, dt, time)
   updateMinimap(world, time)
 }
-
-requestAnimationFrame(gameLoop)

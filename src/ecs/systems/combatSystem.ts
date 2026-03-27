@@ -4,7 +4,10 @@ import {
   Position, Faction, Health, AttackC, AttackTarget, MoveTarget,
   Dead, IsBuilding, MoveSpeed, Armor,
 } from '../components'
-import { spawnProjectile } from '../archetypes'
+import { spawnProjectile, spawnArcProjectile } from '../archetypes'
+import { UnitTypeC } from '../components'
+import { UT_TANK } from '../../game/config'
+import { spawnMuzzleFlash } from '../../render/effects'
 import { spatialHash } from '../../globals'
 
 const combatQuery = defineQuery([Position, AttackC, Faction])
@@ -95,8 +98,19 @@ function tryAttack(world: IWorld, attacker: number, target: number, dist: number
   AttackC.timer[attacker] = AttackC.cooldown[attacker]
 
   if (range > 2) {
-    // Ranged: spawn projectile
-    spawnProjectile(world, Position.x[attacker], Position.z[attacker], target, damage)
+    const px = Position.x[attacker]
+    const pz = Position.z[attacker]
+    const isTank = hasComponent(world, UnitTypeC, attacker) && UnitTypeC.id[attacker] === UT_TANK
+    const splash = AttackC.splash[attacker]
+
+    if (isTank && splash > 0) {
+      // Tank: artillery arc projectile with splash
+      spawnArcProjectile(world, px, pz, target, damage, splash)
+      spawnMuzzleFlash(px, Position.y[attacker], pz)
+    } else {
+      // Marine: straight bullet
+      spawnProjectile(world, px, pz, target, damage)
+    }
   } else {
     // Melee: direct damage
     applyDamage(world, target, damage)

@@ -19,8 +19,8 @@ function clearPath(world: import('bitecs').IWorld, eid: number) {
 const workerQuery = defineQuery([WorkerC, Position, Faction])
 const dropoffQuery = defineQuery([ResourceDropoff, Position, Faction])
 
-const GATHER_RANGE = 2.0
-const DROPOFF_RANGE = 2.5
+const GATHER_RANGE = 2.5
+const DROPOFF_RANGE = 4.0
 const GATHER_AMOUNT = 5
 const GATHER_TIME = 1.5 // seconds per gather tick
 
@@ -114,6 +114,11 @@ function moveToResource(world: IWorld, eid: number) {
     WorkerC.state[eid] = 2 // gathering
     WorkerC.gatherTimer[eid] = 0
     if (hasComponent(world, MoveTarget, eid)) removeComponent(world, MoveTarget, eid)
+  } else if (!hasComponent(world, MoveTarget, eid) && !hasComponent(world, PathFollower, eid)) {
+    // Worker lost its path/target (e.g. dynamic obstacle blocked it) — re-issue move
+    addComponent(world, MoveTarget, eid)
+    MoveTarget.x[eid] = Position.x[nodeEid]
+    MoveTarget.z[eid] = Position.z[nodeEid]
   }
 }
 
@@ -180,6 +185,9 @@ function returnCargo(world: IWorld, eid: number) {
     } else {
       WorkerC.state[eid] = 0
     }
+  } else if (!hasComponent(world, MoveTarget, eid) && !hasComponent(world, PathFollower, eid)) {
+    // Worker lost path while returning — re-issue move to dropoff
+    moveToDropoff(world, eid)
   }
 }
 

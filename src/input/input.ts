@@ -12,6 +12,7 @@ import {
 } from '../game/config'
 import { gameState } from '../game/state'
 import { raycastGround, camera } from '../render/engine'
+import { toggleDebug } from '../render/debugOverlay'
 import { spawnBuilding } from '../ecs/archetypes'
 import { spatialHash } from '../globals'
 
@@ -36,6 +37,26 @@ let selectedQuery: ReturnType<typeof defineQuery>
 let playerUnitQuery: ReturnType<typeof defineQuery>
 let playerBuildingQuery: ReturnType<typeof defineQuery>
 
+// ── Touch state ─────────────────────────────────────────────
+let isMoveMode = false // when true, next tap = move command
+let touchPanStartX = 0
+let touchPanStartZ = 0
+let touchStartScreenX = 0
+let touchStartScreenY = 0
+let touchStartTime = 0
+let lastPinchDist = 0
+let isTouchPanning = false
+let isTouchBoxSelecting = false
+let longPressTimer: ReturnType<typeof setTimeout> | null = null
+const TOUCH_TAP_THRESHOLD = 12
+const TOUCH_TAP_TIME = 300 // ms
+const LONG_PRESS_TIME = 400 // ms — hold this long to start box select
+
+/** Exported so camera can be panned from touch handler */
+export let touchPanDeltaX = 0
+export let touchPanDeltaZ = 0
+export function consumeTouchPan() { touchPanDeltaX = 0; touchPanDeltaZ = 0 }
+
 export function initInput(world: IWorld) {
   selectableQuery = defineQuery([Selectable, Position, Faction])
   selectedQuery = defineQuery([Selected])
@@ -44,11 +65,35 @@ export function initInput(world: IWorld) {
 
   const canvas = document.getElementById('game-canvas')!
 
+  // Mouse events
   canvas.addEventListener('mousedown', (e) => onMouseDown(e, world))
   canvas.addEventListener('mousemove', (e) => onMouseMove(e, world))
   canvas.addEventListener('mouseup', (e) => onMouseUp(e, world))
   canvas.addEventListener('contextmenu', (e) => e.preventDefault())
   window.addEventListener('keydown', (e) => onKeyDown(e, world))
+
+  // Touch events
+  canvas.addEventListener('touchstart', (e) => onTouchStart(e, world), { passive: false })
+  canvas.addEventListener('touchmove', (e) => onTouchMove(e, world), { passive: false })
+  canvas.addEventListener('touchend', (e) => onTouchEnd(e, world), { passive: false })
+
+  // Move mode button
+  const moveBtn = document.getElementById('touch-move-btn')
+  if (moveBtn) {
+    moveBtn.addEventListener('click', () => {
+      isMoveMode = !isMoveMode
+      moveBtn.classList.toggle('active', isMoveMode)
+    })
+  }
+
+  // Debug toggle button
+  const debugBtn = document.getElementById('debug-btn')
+  if (debugBtn) {
+    debugBtn.addEventListener('click', () => {
+      toggleDebug()
+      debugBtn.classList.toggle('active')
+    })
+  }
 }
 
 function onMouseDown(e: MouseEvent, world: IWorld) {
@@ -279,6 +324,13 @@ function placeBuildingAtCursor(world: IWorld) {
 }
 
 function onKeyDown(e: KeyboardEvent, world: IWorld) {
+  // F1 = toggle debug overlay
+  if (e.key === 'F1') {
+    e.preventDefault()
+    toggleDebug()
+    return
+  }
+
   if (e.key === 'Escape') {
     if (gameState.buildMode !== null) {
       gameState.buildMode = null
@@ -379,4 +431,222 @@ export function queueProduction(buildingEid: number, unitType: number) {
     Producer.progress[buildingEid] = 0
     Producer.duration[buildingEid] = def.buildTime
   }
+}
+
+/**
+ * Smart touch tap: if player units are selected and we tap empty ground → move.
+ * If we tap an entity → select it (or attack if enemy).
+ */
+function handleTouchTap(world: IWorld, sx: number, sy: number) {
+  const hit = raycastGround(sx, sy)
+  if (!hit) return
+
+  // Check if tap hit an entity
+  const nearby: number[] = []
+  spatialHash.query(hit.x, hit.z, 3, nearby)
+
+  let tappedEid = -1
+  let tappedDist = Infinity
+  for (const eid of nearby) {
+    if (!hasComponent(world, Selectable, eid)) continue
+    const dx = Position.x[eid] - hit.x
+    const dz = Position.z[eid] - hit.z
+    const dist = Math.sqrt(dx * dx + dz * dz)
+    const radius = Selectable.radius[eid]
+    if (dist < radius + 1.5 && dist < tappedDist) {
+      tappedDist = dist
+      tappedEid = eid
+    }
+  }
+
+  const selected = selectedQuery(world)
+  const hasPlayerUnitsSelected = selected.some(eid =>
+    Faction.id[eid] === FACTION_PLAYER && !hasComponent(world, IsBuilding, eid)
+  )
+
+  if (tappedEid >= 0) {
+    // Tapped an entity
+    if (hasPlayerUnitsSelected && hasComponent(world, Faction, tappedEid) && Faction.id[tappedEid] !== FACTION_PLAYER) {
+      // Tapped enemy → attack command
+      handleRightClick(world, sx, sy)
+    } else if (hasPlayerUnitsSelected && hasComponent(world, ResourceNode, tappedEid)) {
+      // Tapped resource → gather command
+      handleRightClick(world, sx, sy)
+    } else {
+      // Tapped friendly unit/building → select it
+      clearSelection(world)
+      addComponent(world, Selected, tappedEid)
+    }
+  } else if (hasPlayerUnitsSelected) {
+    // Tapped empty ground with units selected → move command
+    handleRightClick(world, sx, sy)
+  } else {
+    // Nothing selected, tapped empty ground → deselect
+    clearSelection(world)
+  }
+}
+
+// ── Touch handlers ──────────────────────────────────────────
+
+function cancelLongPress() {
+  if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null }
+}
+
+function onTouchStart(e: TouchEvent, _world: IWorld) {
+  e.preventDefault()
+
+  if (e.touches.length === 1) {
+    const t = e.touches[0]
+    touchStartScreenX = t.clientX
+    touchStartScreenY = t.clientY
+    touchStartTime = performance.now()
+    isTouchPanning = false
+    isTouchBoxSelecting = false
+
+    // Store world position for pan reference
+    const hit = raycastGround(t.clientX, t.clientY)
+    if (hit) {
+      touchPanStartX = hit.x
+      touchPanStartZ = hit.z
+    }
+
+    // Start long press timer → box selection mode
+    cancelLongPress()
+    longPressTimer = setTimeout(() => {
+      longPressTimer = null
+      // Enter box selection mode at current finger position
+      isTouchBoxSelecting = true
+      isTouchPanning = false
+      // Show selection box starting from original touch position
+      dragStartX = touchStartScreenX
+      dragStartY = touchStartScreenY
+      selectionBoxEl.style.display = 'block'
+      selectionBoxEl.style.left = dragStartX + 'px'
+      selectionBoxEl.style.top = dragStartY + 'px'
+      selectionBoxEl.style.width = '0px'
+      selectionBoxEl.style.height = '0px'
+    }, LONG_PRESS_TIME)
+  }
+
+  if (e.touches.length === 2) {
+    cancelLongPress()
+    isTouchBoxSelecting = false
+    selectionBoxEl.style.display = 'none'
+    // Start pinch
+    const dx = e.touches[0].clientX - e.touches[1].clientX
+    const dy = e.touches[0].clientY - e.touches[1].clientY
+    lastPinchDist = Math.sqrt(dx * dx + dy * dy)
+    isTouchPanning = true
+  }
+}
+
+function onTouchMove(e: TouchEvent, _world: IWorld) {
+  e.preventDefault()
+
+  if (e.touches.length === 1 && isTouchBoxSelecting) {
+    // Update selection box
+    const t = e.touches[0]
+    const left = Math.min(dragStartX, t.clientX)
+    const top = Math.min(dragStartY, t.clientY)
+    const w = Math.abs(t.clientX - dragStartX)
+    const h = Math.abs(t.clientY - dragStartY)
+    selectionBoxEl.style.left = left + 'px'
+    selectionBoxEl.style.top = top + 'px'
+    selectionBoxEl.style.width = w + 'px'
+    selectionBoxEl.style.height = h + 'px'
+    return
+  }
+
+  if (e.touches.length === 1 && !isTouchPanning) {
+    const t = e.touches[0]
+    const dx = t.clientX - touchStartScreenX
+    const dy = t.clientY - touchStartScreenY
+
+    if (Math.abs(dx) > TOUCH_TAP_THRESHOLD || Math.abs(dy) > TOUCH_TAP_THRESHOLD) {
+      cancelLongPress() // finger moved, not a long press
+      isTouchPanning = true
+    }
+  }
+
+  // Single-finger pan: translate camera based on screen delta
+  if (e.touches.length === 1 && isTouchPanning) {
+    const t = e.touches[0]
+    const scale = 0.15
+    touchPanDeltaX = -(t.clientX - touchStartScreenX) * scale
+    touchPanDeltaZ = -(t.clientY - touchStartScreenY) * scale
+    touchStartScreenX = t.clientX
+    touchStartScreenY = t.clientY
+  }
+
+  // Two-finger pinch zoom
+  if (e.touches.length === 2) {
+    const dx = e.touches[0].clientX - e.touches[1].clientX
+    const dy = e.touches[0].clientY - e.touches[1].clientY
+    const dist = Math.sqrt(dx * dx + dy * dy)
+
+    if (lastPinchDist > 0) {
+      const delta = lastPinchDist - dist
+      // Dispatch synthetic wheel event for camera zoom
+      const canvas = document.getElementById('game-canvas')!
+      canvas.dispatchEvent(new WheelEvent('wheel', {
+        deltaY: delta * 1.5,
+        bubbles: true,
+      }))
+    }
+    lastPinchDist = dist
+  }
+}
+
+function onTouchEnd(e: TouchEvent, world: IWorld) {
+  e.preventDefault()
+  cancelLongPress()
+
+  // Reset pinch when fingers lift
+  if (e.touches.length < 2) {
+    lastPinchDist = 0
+  }
+
+  // Only process on last finger release
+  if (e.touches.length > 0) return
+
+  const ct = e.changedTouches[0]
+  const sx = ct.clientX
+  const sy = ct.clientY
+
+  // Box selection finish
+  if (isTouchBoxSelecting) {
+    selectionBoxEl.style.display = 'none'
+    handleBoxSelect(world, dragStartX, dragStartY, sx, sy)
+    isTouchBoxSelecting = false
+    isTouchPanning = false
+    touchPanDeltaX = 0
+    touchPanDeltaZ = 0
+    return
+  }
+
+  const elapsed = performance.now() - touchStartTime
+
+  if (!isTouchPanning && elapsed < TOUCH_TAP_TIME) {
+    // It's a tap
+    if (gameState.buildMode !== null) {
+      const hit = raycastGround(sx, sy)
+      if (hit) {
+        mouseWorldX = hit.x
+        mouseWorldZ = hit.z
+        placeBuildingAtCursor(world)
+      }
+    } else if (isMoveMode) {
+      handleRightClick(world, sx, sy)
+      isMoveMode = false
+      const moveBtn = document.getElementById('touch-move-btn')
+      if (moveBtn) moveBtn.classList.remove('active')
+    } else {
+      handleTouchTap(world, sx, sy)
+    }
+  }
+
+  isTouchPanning = false
+  isTouchBoxSelecting = false
+  touchPanDeltaX = 0
+  touchPanDeltaZ = 0
 }

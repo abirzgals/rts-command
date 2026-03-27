@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { MAP_SIZE } from '../game/config'
+import { touchPanDeltaX, touchPanDeltaZ, consumeTouchPan } from '../input/input'
 
 // ── Shared renderer state ────────────────────────────────────
 export let renderer: THREE.WebGLRenderer
@@ -118,6 +119,13 @@ export class RTSCamera {
     const speed = this.keys.has('ShiftLeft') ? this.panSpeed * 2 : this.panSpeed
     this.target.x += panX * speed * dt
     this.target.z += panZ * speed * dt
+
+    // Apply touch pan
+    if (touchPanDeltaX !== 0 || touchPanDeltaZ !== 0) {
+      this.target.x += touchPanDeltaX
+      this.target.z += touchPanDeltaZ
+      consumeTouchPan()
+    }
 
     const half = MAP_SIZE / 2
     this.target.x = Math.max(-half, Math.min(half, this.target.x))

@@ -1,5 +1,5 @@
 import { GRID_RES, worldToGrid, gridToWorld } from '../terrain/heightmap'
-import { walkable, moveCost, isWalkable } from './navGrid'
+import { walkable, moveCost, dynamicCost, isWalkable } from './navGrid'
 import type { Waypoint } from './pathStore'
 
 // ── Binary min-heap ──────────────────────────────────────────
@@ -96,6 +96,7 @@ function heuristic(ax: number, az: number, bx: number, bz: number): number {
 export function findPath(
   startX: number, startZ: number,
   goalX: number, goalZ: number,
+  ignoreDynamic = false,
 ): Waypoint[] | null {
   let [sx, sz] = worldToGrid(startX, startZ)
   const [gx, gz] = worldToGrid(goalX, goalZ)
@@ -157,7 +158,7 @@ export function findPath(
         if (!isWalkable(cx + dx, cz) || !isWalkable(cx, cz + dz)) continue
       }
 
-      const cost = baseCost * moveCost[ni]
+      const cost = baseCost * (moveCost[ni] + (ignoreDynamic ? 0 : dynamicCost[ni]))
       const tentativeG = gCost[current] + cost
 
       if (visited[ni] === generation && tentativeG >= gCost[ni]) continue

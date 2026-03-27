@@ -1,15 +1,27 @@
 import { defineQuery, hasComponent, addComponent, removeComponent, Not } from 'bitecs'
 import type { IWorld } from 'bitecs'
-import { Position, MoveTarget, PathFollower, IsBuilding, MoveSpeed } from '../components'
+import { Position, MoveTarget, PathFollower, IsBuilding, MoveSpeed, CollisionRadius, Dead, WorkerC } from '../components'
 import { findPath } from '../../pathfinding/astar'
 import { storePath, removePath } from '../../pathfinding/pathStore'
+import { clearDynamicCosts, markUnitObstacle } from '../../pathfinding/navGrid'
 
 // Entities that need a path computed
 const needsPathQuery = defineQuery([Position, MoveTarget, MoveSpeed, Not(PathFollower), Not(IsBuilding)])
+// All units with collision (for dynamic obstacle marking)
+const allUnitsQuery = defineQuery([Position, CollisionRadius, MoveSpeed])
 
 const MAX_PATHS_PER_FRAME = 8
 
 export function pathfindingSystem(world: IWorld, _dt: number) {
+  // Rebuild dynamic cost map from non-worker unit positions
+  clearDynamicCosts()
+  const allUnits = allUnitsQuery(world)
+  for (const eid of allUnits) {
+    if (hasComponent(world, Dead, eid)) continue
+    if (hasComponent(world, WorkerC, eid)) continue // workers don't block paths
+    markUnitObstacle(Position.x[eid], Position.z[eid], CollisionRadius.value[eid])
+  }
+
   const entities = needsPathQuery(world)
   let computed = 0
 
@@ -26,7 +38,9 @@ export function pathfindingSystem(world: IWorld, _dt: number) {
     const dz = gz - sz
     if (dx * dx + dz * dz < 4) continue // less than 2 units — direct movement is fine
 
-    const waypoints = findPath(sx, sz, gx, gz)
+    // Workers ignore dynamic unit costs while mining
+    const isWorker = hasComponent(world, WorkerC, eid)
+    const waypoints = findPath(sx, sz, gx, gz, isWorker)
     computed++
 
     if (!waypoints || waypoints.length === 0) {

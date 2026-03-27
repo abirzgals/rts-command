@@ -5,12 +5,14 @@ import {
   MoveSpeed, Armor, Selectable, MeshRef, CollisionRadius,
   WorkerC, ResourceDropoff, IsBuilding, BuildProgress, Producer,
   SupplyProvider, SupplyCost, ResourceNode, Projectile, Selected,
+  ArcProjectile,
 } from './components'
 import {
   UNIT_DEFS, BUILDING_DEFS, FACTION_PLAYER, UT_WORKER,
   type UnitDef, type BuildingDef,
 } from '../game/config'
 import { getPool, getFactionColor } from '../render/meshPools'
+import { getAnimManager } from '../render/animatedMeshManager'
 import { spatialHash } from '../globals'
 import { getTerrainHeight } from '../terrain/heightmap'
 import { blockCells } from '../pathfinding/navGrid'
@@ -27,7 +29,8 @@ export function spawnUnit(
 
   const eid = addEntity(world)
 
-  const y = getTerrainHeight(x, z) + 0.5
+  // Animated GLB models have feet at Y=0, no offset needed
+  const y = getTerrainHeight(x, z)
 
   addComponent(world, Position, eid)
   Position.x[eid] = x
@@ -82,11 +85,19 @@ export function spawnUnit(
   addComponent(world, MeshRef, eid)
   MeshRef.poolId[eid] = def.meshPool
 
-  const pool = getPool(def.meshPool)
-  if (pool) {
-    const color = getFactionColor(faction, false)
-    const idx = pool.add(eid, x, y, z, 0, color)
-    MeshRef.instanceIdx[eid] = idx
+  const color = getFactionColor(faction, false)
+
+  // Try animated manager first (unit pools 0-2), fallback to instanced pool
+  const animMgr = getAnimManager(def.meshPool)
+  if (animMgr) {
+    animMgr.add(eid, x, y, z, 0, color)
+    MeshRef.instanceIdx[eid] = 0
+  } else {
+    const pool = getPool(def.meshPool)
+    if (pool) {
+      const idx = pool.add(eid, x, y, z, 0, color)
+      MeshRef.instanceIdx[eid] = idx
+    }
   }
 
   // Spatial hash
@@ -256,6 +267,53 @@ export function spawnProjectile(
   const pool = getPool(30)
   if (pool) {
     const idx = pool.add(eid, fromX, 1.0, fromZ, 0)
+    MeshRef.instanceIdx[eid] = idx
+  }
+
+  return eid
+}
+
+export function spawnArcProjectile(
+  world: IWorld,
+  fromX: number,
+  fromZ: number,
+  targetEid: number,
+  damage: number,
+  splash: number,
+): number {
+  const eid = addEntity(world)
+  const fromY = getTerrainHeight(fromX, fromZ) + 2.0
+
+  addComponent(world, Position, eid)
+  Position.x[eid] = fromX
+  Position.y[eid] = fromY
+  Position.z[eid] = fromZ
+
+  const tx = Position.x[targetEid]
+  const tz = Position.z[targetEid]
+  const dx = tx - fromX
+  const dz = tz - fromZ
+  const dist = Math.sqrt(dx * dx + dz * dz)
+
+  addComponent(world, ArcProjectile, eid)
+  ArcProjectile.startX[eid] = fromX
+  ArcProjectile.startZ[eid] = fromZ
+  ArcProjectile.targetX[eid] = tx
+  ArcProjectile.targetZ[eid] = tz
+  ArcProjectile.elapsed[eid] = 0
+  ArcProjectile.duration[eid] = Math.max(0.6, dist / 15) // flight time based on distance
+  ArcProjectile.arcHeight[eid] = Math.max(4, dist * 0.4) // higher arc for longer distance
+  ArcProjectile.damage[eid] = damage
+  ArcProjectile.splash[eid] = splash
+  ArcProjectile.targetEid[eid] = targetEid
+
+  // Use pool 31 for tank shells (we'll register it)
+  addComponent(world, MeshRef, eid)
+  MeshRef.poolId[eid] = 31
+
+  const pool = getPool(31)
+  if (pool) {
+    const idx = pool.add(eid, fromX, fromY, fromZ, 0)
     MeshRef.instanceIdx[eid] = idx
   }
 
