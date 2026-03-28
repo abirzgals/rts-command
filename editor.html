@@ -534,22 +534,42 @@
         </div>
       </div>
 
-      <!-- Muzzle Flash -->
+      <!-- Fire Point (shared muzzle + projectile origin) -->
       <div class="panel-section effects-section">
-        <div class="section-title"><span class="icon">&#10026;</span> Muzzle Flash</div>
-        <div class="stat-row" style="margin-bottom:8px">
-          <button class="btn small" id="pick-muzzle-btn" title="Click a face on the model to attach muzzle flash point">&#127919; Pick Face (Muzzle)</button>
-          <button class="btn small" id="pick-proj-btn" title="Click a face on the model to attach projectile spawn">&#127919; Pick Face (Proj)</button>
+        <div class="section-title"><span class="icon">&#127919;</span> Fire Point</div>
+        <div style="display:flex;gap:4px;margin-bottom:6px">
+          <button class="btn small" id="pick-face-btn" title="Click a face on the model to attach fire point">&#127919; Pick Face</button>
+          <button class="btn small success" id="fire-btn">&#10026; Flash!</button>
+          <button class="btn small success" id="launch-btn">&#10132; Launch!</button>
         </div>
         <div id="pick-status" style="font-size:11px;color:#8b949e;margin-bottom:6px;display:none">
           Click on model face to attach...  <button class="btn small danger" id="pick-cancel-btn" style="padding:2px 6px;font-size:10px">Cancel</button>
         </div>
         <div id="pick-info" style="font-size:10px;color:#58a6ff;margin-bottom:6px;display:none"></div>
         <div class="stat-row">
+          <span class="stat-label">X</span>
+          <input type="range" class="stat-slider" id="fp-x" min="-5" max="5" step="0.05" value="0">
+          <input type="text" class="stat-input" id="fp-x-val" value="0" readonly>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Y</span>
+          <input type="range" class="stat-slider" id="fp-y" min="0" max="8" step="0.05" value="1.5">
+          <input type="text" class="stat-input" id="fp-y-val" value="1.5" readonly>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Z</span>
+          <input type="range" class="stat-slider" id="fp-z" min="-5" max="8" step="0.05" value="0.6">
+          <input type="text" class="stat-input" id="fp-z-val" value="0.6" readonly>
+        </div>
+      </div>
+
+      <!-- Muzzle Flash -->
+      <div class="panel-section effects-section">
+        <div class="section-title"><span class="icon">&#10026;</span> Muzzle Flash</div>
+        <div class="stat-row">
           <span class="stat-label">Color</span>
           <input type="color" class="color-input" id="muzzle-color" value="#ffaa44">
           <span style="flex:1"></span>
-          <button class="btn small success" id="fire-btn">Fire!</button>
         </div>
         <div class="stat-row">
           <span class="stat-label">Intensity</span>
@@ -560,21 +580,6 @@
           <span class="stat-label">Range</span>
           <input type="range" class="stat-slider" id="muzzle-range" min="1" max="30" step="0.5" value="12">
           <input type="text" class="stat-input" id="muzzle-range-val" value="12" readonly>
-        </div>
-        <div class="stat-row">
-          <span class="stat-label">X Offset</span>
-          <input type="range" class="stat-slider" id="muzzle-xoffset" min="-3" max="3" step="0.05" value="0">
-          <input type="text" class="stat-input" id="muzzle-xoffset-val" value="0" readonly>
-        </div>
-        <div class="stat-row">
-          <span class="stat-label">Y Offset</span>
-          <input type="range" class="stat-slider" id="muzzle-yoffset" min="0" max="6" step="0.05" value="1.5">
-          <input type="text" class="stat-input" id="muzzle-yoffset-val" value="1.5" readonly>
-        </div>
-        <div class="stat-row">
-          <span class="stat-label">Z Offset</span>
-          <input type="range" class="stat-slider" id="muzzle-zoffset" min="-3" max="5" step="0.05" value="0.6">
-          <input type="text" class="stat-input" id="muzzle-zoffset-val" value="0.6" readonly>
         </div>
         <div class="stat-row">
           <span class="stat-label">Duration</span>
@@ -594,7 +599,6 @@
               <option value="shell">Shell</option>
             </select>
           </div>
-          <button class="btn small success" id="launch-btn">Launch!</button>
         </div>
         <div class="stat-row">
           <span class="stat-label">Color</span>
@@ -610,21 +614,6 @@
           <span class="stat-label">Speed</span>
           <input type="range" class="stat-slider" id="proj-speed" min="5" max="50" step="1" value="25">
           <input type="text" class="stat-input" id="proj-speed-val" value="25" readonly>
-        </div>
-        <div class="stat-row">
-          <span class="stat-label">Spawn X</span>
-          <input type="range" class="stat-slider" id="proj-x" min="-3" max="3" step="0.05" value="0">
-          <input type="text" class="stat-input" id="proj-x-val" value="0" readonly>
-        </div>
-        <div class="stat-row">
-          <span class="stat-label">Spawn Y</span>
-          <input type="range" class="stat-slider" id="proj-y" min="0.2" max="6" step="0.05" value="1.0">
-          <input type="text" class="stat-input" id="proj-y-val" value="1.0" readonly>
-        </div>
-        <div class="stat-row">
-          <span class="stat-label">Spawn Z</span>
-          <input type="range" class="stat-slider" id="proj-z" min="-3" max="5" step="0.05" value="0.8">
-          <input type="text" class="stat-input" id="proj-z-val" value="0.8" readonly>
         </div>
         <div class="stat-row" id="proj-arc-row">
           <span class="stat-label">Arc Height</span>
