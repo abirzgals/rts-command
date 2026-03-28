@@ -1,0 +1,93 @@
+// ─── Shared floating buttons — injected into every scene ────────────────
+// Debug toggle, navigation links (Game, Editor, Sandbox)
+// Call initSharedButtons() once after DOM is ready.
+
+import { toggleDebug, isDebugEnabled } from '../render/debugOverlay'
+
+const BUTTON_STYLE = `
+  position:fixed; width:40px; height:40px; border-radius:50%;
+  background:rgba(80,80,80,0.7); border:1px solid rgba(200,200,200,0.3);
+  color:#fff; font-size:18px; z-index:100; cursor:pointer;
+  display:flex; align-items:center; justify-content:center;
+  text-decoration:none; -webkit-tap-highlight-color:transparent;
+`
+
+interface ButtonDef {
+  id: string
+  icon: string
+  title: string
+  href?: string
+  right: number
+  onClick?: () => void
+}
+
+export function initSharedButtons() {
+  // Don't double-init
+  if (document.getElementById('_shared-btns')) return
+
+  const currentPath = window.location.pathname
+
+  const buttons: ButtonDef[] = [
+    { id: 'sb-debug', icon: '\u{1F41B}', title: 'Toggle Debug (F1)', right: 16,
+      onClick: () => {
+        toggleDebug()
+        const btn = document.getElementById('sb-debug')
+        if (btn) btn.style.background = isDebugEnabled()
+          ? 'rgba(50,200,100,0.7)' : 'rgba(80,80,80,0.7)'
+      }},
+  ]
+
+  // Navigation links — skip the one for the current page
+  if (!currentPath.endsWith('/editor.html')) {
+    buttons.push({ id: 'sb-editor', icon: '\u2699', title: 'Editor', href: '/editor.html', right: 64 })
+  }
+  if (!currentPath.endsWith('/sandbox.html')) {
+    buttons.push({ id: 'sb-sandbox', icon: '\u2694', title: 'Sandbox', href: '/sandbox.html', right: 112 })
+  }
+  if (currentPath.endsWith('/editor.html') || currentPath.endsWith('/sandbox.html')) {
+    buttons.push({ id: 'sb-game', icon: '\u{1F3AE}', title: 'Game', href: '/', right: 112 + (buttons.length > 2 ? 48 : 0) })
+  }
+
+  const wrapper = document.createElement('div')
+  wrapper.id = '_shared-btns'
+
+  for (const def of buttons) {
+    const el = def.href
+      ? document.createElement('a')
+      : document.createElement('button')
+
+    el.id = def.id
+    el.title = def.title
+    el.innerHTML = def.icon
+    el.setAttribute('style', BUTTON_STYLE + `top:50px; right:${def.right}px;`)
+
+    if (def.href) (el as HTMLAnchorElement).href = def.href
+    if (def.onClick) el.addEventListener('click', def.onClick)
+
+    // Hover effect
+    el.addEventListener('mouseenter', () => {
+      if (!isDebugEnabled() || el.id !== 'sb-debug')
+        el.style.background = 'rgba(100,120,255,0.7)'
+    })
+    el.addEventListener('mouseleave', () => {
+      if (el.id === 'sb-debug' && isDebugEnabled()) {
+        el.style.background = 'rgba(50,200,100,0.7)'
+      } else {
+        el.style.background = 'rgba(80,80,80,0.7)'
+      }
+    })
+
+    wrapper.appendChild(el)
+  }
+
+  document.body.appendChild(wrapper)
+
+  // F1 keyboard shortcut for debug toggle
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'F1') {
+      e.preventDefault()
+      const btn = document.getElementById('sb-debug')
+      if (btn) btn.click()
+    }
+  })
+}

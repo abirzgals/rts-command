@@ -324,12 +324,7 @@ function placeBuildingAtCursor(world: IWorld) {
 }
 
 function onKeyDown(e: KeyboardEvent, world: IWorld) {
-  // F1 = toggle debug overlay
-  if (e.key === 'F1') {
-    e.preventDefault()
-    toggleDebug()
-    return
-  }
+  // F1 handled by sharedButtons.ts
 
   if (e.key === 'Escape') {
     if (gameState.buildMode !== null) {

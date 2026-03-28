@@ -37,6 +37,7 @@ import { initHPBars, updateHPBars } from './render/hpBars'
 // UI
 import { updateHUD } from './ui/hud'
 import { updateMinimap } from './ui/minimap'
+import { initSharedButtons } from './ui/sharedButtons'
 
 // ── World ────────────────────────────────────────────────────
 const world: IWorld = createWorld()
@@ -72,9 +73,10 @@ async function init() {
   rtsCamera.target.set(-80, getTerrainHeight(-80, -80), -80)
   rtsCamera.setHeightFunction(getTerrainHeight)
 
-  // 8. Debug overlay + HP bars
+  // 8. Debug overlay + HP bars + shared buttons
   initDebugOverlay()
   initHPBars()
+  initSharedButtons()
 
   // 9. Spawn initial map
   setupMap(world)

@@ -44,6 +44,8 @@ import { animationSystem } from './ecs/systems/animationSystem'
 import { updateAllAnimations } from './render/animatedMeshManager'
 import { updateEffects } from './render/effects'
 import { initHPBars, updateHPBars } from './render/hpBars'
+import { initDebugOverlay, updateDebugOverlay } from './render/debugOverlay'
+import { initSharedButtons } from './ui/sharedButtons'
 
 // ── ECS Components (for selection / deletion) ───────────────────────────────
 import {
@@ -106,8 +108,10 @@ async function init() {
   // 5. Load 3D models and create instanced mesh pools
   await createMeshPools()
 
-  // 6. Init HP bar overlay
+  // 6. Init HP bar overlay + debug + shared buttons
   initHPBars()
+  initDebugOverlay()
+  initSharedButtons()
 
   // 7. Camera — start centered at map origin
   rtsCamera = new RTSCamera()
@@ -188,6 +192,7 @@ function gameLoop(time: number) {
   updateEffects(dt)
   updateWater(dt)
   selectionVisualSystem(world, dt)
+  updateDebugOverlay(world)
 
   renderer.render(scene, camera)
 

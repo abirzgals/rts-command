@@ -100,25 +100,7 @@
     }
     #touch-move-btn.active { background: rgba(50,200,100,0.85); border-color: rgba(100,255,150,0.6); }
 
-    #debug-btn {
-      display: block; position: absolute; top: 50px; right: 16px;
-      width: 40px; height: 40px; border-radius: 50%;
-      background: rgba(80,80,80,0.7); border: 1px solid rgba(200,200,200,0.3);
-      color: #fff; font-size: 18px; z-index: 25; cursor: pointer;
-      -webkit-tap-highlight-color: transparent;
-    }
-    #debug-btn.active { background: rgba(50,200,100,0.7); }
-
-    #editor-link {
-      position: absolute; top: 50px; right: 64px;
-      width: 40px; height: 40px; border-radius: 50%;
-      background: rgba(80,80,80,0.7); border: 1px solid rgba(200,200,200,0.3);
-      color: #fff; font-size: 18px; z-index: 25; cursor: pointer;
-      display: flex; align-items: center; justify-content: center;
-      text-decoration: none;
-      -webkit-tap-highlight-color: transparent;
-    }
-    #editor-link:hover { background: rgba(100,120,255,0.7); }
+    /* Shared buttons (debug, editor, sandbox) injected by sharedButtons.ts */
 
     /* Mobile: responsive UI */
     @media (max-width: 768px), (pointer: coarse) {
@@ -187,9 +169,7 @@
 
   <div id="build-mode">Press ESC to cancel</div>
   <button id="touch-move-btn" title="Tap then tap ground to move selected units">&#x279C;</button>
-  <a id="editor-link" href="/editor.html" title="Unit Editor">&#x2699;</a>
-  <a id="editor-link" href="/sandbox.html" title="Sandbox" style="right:112px">&#x2694;</a>
-  <button id="debug-btn" title="Toggle debug paths (F1)">&#x1F41B;</button>
+  <!-- Debug + navigation buttons injected by sharedButtons.ts -->
 
   <script type="module" src="/src/main.ts"></script>
   <script>if('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js')</script>
