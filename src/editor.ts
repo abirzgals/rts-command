@@ -34,7 +34,7 @@ interface ModelConfig {
 }
 
 interface EffectsConfig {
-  firePoint: { x: number; y: number; z: number }
+  firePoint: { x: number; y: number; z: number; boneName?: string }
   muzzle: { color: string; intensity: number; range: number; duration: number }
   projectile: { type: 'bullet' | 'shell'; color: string; size: number; speed: number; arcHeight: number }
   impact: { type: 'sparks' | 'fire' | 'dust' | 'explosion'; color: string; size: number; particles: number; lifetime: number }
@@ -573,11 +573,17 @@ function updateOverlays() {
   firePointMarker.position.set(effects.firePoint.x, effects.firePoint.y, effects.firePoint.z)
   firePointMarker.visible = overlayVisibility.firePoint
 
-  // Attach to turret/barrel bone if present (rotates with turret)
-  if (barrelBone) {
-    barrelBone.add(firePointMarker)
-  } else if (turretBone) {
-    turretBone.add(firePointMarker)
+  // Attach to saved bone (from face-pick), or default to barrel/turret bone
+  let fpParent: THREE.Object3D | null = null
+  if (effects.firePoint.boneName && currentModel) {
+    currentModel.traverse((child) => {
+      if (child.name === effects.firePoint.boneName) fpParent = child
+    })
+  }
+  if (!fpParent) fpParent = barrelBone || turretBone || null
+
+  if (fpParent) {
+    fpParent.add(firePointMarker)
   } else {
     scene.add(firePointMarker)
   }
@@ -1761,8 +1767,9 @@ function wirePickFace() {
     effects.firePoint.x = localOffset.x
     effects.firePoint.y = localOffset.y
     effects.firePoint.z = localOffset.z
+    effects.firePoint.boneName = (attachParent as THREE.Bone).isBone ? attachParent.name : undefined
 
-    const boneName = (attachParent as THREE.Bone).isBone ? attachParent.name : 'mesh root'
+    const boneName = effects.firePoint.boneName || 'mesh root'
     pickInfo.style.display = 'block'
     pickInfo.textContent = `Fire point attached to: ${boneName} | (${localOffset.x.toFixed(2)}, ${localOffset.y.toFixed(2)}, ${localOffset.z.toFixed(2)})`
 
