@@ -34,7 +34,7 @@ interface ModelConfig {
 }
 
 interface EffectsConfig {
-  firePoint: { x: number; y: number; z: number; boneName?: string }
+  firePoint: { x: number; y: number; z: number; boneName?: string; normalX?: number; normalY?: number; normalZ?: number }
   muzzle: { color: string; intensity: number; range: number; duration: number }
   projectile: { type: 'bullet' | 'shell'; color: string; size: number; speed: number; arcHeight: number }
   impact: { type: 'sparks' | 'fire' | 'dust' | 'explosion'; color: string; size: number; particles: number; lifetime: number }
@@ -614,18 +614,33 @@ function removeOverlays() {
 /** Get the horizontal fire direction in world space.
  *  Uses the picked face normal if available, otherwise model forward + turret yaw. */
 function getFireDirection(): THREE.Vector3 {
-  // If a face was picked, use its normal transformed to world space
-  if (firePointAttachment) {
-    const worldNormal = firePointAttachment.localNormal.clone()
-    // Transform local normal to world space through the attachment bone
-    const boneQ = new THREE.Quaternion()
-    firePointAttachment.bone.getWorldQuaternion(boneQ)
-    worldNormal.applyQuaternion(boneQ)
-    // Flatten to horizontal
-    worldNormal.y = 0
-    if (worldNormal.lengthSq() > 0.001) {
-      worldNormal.normalize()
-      return worldNormal
+  // Use saved face normal — either from live pick or restored from config
+  const localNormal = firePointAttachment
+    ? firePointAttachment.localNormal
+    : (effects.firePoint.normalX !== undefined
+      ? new THREE.Vector3(effects.firePoint.normalX, effects.firePoint.normalY ?? 0, effects.firePoint.normalZ ?? 0)
+      : null)
+
+  if (localNormal && localNormal.lengthSq() > 0.001) {
+    // Find the bone to transform through
+    let bone: THREE.Object3D | null = firePointAttachment?.bone ?? null
+    if (!bone && effects.firePoint.boneName && currentModel) {
+      currentModel.traverse((child) => {
+        if (child.name === effects.firePoint.boneName) bone = child
+      })
+    }
+    if (!bone) bone = barrelBone || turretBone || currentModel
+
+    if (bone) {
+      const worldNormal = localNormal.clone()
+      const boneQ = new THREE.Quaternion()
+      bone.getWorldQuaternion(boneQ)
+      worldNormal.applyQuaternion(boneQ)
+      worldNormal.y = 0
+      if (worldNormal.lengthSq() > 0.001) {
+        worldNormal.normalize()
+        return worldNormal
+      }
     }
   }
 
@@ -1768,6 +1783,9 @@ function wirePickFace() {
     effects.firePoint.y = localOffset.y
     effects.firePoint.z = localOffset.z
     effects.firePoint.boneName = (attachParent as THREE.Bone).isBone ? attachParent.name : undefined
+    effects.firePoint.normalX = localNormal.x
+    effects.firePoint.normalY = localNormal.y
+    effects.firePoint.normalZ = localNormal.z
 
     const boneName = effects.firePoint.boneName || 'mesh root'
     pickInfo.style.display = 'block'
