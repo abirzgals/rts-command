@@ -119,6 +119,21 @@ export function movementSystem(world: IWorld, dt: number) {
 
     if (repathCooldown[eid] > 0) repathCooldown[eid] -= dt
 
+    // If MoveTarget changed while following a path, cancel and repath
+    if (hasComponent(world, MoveTarget, eid)) {
+      const pathId = PathFollower.pathId[eid]
+      const path = getPath(pathId)
+      if (path && path.length > 0) {
+        const lastWp = path[path.length - 1]
+        const dx = MoveTarget.x[eid] - lastWp.x
+        const dz = MoveTarget.z[eid] - lastWp.z
+        if (dx * dx + dz * dz > 4) { // target moved > 2 units from path end
+          forceRepath(world, eid, pathId)
+          continue
+        }
+      }
+    }
+
     const pathId = PathFollower.pathId[eid]
     const path = getPath(pathId)
 
