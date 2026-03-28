@@ -165,7 +165,12 @@ const overlayVisibility: Record<string, boolean> = {
   collisionBoundary: true,
   firePoint: true,
   hpBar: true,
+  processEvents: false,
 }
+
+// Track which events already fired this animation loop to avoid re-triggering
+const firedEventIds = new Set<number>()
+let lastAnimTime = -1
 
 // ─── Live Effects ──────────────────────────────────────────────────────────
 
@@ -858,6 +863,7 @@ function wireOverlayToggles() {
     { key: 'collisionBoundary', label: 'Collision Boundary' },
     { key: 'firePoint', label: 'Fire Point' },
     { key: 'hpBar', label: 'HP Bar Preview' },
+    { key: 'processEvents', label: 'Process Events' },
   ]
 
   for (const def of overlayDefs) {
@@ -973,6 +979,8 @@ function playClip(name: string) {
   nextAction.play()
   activeAction = nextAction
   activeClipName = name
+  firedEventIds.clear()
+  lastAnimTime = -1
 
   // Highlight in clip list
   document.querySelectorAll('.clip-item').forEach(el => {
@@ -1838,6 +1846,38 @@ function wireAnimEvents() {
   ;(window as any).__selectEvent = selectEvent
 }
 
+function triggerEvent(evt: AnimEvent) {
+  switch (evt.type) {
+    case 'shot':
+      fireEffect()
+      launchEffect()
+      break
+    case 'muzzle_flash':
+      fireEffect()
+      break
+    case 'impact':
+    case 'melee_hit':
+      explodeEffect()
+      break
+    case 'death':
+      puffEffect()
+      break
+    default:
+      // For custom events or others, fire muzzle + projectile
+      if (evt.type.startsWith('custom_')) {
+        fireEffect()
+      }
+      break
+  }
+
+  // Flash the event in the list
+  const item = document.querySelector(`.event-item[data-id="${evt.id}"]`)
+  if (item) {
+    item.classList.add('selected')
+    setTimeout(() => item.classList.remove('selected'), 300)
+  }
+}
+
 function previewEvent(evt: AnimEvent) {
   if (!evt.animation || !currentActions.has(evt.animation)) return
 
@@ -2108,12 +2148,33 @@ function animate() {
     currentMixer.update(dt)
   }
 
-  // Update timeline scrubber
+  // Update timeline scrubber + process animation events
   if (activeAction) {
     const clip = activeAction.getClip()
-    const progress = clip.duration > 0 ? (activeAction.time % clip.duration) / clip.duration : 0
+    const currentTime = activeAction.time % clip.duration
+    const progress = clip.duration > 0 ? currentTime / clip.duration : 0
     const progressEl = document.getElementById('anim-progress')
     if (progressEl) progressEl.style.width = (progress * 100) + '%'
+
+    // Detect animation loop restart → clear fired events
+    if (currentTime < lastAnimTime - 0.1) {
+      firedEventIds.clear()
+    }
+    lastAnimTime = currentTime
+
+    // Process events if enabled and animation is playing (not paused)
+    if (overlayVisibility.processEvents && !activeAction.paused) {
+      for (const evt of animEvents) {
+        if (!evt.animation || evt.animation !== activeClipName) continue
+        if (firedEventIds.has(evt.id)) continue
+
+        // Check if current time has crossed the event time
+        if (currentTime >= evt.time) {
+          firedEventIds.add(evt.id)
+          triggerEvent(evt)
+        }
+      }
+    }
   }
 
   // Update fire direction arrow position and direction each frame
