@@ -113,6 +113,20 @@ interface AttachmentInfo {
 let muzzleAttachment: AttachmentInfo | null = null
 let projectileAttachment: AttachmentInfo | null = null
 
+// ─── Animation Events ────────────────────────────────────────────────────
+
+interface AnimEvent {
+  id: number
+  type: string
+  label: string
+  animation: string | null  // null = not attached
+  time: number              // seconds within the animation
+}
+
+let animEvents: AnimEvent[] = []
+let nextEventId = 1
+let selectedEventId: number | null = null
+
 // ─── Three.js Core ─────────────────────────────────────────────────────────
 
 let renderer: THREE.WebGLRenderer
@@ -249,6 +263,7 @@ function init() {
   wireTurretControls()
   wireEffectControls()
   wirePickFace()
+  wireAnimEvents()
   wireBottomBar()
   wireExportModal()
 
@@ -337,9 +352,14 @@ async function loadModel(modelKey: string) {
   barrelBone = null
   muzzleAttachment = null
   projectileAttachment = null
-  // Hide pick info
+  animEvents = []
+  selectedEventId = null
+  // Hide pick info & reset events UI
   const pickInfo = document.getElementById('pick-info')
   if (pickInfo) pickInfo.style.display = 'none'
+  const editPanel = document.getElementById('event-edit-panel')
+  if (editPanel) editPanel.style.display = 'none'
+  if ((window as any).__renderEventsList) (window as any).__renderEventsList()
 
   // Load or use cache
   let gltf = gltfCache.get(def.modelUrl)
@@ -1650,6 +1670,189 @@ function highlightFace(hit: THREE.Intersection) {
   }, 1000)
 }
 
+// ─── Animation Events ─────────────────────────────────────────────────────
+
+function wireAnimEvents() {
+  const addBtn = document.getElementById('add-event-btn')!
+  const typeSelect = document.getElementById('new-event-type') as HTMLSelectElement
+  const eventsList = document.getElementById('events-list')!
+  const editPanel = document.getElementById('event-edit-panel')!
+  const editTitle = document.getElementById('event-edit-title')!
+  const animSelect = document.getElementById('event-anim-select') as HTMLSelectElement
+  const timeSlider = document.getElementById('event-time') as HTMLInputElement
+  const timeVal = document.getElementById('event-time-val') as HTMLInputElement
+  const previewBtn = document.getElementById('event-preview-btn')!
+  const detachBtn = document.getElementById('event-detach-btn')!
+  const deleteBtn = document.getElementById('event-delete-btn')!
+
+  addBtn.addEventListener('click', () => {
+    let type = typeSelect.value
+    let label = typeSelect.options[typeSelect.selectedIndex].text
+    if (type === 'custom') {
+      const name = prompt('Custom event name:')
+      if (!name) return
+      type = 'custom_' + name.toLowerCase().replace(/\s+/g, '_')
+      label = name
+    }
+
+    const evt: AnimEvent = {
+      id: nextEventId++,
+      type,
+      label,
+      animation: null,
+      time: 0,
+    }
+    animEvents.push(evt)
+    renderEventsList()
+    selectEvent(evt.id)
+  })
+
+  timeSlider.addEventListener('input', () => {
+    const evt = animEvents.find(e => e.id === selectedEventId)
+    if (!evt) return
+    evt.time = parseFloat(timeSlider.value)
+    timeVal.value = evt.time.toFixed(2) + 's'
+    renderEventsList()
+  })
+
+  animSelect.addEventListener('change', () => {
+    const evt = animEvents.find(e => e.id === selectedEventId)
+    if (!evt) return
+    const val = animSelect.value
+    evt.animation = val || null
+    if (val && currentActions.has(val)) {
+      // Update time slider max to clip duration
+      const clip = currentActions.get(val)!.getClip()
+      timeSlider.max = String(clip.duration)
+      if (evt.time > clip.duration) {
+        evt.time = 0
+        timeSlider.value = '0'
+        timeVal.value = '0.00s'
+      }
+    }
+    renderEventsList()
+  })
+
+  previewBtn.addEventListener('click', () => {
+    const evt = animEvents.find(e => e.id === selectedEventId)
+    if (!evt || !evt.animation) return
+    previewEvent(evt)
+  })
+
+  detachBtn.addEventListener('click', () => {
+    const evt = animEvents.find(e => e.id === selectedEventId)
+    if (!evt) return
+    evt.animation = null
+    evt.time = 0
+    renderEventsList()
+    selectEvent(evt.id)
+  })
+
+  deleteBtn.addEventListener('click', () => {
+    animEvents = animEvents.filter(e => e.id !== selectedEventId)
+    selectedEventId = null
+    editPanel.style.display = 'none'
+    renderEventsList()
+  })
+
+  function selectEvent(id: number) {
+    selectedEventId = id
+    const evt = animEvents.find(e => e.id === id)
+    if (!evt) { editPanel.style.display = 'none'; return }
+
+    editPanel.style.display = 'block'
+    editTitle.textContent = 'Edit: ' + evt.label
+
+    // Populate animation dropdown with available clips
+    animSelect.innerHTML = '<option value="">(not attached)</option>'
+    for (const [name] of currentActions) {
+      const opt = document.createElement('option')
+      opt.value = name
+      opt.textContent = name
+      if (evt.animation === name) opt.selected = true
+      animSelect.appendChild(opt)
+    }
+
+    // Set time slider
+    if (evt.animation && currentActions.has(evt.animation)) {
+      const clip = currentActions.get(evt.animation)!.getClip()
+      timeSlider.max = String(clip.duration)
+    } else {
+      timeSlider.max = '2'
+    }
+    timeSlider.value = String(evt.time)
+    timeVal.value = evt.time.toFixed(2) + 's'
+
+    // Highlight in list
+    eventsList.querySelectorAll('.event-item').forEach(el => {
+      el.classList.toggle('selected', el.getAttribute('data-id') === String(id))
+    })
+  }
+
+  function renderEventsList() {
+    eventsList.innerHTML = ''
+    for (const evt of animEvents) {
+      const item = document.createElement('div')
+      item.className = `event-item ${evt.id === selectedEventId ? 'selected' : ''}`
+      item.setAttribute('data-id', String(evt.id))
+
+      const dot = document.createElement('div')
+      dot.className = `event-dot ${evt.animation ? 'attached' : 'detached'}`
+
+      const name = document.createElement('span')
+      name.className = `event-name ${evt.animation ? '' : 'detached'}`
+      name.textContent = evt.label
+
+      const info = document.createElement('span')
+      info.className = 'event-info'
+      if (evt.animation) {
+        info.textContent = evt.animation.replace(/.*\|/, '') + ' @ ' + evt.time.toFixed(2) + 's'
+      } else {
+        info.textContent = 'not attached'
+      }
+
+      item.appendChild(dot)
+      item.appendChild(name)
+      item.appendChild(info)
+
+      item.addEventListener('click', () => {
+        selectEvent(evt.id)
+        // If attached, jump to that animation + time
+        if (evt.animation) {
+          previewEvent(evt)
+        }
+      })
+
+      eventsList.appendChild(item)
+    }
+  }
+
+  // Expose for external use
+  ;(window as any).__renderEventsList = renderEventsList
+  ;(window as any).__selectEvent = selectEvent
+}
+
+function previewEvent(evt: AnimEvent) {
+  if (!evt.animation || !currentActions.has(evt.animation)) return
+
+  // Switch to the animation
+  playClip(evt.animation)
+
+  // Seek to the event time
+  if (activeAction) {
+    activeAction.time = evt.time
+    activeAction.paused = true
+    activeAction.play()
+    if (currentMixer) currentMixer.update(0)
+  }
+
+  // Update anim dropdown in animation panel
+  const animSel = document.getElementById('anim-select') as HTMLSelectElement
+  animSel.value = evt.animation
+
+  showStatus(`Event "${evt.label}" @ ${evt.time.toFixed(2)}s in ${evt.animation}`)
+}
+
 // ─── Bottom Bar ────────────────────────────────────────────────────────────
 
 function wireBottomBar() {
@@ -1746,6 +1949,16 @@ function buildExportJSON(): string {
     }
   }
   exportObj.faction = currentFaction
+
+  // Include animation events
+  if (animEvents.length > 0) {
+    exportObj.events = animEvents.map(e => ({
+      type: e.type,
+      label: e.label,
+      animation: e.animation,
+      time: e.time,
+    }))
+  }
 
   return JSON.stringify(exportObj, null, 2)
 }

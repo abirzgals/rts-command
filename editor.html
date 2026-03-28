@@ -191,6 +191,25 @@
     @keyframes pickPulse { 0%,100% { box-shadow: 0 0 4px #f85149; } 50% { box-shadow: 0 0 12px #f85149; } }
     #editor-canvas.pick-mode { cursor: crosshair; }
 
+    /* ── Event Items ─────────────────────────────────────────── */
+    .event-item {
+      display: flex; align-items: center; gap: 6px;
+      padding: 5px 8px; margin-bottom: 3px;
+      background: #0d1117; border: 1px solid #21262d;
+      border-radius: 5px; cursor: pointer;
+      font-size: 11px; transition: all 0.15s;
+    }
+    .event-item:hover { border-color: #30363d; background: #161b22; }
+    .event-item.selected { border-color: #58a6ff; background: #1f6feb15; }
+    .event-item .event-dot {
+      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+    }
+    .event-item .event-dot.attached { background: #3fb950; }
+    .event-item .event-dot.detached { background: #f85149; }
+    .event-item .event-name { flex: 1; color: #c9d1d9; }
+    .event-item .event-name.detached { color: #f85149; }
+    .event-item .event-info { color: #8b949e; font-size: 10px; }
+
     /* ── Dropdowns ────────────────────────────────────────────── */
     .select-wrap select {
       width: 100%; padding: 6px 8px;
@@ -470,6 +489,48 @@
           <span class="stat-label">Barrel Pitch</span>
           <input type="range" class="stat-slider" id="barrel-pitch" min="-30" max="30" step="1" value="0">
           <input type="text" class="stat-input" id="barrel-pitch-val" value="0" readonly>
+        </div>
+      </div>
+
+      <!-- Animation Events -->
+      <div class="panel-section" id="events-section">
+        <div class="section-title"><span class="icon">&#9889;</span> Animation Events</div>
+        <div style="display:flex;gap:4px;margin-bottom:8px">
+          <select id="new-event-type" style="flex:1;background:#0d1117;border:1px solid #21262d;color:#c9d1d9;border-radius:4px;padding:3px 6px;font-size:11px">
+            <option value="shot">Shot</option>
+            <option value="muzzle_flash">Muzzle Flash</option>
+            <option value="impact">Impact</option>
+            <option value="reload_start">Reload Start</option>
+            <option value="reload_end">Reload End</option>
+            <option value="footstep">Footstep</option>
+            <option value="melee_hit">Melee Hit</option>
+            <option value="death">Death</option>
+            <option value="spawn">Spawn</option>
+            <option value="custom">Custom...</option>
+          </select>
+          <button class="btn small success" id="add-event-btn">+ Add</button>
+        </div>
+        <div id="events-list" style="max-height:200px;overflow-y:auto">
+          <!-- Populated by JS -->
+        </div>
+        <div id="event-edit-panel" style="display:none;margin-top:8px;padding:8px;background:#0d1117;border:1px solid #21262d;border-radius:6px">
+          <div style="font-size:11px;color:#58a6ff;margin-bottom:6px;font-weight:600" id="event-edit-title">Edit Event</div>
+          <div class="stat-row">
+            <span class="stat-label">Animation</span>
+            <select id="event-anim-select" style="flex:1;background:#161b22;border:1px solid #21262d;color:#c9d1d9;border-radius:4px;padding:3px;font-size:11px">
+              <option value="">(not attached)</option>
+            </select>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Time</span>
+            <input type="range" class="stat-slider" id="event-time" min="0" max="2" step="0.01" value="0">
+            <input type="text" class="stat-input" id="event-time-val" value="0.00s" readonly>
+          </div>
+          <div style="display:flex;gap:4px;margin-top:6px">
+            <button class="btn small" id="event-preview-btn">&#9654; Preview</button>
+            <button class="btn small danger" id="event-detach-btn">Detach</button>
+            <button class="btn small danger" id="event-delete-btn">&#10005; Delete</button>
+          </div>
         </div>
       </div>
 
