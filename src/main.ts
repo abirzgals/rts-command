@@ -188,7 +188,7 @@ function spawnMapObstacles(world: IWorld) {
       const [wx, wz] = gridToWorld(gx, gz)
       if (getTerrainTypeAt(wx, wz) === T_CLIFF && distToBase(wx, wz) > 25) {
         if (rand() < 0.35) {
-          spawnObstacle(world, 25, wx + (rand() - 0.5) * 1.5, wz + (rand() - 0.5) * 1.5, 2.0)
+          spawnObstacle(world, 25, wx + (rand() - 0.5) * 1.5, wz + (rand() - 0.5) * 1.5)
         }
       }
     }
@@ -209,7 +209,7 @@ function spawnMapObstacles(world: IWorld) {
         const ox = wx + (rand() - 0.5) * 3
         const oz = wz + (rand() - 0.5) * 3
         if (getTerrainTypeAt(ox, oz) !== T_WATER) {
-          spawnObstacle(world, rand() < 0.5 ? 22 : 24, ox, oz, 1.2)
+          spawnObstacle(world, rand() < 0.5 ? 22 : 24, ox, oz)
         }
       }
     }
@@ -230,7 +230,7 @@ function spawnMapObstacles(world: IWorld) {
         const ox = wx + (rand() - 0.5) * 2.5
         const oz = wz + (rand() - 0.5) * 2.5
         if (getTerrainTypeAt(ox, oz) !== T_WATER && distToBase(ox, oz) > 20) {
-          spawnObstacle(world, 23, ox, oz, 0.8)
+          spawnObstacle(world, 23, ox, oz)
         }
       }
     }
@@ -250,7 +250,7 @@ function spawnMapObstacles(world: IWorld) {
       const wz = wall.cz + Math.sin(wall.angle) * t + (rand() - 0.5) * 1.5
       const tt = getTerrainTypeAt(wx, wz)
       if (tt !== T_WATER && distToBase(wx, wz) > 15) {
-        spawnObstacle(world, rand() < 0.4 ? 25 : 24, wx, wz, 1.8)
+        spawnObstacle(world, rand() < 0.4 ? 25 : 24, wx, wz)
       }
     }
   }

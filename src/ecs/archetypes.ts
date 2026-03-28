@@ -11,7 +11,7 @@ import {
   UNIT_DEFS, BUILDING_DEFS, FACTION_PLAYER, UT_WORKER,
   type UnitDef, type BuildingDef,
 } from '../game/config'
-import { getPool, getFactionColor } from '../render/meshPools'
+import { getPool, getFactionColor, editorConfig } from '../render/meshPools'
 import { getAnimManager } from '../render/animatedMeshManager'
 import { spatialHash } from '../globals'
 import { getTerrainHeight } from '../terrain/heightmap'
@@ -321,12 +321,17 @@ export function spawnArcProjectile(
 }
 
 /** Obstacle types: 22=rock, 23=tree, 24=boulder, 25=cliff_rock */
+// Map pool IDs to editor config keys for obstacles
+const OBSTACLE_POOL_TO_KEY: Record<number, string> = {
+  22: 'rock1', 23: 'tree1', 24: 'boulder', 25: 'rock2',
+}
+
 export function spawnObstacle(
   world: IWorld,
   poolId: number,
   x: number,
   z: number,
-  blockRadius = 1.5,
+  blockRadius?: number,
 ): number {
   const eid = addEntity(world)
   const y = getTerrainHeight(x, z)
@@ -348,8 +353,14 @@ export function spawnObstacle(
     MeshRef.instanceIdx[eid] = idx
   }
 
-  // Block navigation grid
-  blockCells(x, z, blockRadius)
+  // Block radius: editor config > explicit param > auto-calculate from model scale
+  const cfgKey = OBSTACLE_POOL_TO_KEY[poolId]
+  const cfgEntry = cfgKey ? editorConfig?.[cfgKey] : null
+  const radius = blockRadius
+    ?? cfgEntry?.collisionRadius
+    ?? (cfgEntry?.scale ? cfgEntry.scale * 0.4 : 0.8)
+
+  blockCells(x, z, radius)
 
   return eid
 }
