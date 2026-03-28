@@ -67,7 +67,7 @@ class BinaryHeap {
 
 // ── A* constants ─────────────────────────────────────────────
 const SQRT2 = Math.SQRT2
-const MAX_EXPANSIONS = 12000
+const MAX_EXPANSIONS = 30000
 
 // 8-direction neighbors: dx, dz, cost multiplier
 const DIRS: [number, number, number][] = [
@@ -153,8 +153,9 @@ export function findPath(
   ignoreDynamic = false,
   unitRadius = 0,
 ): Waypoint[] | null {
-  // Convert unit radius to grid cells for clearance checks
-  const clearance = Math.ceil(unitRadius / CELL_SIZE)
+  // Convert unit radius to grid cells for clearance checks.
+  // Only large units (radius > 0.8) need clearance — small units fit in one cell.
+  const clearance = unitRadius > 0.8 ? Math.floor(unitRadius / CELL_SIZE) : 0
 
   let [sx, sz] = worldToGrid(startX, startZ)
   const [gx, gz] = worldToGrid(goalX, goalZ)
