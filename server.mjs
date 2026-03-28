@@ -76,12 +76,8 @@ app.delete('/api/maps/:name', (req, res) => {
   res.json({ ok: true })
 })
 
-// ─── SPA fallback ─────────────────────────────────────────────────────
-app.get('*', (req, res) => {
-  const file = path.join(__dirname, 'dist', req.path)
-  if (fs.existsSync(file) && fs.statSync(file).isFile()) {
-    return res.sendFile(file)
-  }
+// ─── SPA fallback (Express 5 syntax) ──────────────────────────────────
+app.get('/{*path}', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'))
 })
 
