@@ -1,4 +1,4 @@
-import { GRID_RES, worldToGrid, gridToWorld } from '../terrain/heightmap'
+import { GRID_RES, worldToGrid, gridToWorld, CELL_SIZE } from '../terrain/heightmap'
 import { walkable, moveCost, dynamicCost, isWalkable } from './navGrid'
 import type { Waypoint } from './pathStore'
 
@@ -82,6 +82,7 @@ const cameFrom = new Int32Array(GRID_RES * GRID_RES)
 const visited = new Uint32Array(GRID_RES * GRID_RES)
 const inOpen = new Uint8Array(GRID_RES * GRID_RES)
 let generation = 0
+let currentClearance = 0  // set during findPath, used by smoothPath
 
 function idx(gx: number, gz: number) { return gz * GRID_RES + gx }
 
@@ -92,12 +93,28 @@ function heuristic(ax: number, az: number, bx: number, bz: number): number {
   return Math.max(dx, dz) + (SQRT2 - 1) * Math.min(dx, dz)
 }
 
+/** Check if a cell has clearance for a unit of given grid radius */
+function hasClearance(gx: number, gz: number, clearance: number): boolean {
+  if (clearance <= 0) return isWalkable(gx, gz)
+  for (let dz = -clearance; dz <= clearance; dz++) {
+    for (let dx = -clearance; dx <= clearance; dx++) {
+      if (dx * dx + dz * dz > clearance * clearance) continue
+      if (!isWalkable(gx + dx, gz + dz)) return false
+    }
+  }
+  return true
+}
+
 // ── Main A* function ─────────────────────────────────────────
 export function findPath(
   startX: number, startZ: number,
   goalX: number, goalZ: number,
   ignoreDynamic = false,
+  unitRadius = 0,
 ): Waypoint[] | null {
+  // Convert unit radius to grid cells for clearance checks
+  const clearance = Math.ceil(unitRadius / CELL_SIZE)
+
   let [sx, sz] = worldToGrid(startX, startZ)
   const [gx, gz] = worldToGrid(goalX, goalZ)
 
@@ -118,6 +135,7 @@ export function findPath(
 
   if (sx === tgx && sz === tgz) return []
 
+  currentClearance = clearance
   generation++
   const heap = new BinaryHeap(GRID_RES * GRID_RES)
 
@@ -153,9 +171,12 @@ export function findPath(
       const ni = idx(nx, nz)
       if (walkable[ni] === 0) continue
 
+      // Check clearance for unit radius
+      if (clearance > 0 && !hasClearance(nx, nz, clearance)) continue
+
       // Prevent corner cutting through diagonals
       if (dx !== 0 && dz !== 0) {
-        if (!isWalkable(cx + dx, cz) || !isWalkable(cx, cz + dz)) continue
+        if (!hasClearance(cx + dx, cz, clearance) || !hasClearance(cx, cz + dz, clearance)) continue
       }
 
       const cost = baseCost * (moveCost[ni] + (ignoreDynamic ? 0 : dynamicCost[ni]))
@@ -237,12 +258,12 @@ function hasLineOfSight(x1: number, z1: number, x2: number, z2: number): boolean
   let cx = gx1, cz = gz1
 
   while (cx !== gx2 || cz !== gz2) {
-    if (!isWalkable(cx, cz)) return false
+    if (!hasClearance(cx, cz, currentClearance)) return false
     const e2 = 2 * err
     if (e2 > -dz) { err -= dz; cx += sx }
     if (e2 < dx) { err += dx; cz += sz }
   }
-  return isWalkable(gx2, gz2)
+  return hasClearance(gx2, gz2, currentClearance)
 }
 
 function findNearestWalkable(gx: number, gz: number): [number, number] | null {

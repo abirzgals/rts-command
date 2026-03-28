@@ -115,3 +115,22 @@ export function markUnitObstacle(wx: number, wz: number, radius: number) {
     }
   }
 }
+
+const BUILDING_COST = 100  // effectively impassable — A* will route around
+
+/** Mark cells occupied by a building as very high cost (but not unwalkable, so clearance checks still work) */
+export function markBuildingObstacle(wx: number, wz: number, radius: number) {
+  const [cx, cz] = worldToGrid(wx, wz)
+  const r = Math.max(1, Math.ceil(radius / CELL_SIZE))
+  const rSq = (radius / CELL_SIZE) * (radius / CELL_SIZE)
+  for (let dz = -r; dz <= r; dz++) {
+    for (let dx = -r; dx <= r; dx++) {
+      if (dx * dx + dz * dz > rSq) continue
+      const gx = cx + dx
+      const gz = cz + dz
+      if (gx >= 0 && gx < GRID_RES && gz >= 0 && gz < GRID_RES) {
+        dynamicCost[gz * GRID_RES + gx] = BUILDING_COST
+      }
+    }
+  }
+}
