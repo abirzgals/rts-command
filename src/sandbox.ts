@@ -49,6 +49,7 @@ import { initHPBars, updateHPBars } from './render/hpBars'
 import {
   Position, Faction, Health, UnitTypeC, Dead,
   Selectable, Selected, ResourceNode,
+  MoveTarget, AttackTarget, MoveSpeed,
 } from './ecs/components'
 
 // ── Globals ─────────────────────────────────────────────────────────────────
@@ -118,15 +119,7 @@ async function init() {
   wireDragDrop()
   wireSelection()
 
-  // 9. Spawn a test pair to verify combat works
-  const testX = 0
-  const testZ = 0
-  spawnUnit(world, 1, FACTION_PLAYER, testX - 3, testZ) // Marine player
-  spawnUnit(world, 1, FACTION_ENEMY, testX + 3, testZ)  // Marine enemy
-  entityCount += 2
-  console.log('[sandbox] Spawned test pair at', testX, testZ)
-
-  // 10. Start game loop
+  // 9. Start game loop
   requestAnimationFrame(gameLoop)
 }
 
@@ -439,10 +432,21 @@ function spawnFromPayload(payload: DragPayload, x: number, z: number) {
 
 function wireSelection() {
   canvas.addEventListener('click', onCanvasClick)
+  canvas.addEventListener('contextmenu', (e) => {
+    e.preventDefault()
+    onRightClick(e)
+  })
   window.addEventListener('keydown', onKeyDown)
 }
 
 function onCanvasClick(e: MouseEvent) {
+  // If placing units from palette, don't select
+  if (mobilePlacePayload) {
+    const pos = raycastCanvasToGround(e.clientX, e.clientY)
+    if (pos) spawnFromPayload(payload_copy(mobilePlacePayload), pos.x, pos.z)
+    return
+  }
+
   // Clear previous selection
   if (selectedEntity !== null && hasComponent(world, Selected, selectedEntity)) {
     removeComponent(world, Selected, selectedEntity)
@@ -481,6 +485,49 @@ function onCanvasClick(e: MouseEvent) {
     selectedEntity = bestEid
     if (hasComponent(world, Selectable, bestEid)) {
       addComponent(world, Selected, bestEid)
+    }
+  }
+}
+
+function onRightClick(e: MouseEvent) {
+  if (selectedEntity === null) return
+  if (!hasComponent(world, Position, selectedEntity)) return
+  if (hasComponent(world, Dead, selectedEntity)) return
+
+  const pos = raycastCanvasToGround(e.clientX, e.clientY)
+  if (!pos) return
+
+  // Check if right-clicked on an enemy → attack-move
+  const nearby: number[] = []
+  spatialHash.query(pos.x, pos.z, 2.0, nearby)
+  const myFaction = hasComponent(world, Faction, selectedEntity) ? Faction.id[selectedEntity] : -1
+
+  let targetEid = -1
+  let targetDist = Infinity
+  for (const eid of nearby) {
+    if (eid === selectedEntity) continue
+    if (hasComponent(world, Dead, eid)) continue
+    if (!hasComponent(world, Faction, eid)) continue
+    if (Faction.id[eid] === myFaction) continue
+    if (!hasComponent(world, Health, eid)) continue
+    const dx = Position.x[eid] - pos.x
+    const dz = Position.z[eid] - pos.z
+    const d = Math.sqrt(dx * dx + dz * dz)
+    if (d < targetDist) { targetDist = d; targetEid = eid }
+  }
+
+  if (targetEid >= 0 && targetDist < 3) {
+    // Attack target
+    addComponent(world, AttackTarget, selectedEntity)
+    AttackTarget.eid[selectedEntity] = targetEid
+  } else if (hasComponent(world, MoveSpeed, selectedEntity)) {
+    // Move to position
+    addComponent(world, MoveTarget, selectedEntity)
+    MoveTarget.x[selectedEntity] = pos.x
+    MoveTarget.z[selectedEntity] = pos.z
+    // Clear attack target
+    if (hasComponent(world, AttackTarget, selectedEntity)) {
+      removeComponent(world, AttackTarget, selectedEntity)
     }
   }
 }

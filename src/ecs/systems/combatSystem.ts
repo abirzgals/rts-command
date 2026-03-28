@@ -1,7 +1,7 @@
 import { defineQuery, hasComponent, addComponent, removeComponent } from 'bitecs'
 import type { IWorld } from 'bitecs'
 import {
-  Position, Faction, Health, AttackC, AttackTarget, MoveTarget,
+  Position, Rotation, Faction, Health, AttackC, AttackTarget, MoveTarget,
   Dead, IsBuilding, MoveSpeed, Armor,
 } from '../components'
 import { spawnProjectile, spawnArcProjectile } from '../archetypes'
@@ -47,9 +47,13 @@ export function combatSystem(world: IWorld, dt: number) {
       const dist = Math.sqrt(dx * dx + dz * dz)
 
       if (dist <= range) {
-        // In range — attack
+        // In range — face target and attack
         if (hasComponent(world, MoveTarget, eid) && !hasComponent(world, IsBuilding, eid)) {
           removeComponent(world, MoveTarget, eid)
+        }
+        // Turn to face the target
+        if (hasComponent(world, Rotation, eid) && dist > 0.1) {
+          Rotation.y[eid] = Math.atan2(dx, dz)
         }
         tryAttack(world, eid, targetEid, dist)
       } else {
