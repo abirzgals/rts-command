@@ -433,13 +433,117 @@ function spawnFromPayload(payload: DragPayload, x: number, z: number) {
 //  Click Selection & Deletion
 // ═══════════════════════════════════════════════════════════════════════════
 
+// ── Box selection state ──
+let isDragging = false
+let dragStartX = 0
+let dragStartY = 0
+const selBox = document.getElementById('selection-box')!
+
 function wireSelection() {
-  canvas.addEventListener('click', onCanvasClick)
+  canvas.addEventListener('mousedown', onMouseDown)
+  canvas.addEventListener('mousemove', onMouseMove)
+  canvas.addEventListener('mouseup', onMouseUp)
   canvas.addEventListener('contextmenu', (e) => {
     e.preventDefault()
     onRightClick(e)
   })
   window.addEventListener('keydown', onKeyDown)
+}
+
+function onMouseDown(e: MouseEvent) {
+  if (e.button !== 0) return
+  // If placing from palette, place immediately
+  if (mobilePlacePayload) {
+    const pos = raycastCanvasToGround(e.clientX, e.clientY)
+    if (pos) spawnFromPayload(payload_copy(mobilePlacePayload), pos.x, pos.z)
+    return
+  }
+  isDragging = true
+  dragStartX = e.clientX
+  dragStartY = e.clientY
+  selBox.style.display = 'none'
+}
+
+function onMouseMove(e: MouseEvent) {
+  if (!isDragging) return
+  const dx = e.clientX - dragStartX
+  const dy = e.clientY - dragStartY
+  // Only show box if dragged more than 5px
+  if (Math.abs(dx) < 5 && Math.abs(dy) < 5) return
+
+  selBox.style.display = 'block'
+  selBox.style.left = Math.min(dragStartX, e.clientX) + 'px'
+  selBox.style.top = Math.min(dragStartY, e.clientY) + 'px'
+  selBox.style.width = Math.abs(dx) + 'px'
+  selBox.style.height = Math.abs(dy) + 'px'
+}
+
+function onMouseUp(e: MouseEvent) {
+  if (e.button !== 0) return
+  if (!isDragging) return
+  isDragging = false
+
+  const dx = Math.abs(e.clientX - dragStartX)
+  const dy = Math.abs(e.clientY - dragStartY)
+
+  if (dx < 5 && dy < 5) {
+    // Single click — select one entity
+    selBox.style.display = 'none'
+    onCanvasClick(e)
+    return
+  }
+
+  // Box select — find all entities within the screen-space rectangle
+  selBox.style.display = 'none'
+
+  // Clear previous selection
+  if (selectedEntity !== null && hasComponent(world, Selected, selectedEntity)) {
+    removeComponent(world, Selected, selectedEntity)
+  }
+  selectedEntity = null
+
+  const rect = canvas.getBoundingClientRect()
+  const x1 = Math.min(dragStartX, e.clientX)
+  const y1 = Math.min(dragStartY, e.clientY)
+  const x2 = Math.max(dragStartX, e.clientX)
+  const y2 = Math.max(dragStartY, e.clientY)
+
+  // Raycast corners to get world-space bounds
+  const topLeft = raycastCanvasToGround(x1, y1)
+  const botRight = raycastCanvasToGround(x2, y2)
+  if (!topLeft || !botRight) return
+
+  const minX = Math.min(topLeft.x, botRight.x)
+  const maxX = Math.max(topLeft.x, botRight.x)
+  const minZ = Math.min(topLeft.z, botRight.z)
+  const maxZ = Math.max(topLeft.z, botRight.z)
+
+  // Query spatial hash for the area
+  const cx = (minX + maxX) / 2
+  const cz = (minZ + maxZ) / 2
+  const range = Math.max(maxX - minX, maxZ - minZ) / 2 + 2
+  const nearby: number[] = []
+  spatialHash.query(cx, cz, range, nearby)
+
+  // Select all entities within the box using screen-space check
+  let firstSelected = -1
+  for (const eid of nearby) {
+    if (hasComponent(world, Dead, eid)) continue
+    if (!hasComponent(world, Position, eid)) continue
+    if (!hasComponent(world, Selectable, eid)) continue
+
+    // Project to screen and check if inside box
+    const sv = new THREE.Vector3(Position.x[eid], Position.y[eid] + 1, Position.z[eid])
+    sv.project(camera)
+    const sx = ((sv.x + 1) / 2) * rect.width + rect.left
+    const sy = ((-sv.y + 1) / 2) * rect.height + rect.top
+
+    if (sx >= x1 && sx <= x2 && sy >= y1 && sy <= y2) {
+      addComponent(world, Selected, eid)
+      if (firstSelected < 0) firstSelected = eid
+    }
+  }
+  if (firstSelected >= 0) selectedEntity = firstSelected
 }
 
 function onCanvasClick(e: MouseEvent) {
@@ -493,25 +597,17 @@ function onCanvasClick(e: MouseEvent) {
 }
 
 function onRightClick(e: MouseEvent) {
-  if (selectedEntity === null) return
-  if (!hasComponent(world, Position, selectedEntity)) return
-  if (hasComponent(world, Dead, selectedEntity)) return
-
   const pos = raycastCanvasToGround(e.clientX, e.clientY)
   if (!pos) return
 
-  // Check if right-clicked on an enemy → attack-move
+  // Find enemy near click point
   const nearby: number[] = []
   spatialHash.query(pos.x, pos.z, 2.0, nearby)
-  const myFaction = hasComponent(world, Faction, selectedEntity) ? Faction.id[selectedEntity] : -1
 
   let targetEid = -1
   let targetDist = Infinity
   for (const eid of nearby) {
-    if (eid === selectedEntity) continue
     if (hasComponent(world, Dead, eid)) continue
-    if (!hasComponent(world, Faction, eid)) continue
-    if (Faction.id[eid] === myFaction) continue
     if (!hasComponent(world, Health, eid)) continue
     const dx = Position.x[eid] - pos.x
     const dz = Position.z[eid] - pos.z
@@ -519,18 +615,25 @@ function onRightClick(e: MouseEvent) {
     if (d < targetDist) { targetDist = d; targetEid = eid }
   }
 
-  if (targetEid >= 0 && targetDist < 3) {
-    // Attack target
-    addComponent(world, AttackTarget, selectedEntity)
-    AttackTarget.eid[selectedEntity] = targetEid
-  } else if (hasComponent(world, MoveSpeed, selectedEntity)) {
-    // Move to position
-    addComponent(world, MoveTarget, selectedEntity)
-    MoveTarget.x[selectedEntity] = pos.x
-    MoveTarget.z[selectedEntity] = pos.z
-    // Clear attack target
-    if (hasComponent(world, AttackTarget, selectedEntity)) {
-      removeComponent(world, AttackTarget, selectedEntity)
+  // Command all selected units
+  const allSelected: number[] = []
+  spatialHash.query(0, 0, 9999, allSelected)
+  for (const eid of allSelected) {
+    if (!hasComponent(world, Selected, eid)) continue
+    if (hasComponent(world, Dead, eid)) continue
+
+    const myFaction = hasComponent(world, Faction, eid) ? Faction.id[eid] : -1
+
+    if (targetEid >= 0 && targetDist < 3 && hasComponent(world, Faction, targetEid) && Faction.id[targetEid] !== myFaction) {
+      addComponent(world, AttackTarget, eid)
+      AttackTarget.eid[eid] = targetEid
+    } else if (hasComponent(world, MoveSpeed, eid)) {
+      addComponent(world, MoveTarget, eid)
+      MoveTarget.x[eid] = pos.x
+      MoveTarget.z[eid] = pos.z
+      if (hasComponent(world, AttackTarget, eid)) {
+        removeComponent(world, AttackTarget, eid)
+      }
     }
   }
 }

@@ -98,13 +98,38 @@ export class RTSCamera {
 
   private keys = new Set<string>()
   private getTerrainHeight: ((x: number, z: number) => number) | null = null
+  private lastMouseX = 0
+  private lastMouseY = 0
 
   constructor() {
     window.addEventListener('keydown', (e) => this.keys.add(e.code))
     window.addEventListener('keyup', (e) => this.keys.delete(e.code))
+    window.addEventListener('mousemove', (e) => {
+      this.lastMouseX = e.clientX
+      this.lastMouseY = e.clientY
+    })
     window.addEventListener('wheel', (e) => {
+      // Zoom toward/away from cursor position
+      const oldDist = this.distance
       this.distance += e.deltaY * 0.06
       this.distance = Math.max(this.minDistance, Math.min(this.maxDistance, this.distance))
+      const zoomFactor = 1 - this.distance / oldDist // >0 when zooming in
+
+      if (Math.abs(zoomFactor) > 0.001 && groundPlane) {
+        // Raycast cursor to ground to get world point under cursor
+        const rect = renderer.domElement.getBoundingClientRect()
+        _pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1
+        _pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
+        raycaster.setFromCamera(_pointer, camera)
+        _groundIntersects.length = 0
+        raycaster.intersectObject(groundPlane, false, _groundIntersects)
+        if (_groundIntersects.length > 0) {
+          const hit = _groundIntersects[0].point
+          // Move target toward the hit point proportionally to zoom
+          this.target.x += (hit.x - this.target.x) * zoomFactor * 0.3
+          this.target.z += (hit.z - this.target.z) * zoomFactor * 0.3
+        }
+      }
     }, { passive: true })
   }
 
