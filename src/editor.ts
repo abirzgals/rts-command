@@ -614,32 +614,25 @@ function removeOverlays() {
 /** Get the horizontal fire direction in world space.
  *  Uses the picked face normal if available, otherwise model forward + turret yaw. */
 function getFireDirection(): THREE.Vector3 {
-  // Find the bone the fire point is attached to
-  let bone: THREE.Object3D | null = firePointAttachment?.bone ?? null
-  if (!bone && effects.firePoint.boneName && currentModel) {
-    currentModel.traverse((child) => {
-      if (child.name === effects.firePoint.boneName) bone = child
-    })
-  }
-  if (!bone) bone = barrelBone || turretBone || null
+  // Dynamic direction: compute from bone center → fire point position
+  // This follows animation naturally since both transform with the bone
+  if (firePointMarker) {
+    const fpWorld = new THREE.Vector3()
+    firePointMarker.getWorldPosition(fpWorld)
 
-  // If we have a bone, use its animated forward direction (-Z in bone local space)
-  // This dynamically follows animation every frame
-  if (bone) {
-    const boneQ = new THREE.Quaternion()
-    bone.getWorldQuaternion(boneQ)
+    // Find the parent bone's world position
+    const parent = firePointMarker.parent
+    if (parent) {
+      const boneWorld = new THREE.Vector3()
+      parent.getWorldPosition(boneWorld)
 
-    // Bone's forward is its local -Z transformed to world space
-    // But for arms/hands the "forward" might be a saved normal direction
-    const localDir = (effects.firePoint.normalX !== undefined)
-      ? new THREE.Vector3(effects.firePoint.normalX, effects.firePoint.normalY ?? 0, effects.firePoint.normalZ ?? 0)
-      : new THREE.Vector3(0, 0, -1)
-
-    localDir.applyQuaternion(boneQ)
-    localDir.y = 0
-    if (localDir.lengthSq() > 0.001) {
-      localDir.normalize()
-      return localDir
+      // Direction from bone center to fire point
+      const dir = fpWorld.clone().sub(boneWorld)
+      dir.y = 0
+      if (dir.lengthSq() > 0.01) {
+        dir.normalize()
+        return dir
+      }
     }
   }
 
@@ -1757,13 +1750,25 @@ function wirePickFace() {
     const hitPoint = hit.point.clone()
     const hitNormal = hit.face ? hit.face.normal.clone() : new THREE.Vector3(0, 1, 0)
 
+    // Transform face normal from geometry space to world space
     const normalMatrix = new THREE.Matrix3().getNormalMatrix(hitMesh.matrixWorld)
     hitNormal.applyMatrix3(normalMatrix).normalize()
 
     const attachParent = findBestBone(hitMesh, hit) || currentModel
+
+    // Position: transform hit point to bone-local space
     const parentWorldInv = new THREE.Matrix4().copy(attachParent.matrixWorld).invert()
     const localOffset = hitPoint.clone().applyMatrix4(parentWorldInv)
-    const localNormal = hitNormal.clone().transformDirection(parentWorldInv)
+
+    // Normal: for skinned meshes, hit.face.normal is from rest-pose geometry.
+    // We need the normal relative to the bone's REST orientation, not its
+    // current animated pose. Use the mesh's world matrix (which is the skinned
+    // mesh container, not affected by bones) to get the world normal, then
+    // store it as-is — getFireDirection() will use the bone's current animated
+    // quaternion to rotate it each frame.
+    // Store the world-space normal directly — getFireDirection() handles
+    // the bone transform dynamically.
+    const localNormal = hitNormal.clone()
 
     firePointAttachment = { bone: attachParent, localOffset, localNormal }
 
