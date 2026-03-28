@@ -41,11 +41,6 @@ export function pathfindingSystem(world: IWorld, _dt: number) {
     const gx = MoveTarget.x[eid]
     const gz = MoveTarget.z[eid]
 
-    // Skip very short distances — let direct movement handle them
-    const dx = gx - sx
-    const dz = gz - sz
-    if (dx * dx + dz * dz < 4) continue // less than 2 units — direct movement is fine
-
     // Workers ignore dynamic unit costs while mining
     const isWorker = hasComponent(world, WorkerC, eid)
     const radius = hasComponent(world, CollisionRadius, eid) ? CollisionRadius.value[eid] : 0.4

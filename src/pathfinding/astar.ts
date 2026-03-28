@@ -93,13 +93,26 @@ function heuristic(ax: number, az: number, bx: number, bz: number): number {
   return Math.max(dx, dz) + (SQRT2 - 1) * Math.min(dx, dz)
 }
 
-/** Check if a cell has clearance for a unit of given grid radius */
+const BUILDING_BLOCK_THRESHOLD = 50
+
+/** Check if a cell has clearance for a unit of given grid radius.
+ *  Checks both static walkability AND dynamic costs (buildings). */
 function hasClearance(gx: number, gz: number, clearance: number): boolean {
-  if (clearance <= 0) return isWalkable(gx, gz)
+  if (clearance <= 0) {
+    if (!isWalkable(gx, gz)) return false
+    const i = gz * GRID_RES + gx
+    if (i >= 0 && i < GRID_RES * GRID_RES && dynamicCost[i] >= BUILDING_BLOCK_THRESHOLD) return false
+    return true
+  }
   for (let dz = -clearance; dz <= clearance; dz++) {
     for (let dx = -clearance; dx <= clearance; dx++) {
       if (dx * dx + dz * dz > clearance * clearance) continue
-      if (!isWalkable(gx + dx, gz + dz)) return false
+      const nx = gx + dx
+      const nz = gz + dz
+      if (!isWalkable(nx, nz)) return false
+      if (nx >= 0 && nx < GRID_RES && nz >= 0 && nz < GRID_RES) {
+        if (dynamicCost[nz * GRID_RES + nx] >= BUILDING_BLOCK_THRESHOLD) return false
+      }
     }
   }
   return true
