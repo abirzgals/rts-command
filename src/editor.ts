@@ -203,7 +203,7 @@ const STAT_DEFS: StatDef[] = [
   { key: 'splash', label: 'Splash', min: 0, max: 5, step: 0.1 },
   { key: 'selectionRadius', label: 'Sel. Radius', min: 0.1, max: 3, step: 0.05 },
   { key: 'collisionRadius', label: 'Col. Radius', min: 0.1, max: 3, step: 0.05 },
-  { key: 'scale', label: 'Model Scale', min: 0.1, max: 3, step: 0.05 },
+  { key: 'scale', label: 'Model Scale', min: 0.1, max: 10, step: 0.05 },
   { key: 'rotationOffset', label: 'Rotation', min: 0, max: 6.2832, step: 0.0175, suffix: '`' },
 ]
 
@@ -282,6 +282,20 @@ function init() {
       setTimeout(() => overlay.remove(), 300)
     })
   })
+
+  // Mouse wheel on all sliders: ±0.1 per scroll tick
+  document.addEventListener('wheel', (e) => {
+    const target = e.target as HTMLElement
+    if (target.tagName === 'INPUT' && (target as HTMLInputElement).type === 'range') {
+      e.preventDefault()
+      const slider = target as HTMLInputElement
+      const delta = e.deltaY < 0 ? 0.1 : -0.1
+      const newVal = Math.max(parseFloat(slider.min), Math.min(parseFloat(slider.max),
+        parseFloat(slider.value) + delta))
+      slider.value = String(newVal)
+      slider.dispatchEvent(new Event('input'))
+    }
+  }, { passive: false })
 
   // Render loop
   requestAnimationFrame(animate)
