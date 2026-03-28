@@ -274,11 +274,13 @@ function init() {
   wireBottomBar()
   wireExportModal()
 
-  // Load first model
-  loadModel(currentKey).then(() => {
-    const overlay = document.getElementById('loading-overlay')!
-    overlay.classList.add('hidden')
-    setTimeout(() => overlay.remove(), 300)
+  // Load saved config, then load first model
+  loadConfigFromServer().then(() => {
+    loadModel(currentKey).then(() => {
+      const overlay = document.getElementById('loading-overlay')!
+      overlay.classList.add('hidden')
+      setTimeout(() => overlay.remove(), 300)
+    })
   })
 
   // Render loop
@@ -2033,7 +2035,7 @@ function previewEvent(evt: AnimEvent) {
 
 function wireBottomBar() {
   document.getElementById('save-btn')!.addEventListener('click', () => {
-    saveConfigToFile()
+    saveConfigToServer()
   })
 
   document.getElementById('export-btn')!.addEventListener('click', () => {
@@ -2169,17 +2171,69 @@ function buildFullConfigJSON(): string {
   return JSON.stringify(allConfigs, null, 2)
 }
 
-function saveConfigToFile() {
-  const json = buildFullConfigJSON()
-  const blob = new Blob([json], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = 'editor-config.json'
-  a.click()
-  URL.revokeObjectURL(url)
-  showStatus('Config saved to editor-config.json')
+const API_BASE = '/api'
+
+async function saveConfigToServer() {
+  const configObj = JSON.parse(buildFullConfigJSON())
+  try {
+    const res = await fetch(`${API_BASE}/config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(configObj),
+    })
+    const result = await res.json()
+    if (result.ok) {
+      // Also save to localStorage as fallback
+      localStorage.setItem('rts-editor-config', JSON.stringify(configObj))
+      showStatus('Saved to server — game will use this config!')
+    } else {
+      throw new Error('Server error')
+    }
+  } catch {
+    // Fallback: save to localStorage only
+    localStorage.setItem('rts-editor-config', JSON.stringify(configObj))
+    showStatus('Saved to localStorage (server unavailable)')
+  }
 }
+
+async function loadConfigFromServer() {
+  try {
+    const res = await fetch(`${API_BASE}/config`)
+    const result = await res.json()
+    if (result.data) {
+      applyLoadedConfig(result.data)
+      showStatus('Config loaded from server')
+      return
+    }
+  } catch { /* server unavailable */ }
+
+  // Fallback: try localStorage
+  const stored = localStorage.getItem('rts-editor-config')
+  if (stored) {
+    applyLoadedConfig(JSON.parse(stored))
+    showStatus('Config loaded from localStorage')
+  }
+}
+
+function applyLoadedConfig(data: Record<string, any>) {
+  // Apply saved values to ALL_MODELS
+  for (const m of ALL_MODELS) {
+    const saved = data[m.key]
+    if (!saved) continue
+    if (saved.scale !== undefined) m.scale = saved.scale
+    if (saved.rotationOffset !== undefined) m.rotationOffset = saved.rotationOffset
+    if (saved.hp !== undefined) m.hp = saved.hp
+    if (saved.speed !== undefined) m.speed = saved.speed
+    if (saved.armor !== undefined) m.armor = saved.armor
+    if (saved.damage !== undefined) m.damage = saved.damage
+    if (saved.range !== undefined) m.range = saved.range
+    if (saved.cooldown !== undefined) m.cooldown = saved.cooldown
+    if (saved.splash !== undefined) m.splash = saved.splash
+    if (saved.selectionRadius !== undefined) m.selectionRadius = saved.selectionRadius
+    if (saved.collisionRadius !== undefined) m.collisionRadius = saved.collisionRadius
+  }
+}
+
 
 function resetEffectsUI() {
   // Fire point

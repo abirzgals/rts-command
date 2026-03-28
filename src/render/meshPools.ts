@@ -20,6 +20,33 @@ import {
 import { loadModels } from './modelLoader'
 import { AnimatedMeshManager, registerAnimManager } from './animatedMeshManager'
 
+/** Load editor config from REST API, falling back to localStorage, then null */
+async function loadEditorConfig(): Promise<Record<string, any> | null> {
+  // Try REST API first
+  try {
+    const res = await fetch('/api/config')
+    if (res.ok) {
+      const result = await res.json()
+      if (result.data) {
+        console.log('[config] Loaded editor config from server')
+        return result.data
+      }
+    }
+  } catch { /* server not available */ }
+
+  // Fallback: localStorage
+  try {
+    const stored = localStorage.getItem('rts-editor-config')
+    if (stored) {
+      console.log('[config] Loaded editor config from localStorage')
+      return JSON.parse(stored)
+    }
+  } catch { /* localStorage not available */ }
+
+  console.log('[config] Using default config')
+  return null
+}
+
 /**
  * MeshPool manages an InstancedMesh for a single visual type.
  * Supports dynamic add/remove with O(1) operations via swap-remove.
@@ -211,10 +238,15 @@ export async function createMeshPools() {
   const MAX_OBSTACLES = 600
   const SHADOWS = true
 
+  // ── Load editor config (server → localStorage → defaults) ─────────
+  const editorCfg = await loadEditorConfig()
+  const cfg = (key: string, fallback: number) => editorCfg?.[key]?.scale ?? fallback
+  const rot = (key: string, fallback: number) => editorCfg?.[key]?.rotationOffset ?? fallback
+
   // ── Animated unit managers (IDs 0-2) ─────────
-  const workerMgr = new AnimatedMeshManager('/models/worker.glb', 1.0)
-  const marineMgr = new AnimatedMeshManager('/models/marine.glb', 1.0)
-  const tankMgr = new AnimatedMeshManager('/models/tank-v3.glb', 0.55, Math.PI)
+  const workerMgr = new AnimatedMeshManager('/models/worker.glb', cfg('worker', 1.0), rot('worker', 0))
+  const marineMgr = new AnimatedMeshManager('/models/marine.glb', cfg('marine', 1.0), rot('marine', 0))
+  const tankMgr = new AnimatedMeshManager('/models/tank-v3.glb', cfg('tank', 0.55), rot('tank', Math.PI))
 
   await Promise.all([workerMgr.load(), marineMgr.load(), tankMgr.load()])
 
@@ -225,17 +257,17 @@ export async function createMeshPools() {
   // Load static .glb models in parallel for buildings/resources/obstacles
   const models = await loadModels([
     // Buildings
-    { name: 'cc',        url: '/models/command-center.glb', scale: 5.0 },
-    { name: 'supply',    url: '/models/supply-depot.glb',   scale: 4.0 },
-    { name: 'barracks',  url: '/models/barracks.glb',       scale: 4.5 },
-    { name: 'factory',   url: '/models/factory.glb',        scale: 4.5 },
+    { name: 'cc',        url: '/models/command-center.glb', scale: cfg('command-center', 5.0) },
+    { name: 'supply',    url: '/models/supply-depot.glb',   scale: cfg('supply-depot', 4.0) },
+    { name: 'barracks',  url: '/models/barracks.glb',       scale: cfg('barracks', 4.5) },
+    { name: 'factory',   url: '/models/factory.glb',        scale: cfg('factory', 4.5) },
     // Resources
-    { name: 'gold',      url: '/models/gold.glb',     scale: 1.5 },
+    { name: 'gold',      url: '/models/gold.glb',     scale: cfg('minerals', 1.5) },
     // Obstacles
-    { name: 'rock1',     url: '/models/rock1.glb',    scale: 5.0 },
-    { name: 'rock2',     url: '/models/rock2.glb',    scale: 5.0 },
-    { name: 'tree1',     url: '/models/tree1.glb',    scale: 6.0 },
-    { name: 'boulder',   url: '/models/boulder.glb',  scale: 6.0 },
+    { name: 'rock1',     url: '/models/rock1.glb',    scale: cfg('rock1', 5.0) },
+    { name: 'rock2',     url: '/models/rock2.glb',    scale: cfg('rock2', 5.0) },
+    { name: 'tree1',     url: '/models/tree1.glb',    scale: cfg('tree1', 6.0) },
+    { name: 'boulder',   url: '/models/boulder.glb',  scale: cfg('boulder', 6.0) },
   ])
 
   // Helper: use loaded model or fall back to procedural

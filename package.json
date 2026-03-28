@@ -5,11 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "vite build",
+    "serve": "node server.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
     "bitecs": "^0.3.40",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
     "three": "^0.170.0"
   },
   "devDependencies": {
