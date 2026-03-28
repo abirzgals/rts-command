@@ -1199,30 +1199,27 @@ function launchEffect() {
   const mat = new THREE.MeshBasicMaterial({ color })
   const proj = new THREE.Mesh(geo, mat)
 
-  // Get world position and forward direction from the fire point marker
+  // Get world position and horizontal forward direction from the fire point marker
   const startPos = new THREE.Vector3()
   const fireDir = new THREE.Vector3(0, 0, 1) // default forward
   if (firePointMarker) {
     firePointMarker.getWorldPosition(startPos)
-    // Get the fire point's forward direction in world space (local -Z transformed)
+    // Get forward direction from the fire point's world orientation
     const fwd = new THREE.Vector3(0, 0, -1)
     firePointMarker.getWorldQuaternion(_tmpQ)
     fwd.applyQuaternion(_tmpQ)
-    // Also account for model rotation offset
-    if (currentModel) {
-      const modelQ = new THREE.Quaternion()
-      currentModel.getWorldQuaternion(modelQ)
-      // fireDir = direction the barrel/turret is pointing
-      fireDir.copy(fwd)
-    } else {
+    // Flatten to horizontal (ignore pitch so projectile doesn't shoot into ground)
+    fwd.y = 0
+    if (fwd.lengthSq() > 0.001) {
+      fwd.normalize()
       fireDir.copy(fwd)
     }
   } else {
     startPos.set(effects.firePoint.x, effects.firePoint.y, effects.firePoint.z)
   }
-  // Target = 8 units along the fire direction from start, dropping to ground
+  // Target = 8 units along horizontal fire direction, at ground level
   const endPos = startPos.clone().addScaledVector(fireDir, 8)
-  endPos.y = 0.5
+  endPos.y = 0.3
   proj.position.copy(startPos)
   scene.add(proj)
 
