@@ -232,10 +232,10 @@ export async function createMeshPools() {
     // Resources
     { name: 'gold',      url: '/models/gold.glb',     scale: 1.5 },
     // Obstacles
-    { name: 'rock1',     url: '/models/rock1.glb',    scale: 2.0 },
-    { name: 'rock2',     url: '/models/rock2.glb',    scale: 2.0 },
-    { name: 'tree1',     url: '/models/tree1.glb',    scale: 2.5 },
-    { name: 'boulder',   url: '/models/boulder.glb',  scale: 2.5 },
+    { name: 'rock1',     url: '/models/rock1.glb',    scale: 5.0 },
+    { name: 'rock2',     url: '/models/rock2.glb',    scale: 5.0 },
+    { name: 'tree1',     url: '/models/tree1.glb',    scale: 6.0 },
+    { name: 'boulder',   url: '/models/boulder.glb',  scale: 6.0 },
   ])
 
   // Helper: use loaded model or fall back to procedural
