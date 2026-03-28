@@ -12,18 +12,12 @@ const allUnitsQuery = defineQuery([Position, CollisionRadius, MoveSpeed])
 // Buildings as obstacles
 const buildingQuery = defineQuery([Position, IsBuilding, Selectable])
 
-const MAX_PATHS_PER_FRAME = 8
+const MAX_PATHS_PER_FRAME = 30
 
 export function pathfindingSystem(world: IWorld, _dt: number) {
-  // Rebuild dynamic cost map from unit + building positions
+  // Rebuild dynamic cost map — only buildings block paths.
+  // Units don't block each other's A* (separation handles that at runtime).
   clearDynamicCosts()
-  const allUnits = allUnitsQuery(world)
-  for (const eid of allUnits) {
-    if (hasComponent(world, Dead, eid)) continue
-    if (hasComponent(world, WorkerC, eid)) continue // workers don't block paths
-    markUnitObstacle(Position.x[eid], Position.z[eid], CollisionRadius.value[eid])
-  }
-  // Buildings as hard obstacles in dynamic cost
   const buildings = buildingQuery(world)
   for (const eid of buildings) {
     if (hasComponent(world, Dead, eid)) continue
