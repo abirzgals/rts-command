@@ -118,7 +118,15 @@ async function init() {
   wireDragDrop()
   wireSelection()
 
-  // 9. Start game loop
+  // 9. Spawn a test pair to verify combat works
+  const testX = 0
+  const testZ = 0
+  spawnUnit(world, 1, FACTION_PLAYER, testX - 3, testZ) // Marine player
+  spawnUnit(world, 1, FACTION_ENEMY, testX + 3, testZ)  // Marine enemy
+  entityCount += 2
+  console.log('[sandbox] Spawned test pair at', testX, testZ)
+
+  // 10. Start game loop
   requestAnimationFrame(gameLoop)
 }
 
@@ -211,6 +219,7 @@ function wireControls() {
     if (!paused) {
       mobilePlacePayload = null
       document.querySelectorAll('.palette-card').forEach(c => c.classList.remove('selected'))
+      console.log('[sandbox] Play pressed. entityCount:', entityCount, 'spatialHash size:', (spatialHash as any).entityCells?.size)
     }
   })
 
