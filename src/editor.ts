@@ -104,6 +104,7 @@ let currentUnit = 'worker'
 let pickMode = false
 const raycaster = new THREE.Raycaster()
 const pickMouse = new THREE.Vector2()
+const _tmpQ = new THREE.Quaternion()
 
 // Attachment info: bone + local offset (follows animation)
 interface AttachmentInfo {
@@ -1198,14 +1199,30 @@ function launchEffect() {
   const mat = new THREE.MeshBasicMaterial({ color })
   const proj = new THREE.Mesh(geo, mat)
 
-  // Get world position from the shared fire point marker
+  // Get world position and forward direction from the fire point marker
   const startPos = new THREE.Vector3()
+  const fireDir = new THREE.Vector3(0, 0, 1) // default forward
   if (firePointMarker) {
     firePointMarker.getWorldPosition(startPos)
+    // Get the fire point's forward direction in world space (local -Z transformed)
+    const fwd = new THREE.Vector3(0, 0, -1)
+    firePointMarker.getWorldQuaternion(_tmpQ)
+    fwd.applyQuaternion(_tmpQ)
+    // Also account for model rotation offset
+    if (currentModel) {
+      const modelQ = new THREE.Quaternion()
+      currentModel.getWorldQuaternion(modelQ)
+      // fireDir = direction the barrel/turret is pointing
+      fireDir.copy(fwd)
+    } else {
+      fireDir.copy(fwd)
+    }
   } else {
     startPos.set(effects.firePoint.x, effects.firePoint.y, effects.firePoint.z)
   }
-  const endPos = new THREE.Vector3(0, 0.5, 8)
+  // Target = 8 units along the fire direction from start, dropping to ground
+  const endPos = startPos.clone().addScaledVector(fireDir, 8)
+  endPos.y = 0.5
   proj.position.copy(startPos)
   scene.add(proj)
 
