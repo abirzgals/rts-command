@@ -187,21 +187,97 @@ export function createTerrainMesh(): THREE.Mesh {
 // ── Water ───────────────────────────────────────────────────
 
 function createWater() {
-  const g = new THREE.PlaneGeometry(MAP_SIZE, MAP_SIZE, 64, 64)
+  const g = new THREE.PlaneGeometry(MAP_SIZE, MAP_SIZE, 128, 128)
   g.rotateX(-Math.PI / 2)
+
+  // Set water height from terrain — water sits at a fixed level but
+  // we use vertex Y to store terrain height for shore detection
+  const pos = g.attributes.position
+  for (let i = 0; i < pos.count; i++) {
+    pos.setY(i, -1.2) // flat water level
+  }
+  pos.needsUpdate = true
+
   waterUniforms = { time: { value: 0 } }
+
   const m = new THREE.ShaderMaterial({
-    uniforms: { time: waterUniforms.time, wc: { value: new THREE.Color(0.12,0.30,0.50) }, fc: { value: new THREE.Color(0.55,0.70,0.82) } },
-    vertexShader: `uniform float time; varying vec2 vu; varying float vw;
-      void main(){ vu=uv; vec3 p=position;
-        float w=sin(p.x*.3+time*1.2)*.3+sin(p.z*.4+time*.8)*.2+sin((p.x+p.z)*.2+time*1.5)*.15;
-        p.y=-1.2+w; vw=w; gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.); }`,
-    fragmentShader: `uniform vec3 wc,fc; uniform float time; varying vec2 vu; varying float vw;
-      void main(){ float c=pow(sin(vu.x*40.+time*2.)*sin(vu.y*40.+time*1.5)*.5+.5,3.)*.3;
-        vec3 col=mix(wc+c*fc,fc,smoothstep(.2,.4,vw)*.3);
-        gl_FragColor=vec4(col,.55+c*.15); }`,
-    transparent: true, depthWrite: false, side: THREE.DoubleSide,
+    uniforms: {
+      time: waterUniforms.time,
+      deepColor:  { value: new THREE.Color(0.08, 0.22, 0.42) },
+      shallowColor: { value: new THREE.Color(0.15, 0.45, 0.55) },
+      foamColor:  { value: new THREE.Color(0.75, 0.85, 0.90) },
+    },
+    vertexShader: `
+      uniform float time;
+      varying vec2 vWorldUV;
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        vec4 wp = modelMatrix * vec4(position, 1.0);
+        vWorldUV = wp.xz;
+        // Gentle surface ripple (very subtle, water is mostly still)
+        wp.y += sin(wp.x * 0.5 + time * 0.8) * 0.05
+               + sin(wp.z * 0.4 + time * 0.6) * 0.04;
+        gl_Position = projectionMatrix * viewMatrix * wp;
+      }
+    `,
+    fragmentShader: `
+      uniform float time;
+      uniform vec3 deepColor, shallowColor, foamColor;
+      varying vec2 vWorldUV;
+      varying vec2 vUv;
+
+      // Simple hash for shore foam noise
+      float hash(vec2 p) {
+        return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+      }
+
+      float noise(vec2 p) {
+        vec2 i = floor(p);
+        vec2 f = fract(p);
+        f = f * f * (3.0 - 2.0 * f);
+        return mix(
+          mix(hash(i), hash(i + vec2(1,0)), f.x),
+          mix(hash(i + vec2(0,1)), hash(i + vec2(1,1)), f.x), f.y);
+      }
+
+      void main() {
+        // Shore detection: closer to map edge or shallow areas = more foam
+        vec2 edgeDist = min(vUv, 1.0 - vUv) * 2.0; // 0 at edge, 1 at center
+        float shore = 1.0 - smoothstep(0.0, 0.15, min(edgeDist.x, edgeDist.y));
+
+        // Animated shore waves — concentric-ish rings expanding outward
+        float waveDist = length(vWorldUV * 0.05);
+        float wave1 = sin(waveDist * 30.0 - time * 2.0) * 0.5 + 0.5;
+        float wave2 = sin(waveDist * 20.0 - time * 1.5 + 1.5) * 0.5 + 0.5;
+        float waves = pow(wave1 * wave2, 2.0);
+
+        // Foam noise near shores
+        float foamNoise = noise(vWorldUV * 0.8 + time * 0.3);
+        float foam = shore * (0.3 + 0.7 * foamNoise) + waves * shore * 0.5;
+        foam = clamp(foam, 0.0, 1.0);
+
+        // Subtle caustic pattern on water surface
+        float caustic1 = noise(vWorldUV * 0.3 + vec2(time * 0.2, time * 0.15));
+        float caustic2 = noise(vWorldUV * 0.5 - vec2(time * 0.15, time * 0.25));
+        float caustic = pow(caustic1 * caustic2, 1.5) * 0.4;
+
+        // Color: deep in center, shallow near edges
+        vec3 waterCol = mix(deepColor, shallowColor, shore * 0.7 + caustic);
+        waterCol = mix(waterCol, foamColor, foam * 0.6);
+
+        // Opacity: more opaque at center, more transparent at very edge
+        float alpha = mix(0.7, 0.3, shore * 0.5);
+        alpha += caustic * 0.1;
+
+        gl_FragColor = vec4(waterCol, alpha);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
   })
+
   waterMesh = new THREE.Mesh(g, m)
   waterMesh.renderOrder = 1
   scene.add(waterMesh)
