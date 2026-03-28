@@ -9,6 +9,9 @@ import { UnitTypeC } from '../components'
 import { UT_TANK } from '../../game/config'
 import { spawnMuzzleFlash } from '../../render/effects'
 import { spatialHash } from '../../globals'
+import { editorConfig } from '../../render/meshPools'
+
+const UT_TO_KEY: Record<number, string> = { 0: 'worker', 1: 'marine', 2: 'tank' }
 
 const combatQuery = defineQuery([Position, AttackC, Faction])
 const _nearby: number[] = []
@@ -90,6 +93,17 @@ export function combatSystem(world: IWorld, dt: number) {
   }
 }
 
+function getFirePoint(world: IWorld, attacker: number): { x: number; y: number; z: number } {
+  const utId = hasComponent(world, UnitTypeC, attacker) ? UnitTypeC.id[attacker] : -1
+  const key = UT_TO_KEY[utId]
+  const fp = key ? editorConfig?.[key]?.firePoint : null
+  return {
+    x: Position.x[attacker] + (fp?.x ?? 0),
+    y: Position.y[attacker] + (fp?.y ?? 1.5),
+    z: Position.z[attacker] + (fp?.z ?? 0),
+  }
+}
+
 function tryAttack(world: IWorld, attacker: number, target: number, dist: number) {
   if (AttackC.timer[attacker] > 0) return
 
@@ -102,14 +116,16 @@ function tryAttack(world: IWorld, attacker: number, target: number, dist: number
     const pz = Position.z[attacker]
     const isTank = hasComponent(world, UnitTypeC, attacker) && UnitTypeC.id[attacker] === UT_TANK
     const splash = AttackC.splash[attacker]
+    const fp = getFirePoint(world, attacker)
 
     if (isTank && splash > 0) {
       // Tank: artillery arc projectile with splash
       spawnArcProjectile(world, px, pz, target, damage, splash)
-      spawnMuzzleFlash(px, Position.y[attacker], pz)
+      spawnMuzzleFlash(fp.x, fp.y, fp.z)
     } else {
       // Marine: straight bullet
       spawnProjectile(world, px, pz, target, damage)
+      spawnMuzzleFlash(fp.x, fp.y, fp.z)
     }
   } else {
     // Melee: direct damage

@@ -5,6 +5,9 @@ import {
   WorkerC, PathFollower, Health, Velocity,
 } from '../components'
 import { getAnimManager } from '../../render/animatedMeshManager'
+import { editorConfig } from '../../render/meshPools'
+
+const POOL_TO_KEY: Record<number, string> = { 0: 'worker', 1: 'marine', 2: 'tank' }
 
 const animQuery = defineQuery([Position, MeshRef])
 
@@ -61,9 +64,13 @@ export function animationSystem(world: IWorld, _dt: number) {
       anim = 'Run'
     }
 
-    // Dying
+    // Dying — look up death animation from editor config, fallback to 'Death'
     if (hasComponent(world, Health, eid) && Health.current[eid] <= 0) {
-      anim = poolId === 2 ? 'Idle' : 'Death'
+      const key = POOL_TO_KEY[poolId]
+      const deathEvent = key && editorConfig?.[key]?.events?.find(
+        (e: any) => e.type === 'death',
+      )
+      anim = deathEvent?.animation ?? 'Death'
     }
 
     mgr.playAnimation(eid, anim)

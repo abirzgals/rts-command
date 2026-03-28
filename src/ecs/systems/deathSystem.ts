@@ -9,8 +9,9 @@ import { getAnimManager } from '../../render/animatedMeshManager'
 import { gameState } from '../../game/state'
 import { spatialHash } from '../../globals'
 import { unblockCells } from '../../pathfinding/navGrid'
-import { BUILDING_DEFS } from '../../game/config'
+import { BUILDING_DEFS, UT_TANK } from '../../game/config'
 import { removePath } from '../../pathfinding/pathStore'
+import { spawnTankDeathExplosion } from '../../render/effects'
 
 const deadQuery = defineQuery([Dead])
 
@@ -45,6 +46,15 @@ export function deathSystem(world: IWorld, _dt: number) {
     // Clean up path
     if (hasComponent(world, PathFollower, eid)) {
       removePath(PathFollower.pathId[eid])
+    }
+
+    // Tank death: spawn explosion + debris effect
+    if (hasComponent(world, UnitTypeC, eid) && UnitTypeC.id[eid] === UT_TANK) {
+      spawnTankDeathExplosion(
+        Position.x[eid],
+        Position.y[eid],
+        Position.z[eid],
+      )
     }
 
     // Remove from mesh pool or animated manager

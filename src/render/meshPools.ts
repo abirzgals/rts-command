@@ -20,6 +20,9 @@ import {
 import { loadModels } from './modelLoader'
 import { AnimatedMeshManager, registerAnimManager } from './animatedMeshManager'
 
+/** Global editor config — loaded once, used by combat/animation systems */
+export let editorConfig: Record<string, any> | null = null
+
 /** Load editor config from REST API, falling back to localStorage, then null */
 async function loadEditorConfig(): Promise<Record<string, any> | null> {
   // Try REST API first
@@ -240,6 +243,7 @@ export async function createMeshPools() {
 
   // ── Load editor config (server → localStorage → defaults) ─────────
   const editorCfg = await loadEditorConfig()
+  editorConfig = editorCfg
   const cfg = (key: string, fallback: number) => editorCfg?.[key]?.scale ?? fallback
   const rot = (key: string, fallback: number) => editorCfg?.[key]?.rotationOffset ?? fallback
 

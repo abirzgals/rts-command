@@ -84,6 +84,81 @@ export function spawnMuzzleFlash(x: number, y: number, z: number) {
   muzzleFlashes.push({ light, life: 0.1 })
 }
 
+// ── Tank death explosion + debris ───────────────────────────
+interface Debris {
+  mesh: THREE.Mesh
+  life: number
+  maxLife: number
+  vx: number
+  vy: number
+  vz: number
+  rotSpeed: THREE.Vector3
+}
+
+const debrisPieces: Debris[] = []
+const debrisGeos = [
+  new THREE.BoxGeometry(0.4, 0.2, 0.3),
+  new THREE.BoxGeometry(0.6, 0.15, 0.25),
+  new THREE.BoxGeometry(0.3, 0.3, 0.5),
+  new THREE.CylinderGeometry(0.1, 0.1, 0.5, 6),
+]
+const debrisMat = new THREE.MeshPhongMaterial({
+  color: 0x555555,
+  flatShading: true,
+})
+
+export function spawnTankDeathExplosion(x: number, y: number, z: number) {
+  // Big central explosion
+  spawnExplosion(x, y, z, 3.0)
+
+  // Extra fire burst
+  const fireMat = new THREE.MeshBasicMaterial({
+    color: 0xff8800,
+    transparent: true,
+    opacity: 0.85,
+    depthWrite: false,
+  })
+  const fireMesh = new THREE.Mesh(explosionGeo, fireMat)
+  fireMesh.position.set(x, y + 1.0, z)
+  fireMesh.scale.setScalar(0.5)
+  scene.add(fireMesh)
+  explosions.push({ mesh: fireMesh, life: 0, maxLife: 0.6 })
+
+  // Spawn debris pieces that fly apart
+  const DEBRIS_COUNT = 8
+  for (let i = 0; i < DEBRIS_COUNT; i++) {
+    const geo = debrisGeos[Math.floor(Math.random() * debrisGeos.length)]
+    const mat = debrisMat.clone()
+    mat.color.setHex(Math.random() > 0.5 ? 0x555555 : 0x443322)
+    const mesh = new THREE.Mesh(geo, mat)
+    mesh.position.set(
+      x + (Math.random() - 0.5) * 0.5,
+      y + 0.5 + Math.random() * 0.5,
+      z + (Math.random() - 0.5) * 0.5,
+    )
+    scene.add(mesh)
+
+    const angle = Math.random() * Math.PI * 2
+    const speed = 3 + Math.random() * 5
+    debrisPieces.push({
+      mesh,
+      life: 0,
+      maxLife: 5.0,
+      vx: Math.cos(angle) * speed,
+      vy: 4 + Math.random() * 6,
+      vz: Math.sin(angle) * speed,
+      rotSpeed: new THREE.Vector3(
+        (Math.random() - 0.5) * 10,
+        (Math.random() - 0.5) * 10,
+        (Math.random() - 0.5) * 10,
+      ),
+    })
+  }
+
+  // Heavy smoke
+  spawnSmoke(x, y + 0.5, z, 12)
+}
+
 // ── Update all effects each frame ───────────────────────────
 export function updateEffects(dt: number) {
   // Smoke particles
@@ -140,6 +215,49 @@ export function updateEffects(dt: number) {
       scene.remove(f.light)
       f.light.dispose()
       muzzleFlashes.splice(i, 1)
+    }
+  }
+
+  // Debris pieces (tank death)
+  const GRAVITY = -15
+  for (let i = debrisPieces.length - 1; i >= 0; i--) {
+    const d = debrisPieces[i]
+    d.life += dt
+
+    if (d.life >= d.maxLife) {
+      scene.remove(d.mesh)
+      ;(d.mesh.material as THREE.Material).dispose()
+      debrisPieces.splice(i, 1)
+      continue
+    }
+
+    // Physics: gravity + velocity
+    d.vy += GRAVITY * dt
+    d.mesh.position.x += d.vx * dt
+    d.mesh.position.y += d.vy * dt
+    d.mesh.position.z += d.vz * dt
+
+    // Clamp to ground
+    if (d.mesh.position.y < 0.1) {
+      d.mesh.position.y = 0.1
+      d.vy = -d.vy * 0.3 // bounce with damping
+      d.vx *= 0.7
+      d.vz *= 0.7
+    }
+
+    // Tumble rotation
+    d.mesh.rotation.x += d.rotSpeed.x * dt
+    d.mesh.rotation.y += d.rotSpeed.y * dt
+    d.mesh.rotation.z += d.rotSpeed.z * dt
+
+    // Fade out in last second
+    const remaining = d.maxLife - d.life
+    if (remaining < 1.0) {
+      const mat = d.mesh.material as THREE.MeshPhongMaterial
+      if (!mat.transparent) {
+        mat.transparent = true
+      }
+      mat.opacity = remaining
     }
   }
 }
