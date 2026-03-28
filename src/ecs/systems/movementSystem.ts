@@ -2,6 +2,7 @@ import { defineQuery, hasComponent, removeComponent, addComponent } from 'bitecs
 import type { IWorld } from 'bitecs'
 import { Position, Rotation, MoveTarget, MoveSpeed, Velocity, IsBuilding, PathFollower, Projectile, CollisionRadius, Dead } from '../components'
 import { getPath, removePath } from '../../pathfinding/pathStore'
+import { resetPathAttempt } from './pathfindingSystem'
 import { getTerrainHeight, getTerrainTypeAt, T_WATER, T_CLIFF, worldToGrid, GRID_RES } from '../../terrain/heightmap'
 import { isWorldWalkable, dynamicCost } from '../../pathfinding/navGrid'
 import { spatialHash } from '../../globals'
@@ -301,6 +302,7 @@ function forceRepath(world: IWorld, eid: number, pathId: number) {
   Velocity.z[eid] = 0
   stuckTimer[eid] = 0
   repathCooldown[eid] = REPATH_COOLDOWN
+  resetPathAttempt(eid)
 }
 
 function finishPath(world: IWorld, eid: number, pathId: number) {
