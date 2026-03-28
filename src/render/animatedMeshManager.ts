@@ -8,6 +8,14 @@ const loader = new GLTFLoader()
 
 export type AnimName = 'Idle' | 'Run' | 'Shoot_OneHanded' | 'Shoot' | 'Punch' | 'Death' | 'PickUp' | 'Run_Carry' | 'Walk'
 
+interface RecoilState {
+  barrelOffset: number    // current barrel slide-back (local Z)
+  barrelVelocity: number  // spring velocity
+  hullPitch: number       // current hull nose-up pitch (radians)
+  hullPitchVel: number    // spring velocity
+  active: boolean
+}
+
 interface AnimatedUnit {
   mesh: THREE.Object3D
   mixer: THREE.AnimationMixer
@@ -15,6 +23,7 @@ interface AnimatedUnit {
   currentAnim: string
   turretBone?: THREE.Bone
   barrelBone?: THREE.Bone
+  recoil?: RecoilState
 }
 
 /**
@@ -223,10 +232,69 @@ export class AnimatedMeshManager {
     return this.units.get(eid)?.currentAnim
   }
 
-  /** Update all animation mixers — call once per frame */
+  /**
+   * Trigger recoil on a unit — barrel slides back on a spring,
+   * hull pitches up from the kick. Both spring back smoothly.
+   */
+  triggerRecoil(eid: number) {
+    const unit = this.units.get(eid)
+    if (!unit || !unit.barrelBone) return
+
+    if (!unit.recoil) {
+      unit.recoil = { barrelOffset: 0, barrelVelocity: 0, hullPitch: 0, hullPitchVel: 0, active: false }
+    }
+
+    // Kick: barrel snaps backward, hull nose kicks up
+    unit.recoil.barrelVelocity = 8.0   // barrel slides back fast
+    unit.recoil.hullPitchVel = -3.0    // hull nose kicks up (negative = pitch backward)
+    unit.recoil.active = true
+  }
+
+  /** Update all animation mixers + recoil springs — call once per frame */
   updateMixers(dt: number) {
+    // Spring constants
+    const BARREL_STIFFNESS = 120   // how fast barrel returns
+    const BARREL_DAMPING = 8       // how quickly oscillation dies
+    const BARREL_MAX = 0.6         // max slide-back distance
+    const HULL_STIFFNESS = 40      // how fast hull pitch returns
+    const HULL_DAMPING = 6         // hull pitch damping
+    const HULL_MAX_PITCH = 0.06    // max hull pitch (radians, ~3.5°)
+
     for (const [, unit] of this.units) {
       unit.mixer.update(dt)
+
+      // Update recoil spring physics
+      if (unit.recoil?.active && unit.barrelBone) {
+        const r = unit.recoil
+
+        // Barrel spring: F = -kx - cv (spring + damping)
+        const barrelForce = -BARREL_STIFFNESS * r.barrelOffset - BARREL_DAMPING * r.barrelVelocity
+        r.barrelVelocity += barrelForce * dt
+        r.barrelOffset += r.barrelVelocity * dt
+        r.barrelOffset = Math.max(-BARREL_MAX, Math.min(0.1, r.barrelOffset))
+
+        // Apply barrel offset along its local Z axis (slide back = +Z in bone space)
+        unit.barrelBone.position.z = r.barrelOffset
+
+        // Hull spring: pitch up/down
+        const hullForce = -HULL_STIFFNESS * r.hullPitch - HULL_DAMPING * r.hullPitchVel
+        r.hullPitchVel += hullForce * dt
+        r.hullPitch += r.hullPitchVel * dt
+        r.hullPitch = Math.max(-HULL_MAX_PITCH, Math.min(HULL_MAX_PITCH, r.hullPitch))
+
+        // Apply hull pitch to the root mesh
+        unit.mesh.rotation.x = r.hullPitch
+
+        // Deactivate when settled
+        if (Math.abs(r.barrelOffset) < 0.001 && Math.abs(r.barrelVelocity) < 0.01 &&
+            Math.abs(r.hullPitch) < 0.0005 && Math.abs(r.hullPitchVel) < 0.005) {
+          r.barrelOffset = 0
+          r.hullPitch = 0
+          r.active = false
+          unit.barrelBone.position.z = 0
+          unit.mesh.rotation.x = 0
+        }
+      }
     }
   }
 

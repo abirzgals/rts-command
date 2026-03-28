@@ -137,9 +137,12 @@ function tryAttack(world: IWorld, attacker: number, target: number, dist: number
     const fp = getFirePoint(world, attacker)
 
     if (isTank && splash > 0) {
-      // Tank: artillery arc projectile with splash
+      // Tank: artillery arc projectile with splash + barrel recoil
       spawnArcProjectile(world, px, pz, target, damage, splash)
       spawnMuzzleFlash(fp.x, fp.y, fp.z)
+      const poolId = MeshRef.poolId[attacker]
+      const animMgr = getAnimManager(poolId)
+      if (animMgr) animMgr.triggerRecoil(attacker)
     } else {
       // Marine: straight bullet
       spawnProjectile(world, px, pz, target, damage)
