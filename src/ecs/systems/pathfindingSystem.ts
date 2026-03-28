@@ -1,52 +1,54 @@
-import { defineQuery, hasComponent, addComponent, removeComponent, Not } from 'bitecs'
+import { defineQuery, enterQuery, hasComponent, addComponent, removeComponent, Not } from 'bitecs'
 import type { IWorld } from 'bitecs'
 import { Position, MoveTarget, PathFollower, IsBuilding, MoveSpeed, CollisionRadius, Dead, WorkerC, Selectable } from '../components'
 import { findPath, invalidateClearance } from '../../pathfinding/astar'
-import { storePath, removePath } from '../../pathfinding/pathStore'
-import { clearDynamicCosts, markUnitObstacle, markBuildingObstacle } from '../../pathfinding/navGrid'
+import { storePath } from '../../pathfinding/pathStore'
+import { clearDynamicCosts, markBuildingObstacle } from '../../pathfinding/navGrid'
 
-// Entities that need a path computed
+// Entities that JUST GOT a MoveTarget (enter query = only fires once)
 const needsPathQuery = defineQuery([Position, MoveTarget, MoveSpeed, Not(PathFollower), Not(IsBuilding)])
-// All units with collision (for dynamic obstacle marking)
-const allUnitsQuery = defineQuery([Position, CollisionRadius, MoveSpeed])
+const needsPathEnter = enterQuery(needsPathQuery)
 // Buildings as obstacles
 const buildingQuery = defineQuery([Position, IsBuilding, Selectable])
 
-const MAX_PATHS_PER_FRAME = 4
+// Track building count to know when to rebuild dynamic costs
+let lastBuildingCount = -1
 
 export function pathfindingSystem(world: IWorld, _dt: number) {
-  // Rebuild dynamic cost map — only buildings block paths.
-  clearDynamicCosts()
+  // Only rebuild dynamic costs when building count changes
   const buildings = buildingQuery(world)
-  for (const eid of buildings) {
-    if (hasComponent(world, Dead, eid)) continue
-    markBuildingObstacle(Position.x[eid], Position.z[eid], Selectable.radius[eid])
+  if (buildings.length !== lastBuildingCount) {
+    lastBuildingCount = buildings.length
+    clearDynamicCosts()
+    for (const eid of buildings) {
+      if (hasComponent(world, Dead, eid)) continue
+      markBuildingObstacle(Position.x[eid], Position.z[eid], Selectable.radius[eid])
+    }
+    invalidateClearance()
   }
-  invalidateClearance() // rebuild clearance maps with new building positions
 
-  const entities = needsPathQuery(world)
-  let computed = 0
+  // Only compute paths for units that JUST received a MoveTarget
+  const newEntities = needsPathEnter(world)
 
-  for (const eid of entities) {
-    if (computed >= MAX_PATHS_PER_FRAME) break
+  for (const eid of newEntities) {
+    if (hasComponent(world, Dead, eid)) continue
 
     const sx = Position.x[eid]
     const sz = Position.z[eid]
     const gx = MoveTarget.x[eid]
     const gz = MoveTarget.z[eid]
 
-    // Workers ignore dynamic unit costs while mining
     const isWorker = hasComponent(world, WorkerC, eid)
     const radius = hasComponent(world, CollisionRadius, eid) ? CollisionRadius.value[eid] : 0.4
-    // Try with full radius, then zero clearance as fallback
+
+    // Try with radius, fallback to zero clearance
     let waypoints = findPath(sx, sz, gx, gz, isWorker, radius)
     if (!waypoints && radius > 0) {
       waypoints = findPath(sx, sz, gx, gz, isWorker, 0)
     }
-    computed++
 
     if (!waypoints || waypoints.length === 0) {
-      // No path found — let direct movement handle it as last resort
+      // No path — direct movement will handle it with wall sliding
       continue
     }
 
