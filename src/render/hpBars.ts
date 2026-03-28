@@ -19,24 +19,14 @@ export function initHPBars() {
   container = document.createElement('div')
   container.id = 'hp-bars'
   Object.assign(container.style, {
-    position: 'absolute',
+    position: 'fixed',
     top: '0', left: '0',
     width: '100%', height: '100%',
     pointerEvents: 'none',
     overflow: 'hidden',
     zIndex: '15',
   })
-  // Parent to canvas wrapper so positioning is relative to the canvas, not body.
-  // This makes HP bars work identically in game, sandbox, or any layout.
-  const canvasParent = renderer.domElement.parentElement
-  if (canvasParent) {
-    // Ensure the parent is a positioning context
-    const pos = getComputedStyle(canvasParent).position
-    if (pos === 'static') canvasParent.style.position = 'relative'
-    canvasParent.appendChild(container)
-  } else {
-    document.body.appendChild(container)
-  }
+  document.body.appendChild(container)
 }
 
 function getOrCreateBar(eid: number): HTMLDivElement {
@@ -82,9 +72,10 @@ export function updateHPBars(world: IWorld) {
   const entities = hpQuery(world)
   const activeEids = new Set<number>()
 
-  // Use canvas dimensions — container is parented to the canvas wrapper so no offset needed
-  const w = renderer.domElement.clientWidth
-  const h = renderer.domElement.clientHeight
+  // Always use canvas bounding rect — works in any layout (fullscreen, sidebar, etc.)
+  const rect = renderer.domElement.getBoundingClientRect()
+  const w = rect.width
+  const h = rect.height
 
   for (const eid of entities) {
     if (hasComponent(world, Dead, eid)) continue
@@ -113,8 +104,8 @@ export function updateHPBars(world: IWorld) {
       continue
     }
 
-    const sx = ((_vec3.x + 1) / 2) * w
-    const sy = ((-_vec3.y + 1) / 2) * h
+    const sx = ((_vec3.x + 1) / 2) * w + rect.left
+    const sy = ((-_vec3.y + 1) / 2) * h + rect.top
 
     // Cull off-screen
     if (sx < -50 || sx > w + 50 || sy < -50 || sy > h + 50) {
