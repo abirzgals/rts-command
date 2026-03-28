@@ -214,7 +214,7 @@ export async function createMeshPools() {
   // ── Animated unit managers (IDs 0-2) ─────────
   const workerMgr = new AnimatedMeshManager('/models/worker.glb', 1.0)
   const marineMgr = new AnimatedMeshManager('/models/marine.glb', 1.0)
-  const tankMgr = new AnimatedMeshManager('/models/tank-v3.glb', 0.3, Math.PI / 2)
+  const tankMgr = new AnimatedMeshManager('/models/tank-v3.glb', 0.55, Math.PI)
 
   await Promise.all([workerMgr.load(), marineMgr.load(), tankMgr.load()])
 
