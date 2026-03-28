@@ -112,9 +112,14 @@ export function createTerrainMesh(): THREE.Mesh {
 
   // MeshStandardMaterial with onBeforeCompile to inject splat texture blending.
   // This way Three.js handles ALL shadow logic — we just change the diffuse color.
+  // Set map to a 1x1 white pixel — forces Three.js to generate UV varyings (vUv)
+  const dummyTex = new THREE.DataTexture(new Uint8Array([255,255,255,255]), 1, 1, THREE.RGBAFormat)
+  dummyTex.needsUpdate = true
+
   const mat = new THREE.MeshStandardMaterial({
     roughness: 0.85,
     metalness: 0.0,
+    map: dummyTex,
   })
 
   mat.onBeforeCompile = (shader) => {
@@ -157,11 +162,11 @@ export function createTerrainMesh(): THREE.Mesh {
       '#include <color_fragment>',
       `#include <color_fragment>
        // Splat-blended terrain textures
-       vec4 splat = texture2D(splatMap, vUv);
-       vec3 tGrass = texture2D(texGrass, vWorldUV).rgb;
-       vec3 tDirt = texture2D(texDirt, vWorldUV).rgb;
-       vec3 tRock = texture2D(texRock, vWorldUV * 0.7).rgb;
-       vec3 tCliff = texture2D(texCliff, vWorldUV * 0.5).rgb;
+       vec4 splat = texture(splatMap, vUv);
+       vec3 tGrass = texture(texGrass, vWorldUV).rgb;
+       vec3 tDirt = texture(texDirt, vWorldUV).rgb;
+       vec3 tRock = texture(texRock, vWorldUV * 0.7).rgb;
+       vec3 tCliff = texture(texCliff, vWorldUV * 0.5).rgb;
        vec3 terrainColor = tGrass * splat.r + tDirt * splat.g + tRock * splat.b + tCliff * splat.a;
        float hFade = 0.9 + clamp(vHeight * 0.015, 0.0, 0.2);
        diffuseColor = vec4(terrainColor * hFade, 1.0);`
