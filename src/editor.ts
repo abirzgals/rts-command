@@ -11,20 +11,26 @@ import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
-interface UnitConfig {
+type ModelCategory = 'units' | 'buildings' | 'resources' | 'obstacles'
+
+interface ModelConfig {
   name: string
+  key: string
+  category: ModelCategory
   modelUrl: string
   scale: number
   rotationOffset: number // radians
-  hp: number
-  speed: number
-  armor: number
-  damage: number
-  range: number
-  cooldown: number
-  splash: number
-  selectionRadius: number
-  collisionRadius: number
+  icon: string
+  // Optional stats (units only)
+  hp?: number
+  speed?: number
+  armor?: number
+  damage?: number
+  range?: number
+  cooldown?: number
+  splash?: number
+  selectionRadius?: number
+  collisionRadius?: number
 }
 
 interface EffectsConfig {
@@ -34,28 +40,39 @@ interface EffectsConfig {
   smoke: { color: string; opacity: number; lifetime: number; count: number }
 }
 
-// ─── Default Configs ───────────────────────────────────────────────────────
+// ─── All Model Configs ────────────────────────────────────────────────────
 
-const DEFAULT_CONFIGS: Record<string, UnitConfig> = {
-  worker: {
-    name: 'Worker', modelUrl: '/models/worker.glb',
-    scale: 1.0, rotationOffset: 0,
-    hp: 40, speed: 3.5, armor: 0, damage: 5, range: 1.2,
-    cooldown: 1.5, splash: 0, selectionRadius: 0.4, collisionRadius: 0.4,
-  },
-  marine: {
-    name: 'Marine', modelUrl: '/models/marine.glb',
-    scale: 1.0, rotationOffset: 0,
-    hp: 55, speed: 3.0, armor: 0, damage: 8, range: 6,
-    cooldown: 0.8, splash: 0, selectionRadius: 0.4, collisionRadius: 0.4,
-  },
-  tank: {
-    name: 'Tank', modelUrl: '/models/tank-v3.glb',
-    scale: 0.55, rotationOffset: Math.PI,
-    hp: 160, speed: 2.0, armor: 2, damage: 30, range: 8,
-    cooldown: 2.5, splash: 1.5, selectionRadius: 1.2, collisionRadius: 1.2,
-  },
-}
+const ALL_MODELS: ModelConfig[] = [
+  // ── Units ──
+  { key: 'worker', name: 'Worker', category: 'units', modelUrl: '/models/worker.glb', scale: 1.0, rotationOffset: 0, icon: '\u26CF',
+    hp: 40, speed: 3.5, armor: 0, damage: 5, range: 1.2, cooldown: 1.5, splash: 0, selectionRadius: 0.4, collisionRadius: 0.4 },
+  { key: 'marine', name: 'Marine', category: 'units', modelUrl: '/models/marine.glb', scale: 1.0, rotationOffset: 0, icon: '\u2694',
+    hp: 55, speed: 3.0, armor: 0, damage: 8, range: 6, cooldown: 0.8, splash: 0, selectionRadius: 0.4, collisionRadius: 0.4 },
+  { key: 'tank', name: 'Tank', category: 'units', modelUrl: '/models/tank-v3.glb', scale: 0.55, rotationOffset: Math.PI, icon: '\u2617',
+    hp: 160, speed: 2.0, armor: 2, damage: 30, range: 8, cooldown: 2.5, splash: 1.5, selectionRadius: 1.2, collisionRadius: 1.2 },
+  // ── Buildings ──
+  { key: 'command-center', name: 'Command Center', category: 'buildings', modelUrl: '/models/command-center.glb', scale: 5.0, rotationOffset: 0, icon: '\u2302',
+    hp: 1500, armor: 1, selectionRadius: 2.0, collisionRadius: 2.0 },
+  { key: 'supply-depot', name: 'Supply Depot', category: 'buildings', modelUrl: '/models/supply-depot.glb', scale: 4.0, rotationOffset: 0, icon: '\u2302',
+    hp: 400, armor: 0, selectionRadius: 1.2, collisionRadius: 1.2 },
+  { key: 'barracks', name: 'Barracks', category: 'buildings', modelUrl: '/models/barracks.glb', scale: 4.5, rotationOffset: 0, icon: '\u2302',
+    hp: 800, armor: 1, selectionRadius: 1.5, collisionRadius: 1.5 },
+  { key: 'factory', name: 'Factory', category: 'buildings', modelUrl: '/models/factory.glb', scale: 4.5, rotationOffset: 0, icon: '\u2692',
+    hp: 1000, armor: 1, selectionRadius: 1.8, collisionRadius: 1.8 },
+  // ── Resources ──
+  { key: 'minerals', name: 'Minerals', category: 'resources', modelUrl: '/models/gold.glb', scale: 1.5, rotationOffset: 0, icon: '\u2666' },
+  // ── Obstacles ──
+  { key: 'rock1', name: 'Rock 1', category: 'obstacles', modelUrl: '/models/rock1.glb', scale: 5.0, rotationOffset: 0, icon: '\u26F0' },
+  { key: 'rock2', name: 'Rock 2', category: 'obstacles', modelUrl: '/models/rock2.glb', scale: 5.0, rotationOffset: 0, icon: '\u26F0' },
+  { key: 'tree1', name: 'Tree', category: 'obstacles', modelUrl: '/models/tree1.glb', scale: 6.0, rotationOffset: 0, icon: '\u2663' },
+  { key: 'boulder', name: 'Boulder', category: 'obstacles', modelUrl: '/models/boulder.glb', scale: 6.0, rotationOffset: 0, icon: '\u2B24' },
+]
+
+const MODEL_MAP = new Map<string, ModelConfig>()
+ALL_MODELS.forEach(m => MODEL_MAP.set(m.key, m))
+
+// Legacy alias for code that uses UnitConfig shape
+type UnitConfig = ModelConfig
 
 const DEFAULT_EFFECTS: EffectsConfig = {
   muzzle: { color: '#ffaa44', intensity: 8, range: 12, yOffset: 1.5, duration: 0.1 },
@@ -71,10 +88,14 @@ const FACTION_COLORS = {
 
 // ─── State ─────────────────────────────────────────────────────────────────
 
-let currentUnit = 'worker'
+let currentKey = 'worker'
+let currentCategory: ModelCategory = 'units'
 let currentFaction: 'player' | 'enemy' = 'player'
-let config: UnitConfig = { ...DEFAULT_CONFIGS.worker }
+let config: ModelConfig = { ...ALL_MODELS[0] }
 let effects: EffectsConfig = JSON.parse(JSON.stringify(DEFAULT_EFFECTS))
+
+// Keep legacy alias
+let currentUnit = 'worker'
 
 // ─── Three.js Core ─────────────────────────────────────────────────────────
 
@@ -204,7 +225,7 @@ function init() {
   requestAnimationFrame(onResize)
 
   // UI wiring
-  wireUnitTabs()
+  wireModelSelector()
   wireFactionToggle()
   buildStatsUI()
   wireOverlayToggles()
@@ -215,7 +236,7 @@ function init() {
   wireExportModal()
 
   // Load first model
-  loadUnit(currentUnit).then(() => {
+  loadModel(currentKey).then(() => {
     const overlay = document.getElementById('loading-overlay')!
     overlay.classList.add('hidden')
     setTimeout(() => overlay.remove(), 300)
@@ -277,10 +298,12 @@ function setupGround() {
 //  MODEL LOADING
 // ═══════════════════════════════════════════════════════════════════════════
 
-async function loadUnit(unitKey: string) {
-  const def = DEFAULT_CONFIGS[unitKey]
+async function loadModel(modelKey: string) {
+  const def = MODEL_MAP.get(modelKey)
   if (!def) return
 
+  currentKey = modelKey
+  currentUnit = modelKey
   config = { ...def }
 
   // Remove old model
@@ -355,12 +378,27 @@ async function loadUnit(unitKey: string) {
     }
   })
 
+  // Adjust camera for model size
+  const box = new THREE.Box3().setFromObject(model)
+  const size = box.getSize(new THREE.Vector3())
+  const maxDim = Math.max(size.x, size.y, size.z)
+  const dist = Math.max(4, maxDim * 2.0)
+  camera.position.set(dist * 0.8, dist * 0.7, dist * 0.8)
+  controls.target.set(0, size.y * 0.4, 0)
+  controls.update()
+
   // Update UI
   updateStatsUI()
   updateAnimUI(gltf)
   updateBadges(gltf)
   updateOverlays()
   updateTurretSectionVisibility()
+
+  // Show/hide effects panel for non-units
+  const effectSections = document.querySelectorAll<HTMLElement>('.effects-section')
+  effectSections.forEach(el => {
+    el.style.display = config.category === 'units' ? 'block' : 'none'
+  })
 }
 
 function applyFactionTint(model: THREE.Object3D) {
@@ -401,18 +439,12 @@ function updateOverlays() {
   removeOverlays()
 
   // Selection ring
-  const ringGeo = new THREE.RingGeometry(
-    config.selectionRadius * 0.75,
-    config.selectionRadius * 1.0,
-    48,
-  )
+  const selRadius = config.selectionRadius ?? 1.0
+  const ringGeo = new THREE.RingGeometry(selRadius * 0.75, selRadius * 1.0, 48)
   ringGeo.rotateX(-Math.PI / 2)
   const ringMat = new THREE.MeshBasicMaterial({
-    color: 0x00ff44,
-    transparent: true,
-    opacity: 0.45,
-    side: THREE.DoubleSide,
-    depthWrite: false,
+    color: 0x00ff44, transparent: true, opacity: 0.45,
+    side: THREE.DoubleSide, depthWrite: false,
   })
   selectionRing = new THREE.Mesh(ringGeo, ringMat)
   selectionRing.position.y = 0.02
@@ -420,13 +452,15 @@ function updateOverlays() {
   scene.add(selectionRing)
 
   // Attack range circle (dashed)
-  attackRangeRing = createDashedCircle(config.range, 0x58a6ff, 64)
+  const atkRange = config.range ?? 1.0
+  attackRangeRing = createDashedCircle(atkRange, 0x58a6ff, 64)
   attackRangeRing.position.y = 0.03
-  attackRangeRing.visible = overlayVisibility.attackRange
+  attackRangeRing.visible = overlayVisibility.attackRange && atkRange > 0
   scene.add(attackRangeRing)
 
   // Collision boundary (red)
-  collisionRing = createDashedCircle(config.collisionRadius, 0xff4444, 32)
+  const colRadius = config.collisionRadius ?? 1.0
+  collisionRing = createDashedCircle(colRadius, 0xff4444, 32)
   collisionRing.position.y = 0.04
   collisionRing.visible = overlayVisibility.collisionBoundary
   scene.add(collisionRing)
@@ -511,17 +545,38 @@ function createHPBarPreview(): THREE.Group {
 
 // ─── Unit Tabs ─────────────────────────────────────────────────────────────
 
-function wireUnitTabs() {
-  const tabs = document.querySelectorAll<HTMLDivElement>('.unit-tab')
-  tabs.forEach(tab => {
+function wireModelSelector() {
+  const catTabs = document.querySelectorAll<HTMLDivElement>('.cat-tab')
+  const grid = document.getElementById('model-grid')!
+
+  function renderGrid(cat: ModelCategory) {
+    grid.innerHTML = ''
+    const models = ALL_MODELS.filter(m => m.category === cat)
+    for (const m of models) {
+      const card = document.createElement('div')
+      card.className = `model-card ${m.key === currentKey ? 'active' : ''}`
+      card.dataset.key = m.key
+      card.innerHTML = `<span class="card-icon">${m.icon}</span>${m.name}`
+      card.addEventListener('click', () => {
+        grid.querySelectorAll('.model-card').forEach(c => c.classList.remove('active'))
+        card.classList.add('active')
+        loadModel(m.key)
+      })
+      grid.appendChild(card)
+    }
+  }
+
+  catTabs.forEach(tab => {
     tab.addEventListener('click', () => {
-      tabs.forEach(t => t.classList.remove('active'))
+      catTabs.forEach(t => t.classList.remove('active'))
       tab.classList.add('active')
-      const unit = tab.dataset.unit!
-      currentUnit = unit
-      loadUnit(unit)
+      currentCategory = tab.dataset.cat as ModelCategory
+      renderGrid(currentCategory)
     })
   })
+
+  // Initial render
+  renderGrid('units')
 }
 
 // ─── Faction Toggle ────────────────────────────────────────────────────────
@@ -546,7 +601,7 @@ function retintModel() {
   if (!currentModel) return
   const factionColor = FACTION_COLORS[currentFaction]
   // Re-clone materials and retint
-  const gltf = gltfCache.get(DEFAULT_CONFIGS[currentUnit].modelUrl)
+  const gltf = gltfCache.get(config.modelUrl)
   if (!gltf) return
 
   // Walk original scene to get original colors
@@ -666,14 +721,28 @@ function updateStatsUI() {
   for (const stat of STAT_DEFS) {
     const slider = document.getElementById(`stat-${stat.key}`) as HTMLInputElement
     const input = document.getElementById(`stat-${stat.key}-val`) as HTMLInputElement
+    const row = slider?.closest('.stat-row') as HTMLElement | null
     if (!slider || !input) continue
     const val = (config as any)[stat.key] as number
+    // Hide stats that don't apply (undefined on this model)
+    if (row) {
+      const hasVal = (config as any)[stat.key] !== undefined
+      row.style.display = hasVal ? 'flex' : 'none'
+    }
+    if (val === undefined) continue
     slider.value = String(val)
     if (stat.key === 'rotationOffset') {
       input.value = Math.round(val * 180 / Math.PI) + '\u00B0'
     } else {
       input.value = formatStatValue(val, stat)
     }
+  }
+  // Update stats section title
+  const statsTitle = document.querySelector('#stats-section .section-title')
+  if (statsTitle) {
+    const cat = config.category
+    const label = cat === 'units' ? 'Unit Stats' : cat === 'buildings' ? 'Building Stats' : 'Model Config'
+    statsTitle.innerHTML = `<span class="icon">&#9878;</span> ${label}`
   }
 }
 
@@ -1299,6 +1368,10 @@ function puffEffect() {
 // ─── Bottom Bar ────────────────────────────────────────────────────────────
 
 function wireBottomBar() {
+  document.getElementById('save-btn')!.addEventListener('click', () => {
+    saveConfigToFile()
+  })
+
   document.getElementById('export-btn')!.addEventListener('click', () => {
     showExportModal()
   })
@@ -1313,7 +1386,8 @@ function wireBottomBar() {
   })
 
   document.getElementById('reset-btn')!.addEventListener('click', () => {
-    config = { ...DEFAULT_CONFIGS[currentUnit] }
+    const def = MODEL_MAP.get(currentKey)
+    if (def) config = { ...def }
     effects = JSON.parse(JSON.stringify(DEFAULT_EFFECTS))
     updateStatsUI()
     resetEffectsUI()
@@ -1350,64 +1424,87 @@ function showExportModal() {
 }
 
 function buildExportJSON(): string {
-  const exportObj = {
-    unit: {
-      name: config.name,
-      model: {
-        url: config.modelUrl,
-        scale: config.scale,
-        rotationOffset: config.rotationOffset,
-        rotationOffsetDeg: Math.round(config.rotationOffset * 180 / Math.PI),
-      },
-      stats: {
-        hp: config.hp,
-        speed: config.speed,
-        armor: config.armor,
-        damage: config.damage,
-        range: config.range,
-        cooldown: config.cooldown,
-        splash: config.splash,
-      },
-      collision: {
-        selectionRadius: config.selectionRadius,
-        collisionRadius: config.collisionRadius,
-      },
+  // Build a clean config object
+  const modelConfig: Record<string, any> = {
+    key: config.key,
+    name: config.name,
+    category: config.category,
+    model: {
+      url: config.modelUrl,
+      scale: config.scale,
+      rotationOffset: config.rotationOffset,
+      rotationOffsetDeg: Math.round(config.rotationOffset * 180 / Math.PI),
     },
-    effects: {
-      muzzleFlash: {
-        color: effects.muzzle.color,
-        colorHex: '0x' + new THREE.Color(effects.muzzle.color).getHexString(),
-        intensity: effects.muzzle.intensity,
-        range: effects.muzzle.range,
-        yOffset: effects.muzzle.yOffset,
-        duration: effects.muzzle.duration,
-      },
-      projectile: {
-        type: effects.projectile.type,
-        color: effects.projectile.color,
-        colorHex: '0x' + new THREE.Color(effects.projectile.color).getHexString(),
-        size: effects.projectile.size,
-        speed: effects.projectile.speed,
-        spawnY: effects.projectile.spawnY,
-        arcHeight: effects.projectile.type === 'shell' ? effects.projectile.arcHeight : undefined,
-      },
-      explosion: {
-        colors: effects.explosion.colors,
-        colorsHex: effects.explosion.colors.map(c => '0x' + new THREE.Color(c).getHexString()),
-        radius: effects.explosion.radius,
-        particles: effects.explosion.particles,
-      },
-      smoke: {
-        color: effects.smoke.color,
-        colorHex: '0x' + new THREE.Color(effects.smoke.color).getHexString(),
-        opacity: effects.smoke.opacity,
-        lifetime: effects.smoke.lifetime,
-        count: effects.smoke.count,
-      },
-    },
-    faction: currentFaction,
   }
+
+  // Add stats if they exist
+  const stats: Record<string, any> = {}
+  for (const k of ['hp', 'speed', 'armor', 'damage', 'range', 'cooldown', 'splash'] as const) {
+    if ((config as any)[k] !== undefined) stats[k] = (config as any)[k]
+  }
+  if (Object.keys(stats).length > 0) modelConfig.stats = stats
+
+  const collision: Record<string, any> = {}
+  if (config.selectionRadius !== undefined) collision.selectionRadius = config.selectionRadius
+  if (config.collisionRadius !== undefined) collision.collisionRadius = config.collisionRadius
+  if (Object.keys(collision).length > 0) modelConfig.collision = collision
+
+  const exportObj: Record<string, any> = { model: modelConfig }
+
+  // Only include effects for units
+  if (config.category === 'units') {
+    exportObj.effects = {
+      muzzleFlash: { ...effects.muzzle, colorHex: '0x' + new THREE.Color(effects.muzzle.color).getHexString() },
+      projectile: { ...effects.projectile, colorHex: '0x' + new THREE.Color(effects.projectile.color).getHexString() },
+      explosion: { ...effects.explosion, colorsHex: effects.explosion.colors.map(c => '0x' + new THREE.Color(c).getHexString()) },
+      smoke: { ...effects.smoke, colorHex: '0x' + new THREE.Color(effects.smoke.color).getHexString() },
+    }
+  }
+  exportObj.faction = currentFaction
+
   return JSON.stringify(exportObj, null, 2)
+}
+
+function buildFullConfigJSON(): string {
+  // Build config for ALL models
+  const allConfigs: Record<string, any> = {}
+  for (const m of ALL_MODELS) {
+    const entry: Record<string, any> = {
+      name: m.name,
+      category: m.category,
+      modelUrl: m.modelUrl,
+      scale: m.scale,
+      rotationOffset: m.rotationOffset,
+      rotationOffsetDeg: Math.round(m.rotationOffset * 180 / Math.PI),
+    }
+    // If this is the currently edited model, use live config values
+    if (m.key === currentKey) {
+      entry.scale = config.scale
+      entry.rotationOffset = config.rotationOffset
+      entry.rotationOffsetDeg = Math.round(config.rotationOffset * 180 / Math.PI)
+      for (const k of ['hp', 'speed', 'armor', 'damage', 'range', 'cooldown', 'splash', 'selectionRadius', 'collisionRadius'] as const) {
+        if ((config as any)[k] !== undefined) entry[k] = (config as any)[k]
+      }
+    } else {
+      for (const k of ['hp', 'speed', 'armor', 'damage', 'range', 'cooldown', 'splash', 'selectionRadius', 'collisionRadius'] as const) {
+        if ((m as any)[k] !== undefined) entry[k] = (m as any)[k]
+      }
+    }
+    allConfigs[m.key] = entry
+  }
+  return JSON.stringify(allConfigs, null, 2)
+}
+
+function saveConfigToFile() {
+  const json = buildFullConfigJSON()
+  const blob = new Blob([json], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'editor-config.json'
+  a.click()
+  URL.revokeObjectURL(url)
+  showStatus('Config saved to editor-config.json')
 }
 
 function resetEffectsUI() {

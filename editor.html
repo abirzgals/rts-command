@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>RTS Command - Unit Editor</title>
+  <title>RTS Command - Model Editor</title>
   <style>
     /* ── Reset & Base ─────────────────────────────────────────── */
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
@@ -72,24 +72,43 @@
     }
     .section-title .icon { font-size: 14px; opacity: 0.7; }
 
-    /* ── Unit Tabs ────────────────────────────────────────────── */
-    .unit-tabs {
-      display: flex; gap: 4px;
+    /* ── Category Tabs ────────────────────────────────────────── */
+    .cat-tabs {
+      display: flex; gap: 2px; margin-bottom: 8px;
     }
-    .unit-tab {
-      flex: 1; padding: 8px 4px;
+    .cat-tab {
+      flex: 1; padding: 6px 2px;
       background: #0d1117; border: 1px solid #21262d;
-      border-radius: 6px; color: #8b949e;
+      border-radius: 5px; color: #8b949e;
       cursor: pointer; text-align: center;
-      font-size: 12px; font-weight: 500;
+      font-size: 10px; font-weight: 500;
       transition: all 0.15s;
     }
-    .unit-tab:hover { background: #161b22; color: #c9d1d9; border-color: #30363d; }
-    .unit-tab.active {
+    .cat-tab:hover { background: #161b22; color: #c9d1d9; }
+    .cat-tab.active {
       background: #1f6feb20; color: #58a6ff;
       border-color: #1f6feb; font-weight: 600;
     }
-    .unit-tab .tab-icon { font-size: 18px; display: block; margin-bottom: 2px; }
+
+    /* ── Model Grid ──────────────────────────────────────────── */
+    .model-grid {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 4px; max-height: 220px; overflow-y: auto;
+    }
+    .model-card {
+      padding: 8px 6px;
+      background: #0d1117; border: 1px solid #21262d;
+      border-radius: 6px; color: #8b949e;
+      cursor: pointer; text-align: center;
+      font-size: 11px; font-weight: 500;
+      transition: all 0.15s;
+    }
+    .model-card:hover { background: #161b22; color: #c9d1d9; border-color: #30363d; }
+    .model-card.active {
+      background: #1f6feb20; color: #58a6ff;
+      border-color: #1f6feb; font-weight: 600;
+    }
+    .model-card .card-icon { font-size: 18px; display: block; margin-bottom: 2px; }
 
     /* ── Stat Row (slider + input combo) ──────────────────────── */
     .stat-row {
@@ -353,19 +372,17 @@
 
     <!-- ─── Left Panel ───────────────────────────────────────── -->
     <div class="panel left" id="left-panel">
-      <!-- Unit Selector -->
+      <!-- Model Selector -->
       <div class="panel-section">
-        <div class="section-title"><span class="icon">&#9881;</span> Unit Type</div>
-        <div class="unit-tabs" id="unit-tabs">
-          <div class="unit-tab active" data-unit="worker">
-            <span class="tab-icon">&#9935;</span> Worker
-          </div>
-          <div class="unit-tab" data-unit="marine">
-            <span class="tab-icon">&#9876;</span> Marine
-          </div>
-          <div class="unit-tab" data-unit="tank">
-            <span class="tab-icon">&#9748;</span> Tank
-          </div>
+        <div class="section-title"><span class="icon">&#9881;</span> Model</div>
+        <div class="cat-tabs" id="cat-tabs">
+          <div class="cat-tab active" data-cat="units">Units</div>
+          <div class="cat-tab" data-cat="buildings">Buildings</div>
+          <div class="cat-tab" data-cat="resources">Resources</div>
+          <div class="cat-tab" data-cat="obstacles">Obstacles</div>
+        </div>
+        <div class="model-grid" id="model-grid">
+          <!-- Populated by JS -->
         </div>
       </div>
 
@@ -454,7 +471,7 @@
       </div>
 
       <!-- Muzzle Flash -->
-      <div class="panel-section">
+      <div class="panel-section effects-section">
         <div class="section-title"><span class="icon">&#10026;</span> Muzzle Flash</div>
         <div class="stat-row">
           <span class="stat-label">Color</span>
@@ -485,7 +502,7 @@
       </div>
 
       <!-- Projectile -->
-      <div class="panel-section">
+      <div class="panel-section effects-section">
         <div class="section-title"><span class="icon">&#10132;</span> Projectile</div>
         <div class="stat-row">
           <span class="stat-label">Type</span>
@@ -525,7 +542,7 @@
       </div>
 
       <!-- Explosion -->
-      <div class="panel-section">
+      <div class="panel-section effects-section">
         <div class="section-title"><span class="icon">&#128165;</span> Explosion</div>
         <div class="stat-row" style="margin-bottom:8px">
           <span class="stat-label">Colors</span>
@@ -550,7 +567,7 @@
       </div>
 
       <!-- Smoke -->
-      <div class="panel-section">
+      <div class="panel-section effects-section">
         <div class="section-title"><span class="icon">&#9729;</span> Smoke</div>
         <div class="stat-row">
           <span class="stat-label">Color</span>
@@ -578,9 +595,11 @@
 
     <!-- ─── Bottom Bar ───────────────────────────────────────── -->
     <div id="bottom-bar">
-      <button class="btn primary" id="export-btn">&#128190; Export Config</button>
-      <button class="btn" id="copy-btn">&#128203; Copy to Clipboard</button>
-      <button class="btn danger" id="reset-btn">&#8634; Reset to Default</button>
+      <button class="btn primary" id="save-btn">&#128190; Save JSON</button>
+      <button class="btn" id="export-btn">&#128196; View Config</button>
+      <button class="btn" id="copy-btn">&#128203; Copy</button>
+      <button class="btn danger" id="reset-btn">&#8634; Reset</button>
+      <a class="btn" href="/" style="text-decoration:none">&#127918; Game</a>
       <div class="spacer"></div>
       <span class="status" id="status-text">Ready</span>
     </div>
