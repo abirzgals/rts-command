@@ -187,6 +187,9 @@
     .btn.success:hover { background: #2ea043; }
     .btn.small { padding: 4px 8px; font-size: 11px; }
     .btn-group { display: flex; gap: 4px; flex-wrap: wrap; }
+    .btn.picking { background: #da3633; border-color: #f85149; color: #fff; animation: pickPulse 1s infinite; }
+    @keyframes pickPulse { 0%,100% { box-shadow: 0 0 4px #f85149; } 50% { box-shadow: 0 0 12px #f85149; } }
+    #editor-canvas.pick-mode { cursor: crosshair; }
 
     /* ── Dropdowns ────────────────────────────────────────────── */
     .select-wrap select {
@@ -473,6 +476,14 @@
       <!-- Muzzle Flash -->
       <div class="panel-section effects-section">
         <div class="section-title"><span class="icon">&#10026;</span> Muzzle Flash</div>
+        <div class="stat-row" style="margin-bottom:8px">
+          <button class="btn small" id="pick-muzzle-btn" title="Click a face on the model to attach muzzle flash point">&#127919; Pick Face (Muzzle)</button>
+          <button class="btn small" id="pick-proj-btn" title="Click a face on the model to attach projectile spawn">&#127919; Pick Face (Proj)</button>
+        </div>
+        <div id="pick-status" style="font-size:11px;color:#8b949e;margin-bottom:6px;display:none">
+          Click on model face to attach...  <button class="btn small danger" id="pick-cancel-btn" style="padding:2px 6px;font-size:10px">Cancel</button>
+        </div>
+        <div id="pick-info" style="font-size:10px;color:#58a6ff;margin-bottom:6px;display:none"></div>
         <div class="stat-row">
           <span class="stat-label">Color</span>
           <input type="color" class="color-input" id="muzzle-color" value="#ffaa44">

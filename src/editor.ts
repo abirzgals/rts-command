@@ -97,6 +97,22 @@ let effects: EffectsConfig = JSON.parse(JSON.stringify(DEFAULT_EFFECTS))
 // Keep legacy alias
 let currentUnit = 'worker'
 
+// ─── Face Pick Mode ───────────────────────────────────────────────────────
+
+type PickTarget = 'muzzle' | 'projectile' | null
+let pickMode: PickTarget = null
+const raycaster = new THREE.Raycaster()
+const pickMouse = new THREE.Vector2()
+
+// Attachment info: bone + local offset (follows animation)
+interface AttachmentInfo {
+  bone: THREE.Bone | THREE.Object3D
+  localOffset: THREE.Vector3
+  localNormal: THREE.Vector3
+}
+let muzzleAttachment: AttachmentInfo | null = null
+let projectileAttachment: AttachmentInfo | null = null
+
 // ─── Three.js Core ─────────────────────────────────────────────────────────
 
 let renderer: THREE.WebGLRenderer
@@ -232,6 +248,7 @@ function init() {
   wireAnimationControls()
   wireTurretControls()
   wireEffectControls()
+  wirePickFace()
   wireBottomBar()
   wireExportModal()
 
@@ -318,6 +335,11 @@ async function loadModel(modelKey: string) {
   activeClipName = ''
   turretBone = null
   barrelBone = null
+  muzzleAttachment = null
+  projectileAttachment = null
+  // Hide pick info
+  const pickInfo = document.getElementById('pick-info')
+  if (pickInfo) pickInfo.style.display = 'none'
 
   // Load or use cache
   let gltf = gltfCache.get(def.modelUrl)
@@ -1407,6 +1429,225 @@ function puffEffect() {
   })
 
   showStatus('Smoke puff!')
+}
+
+// ─── Face Pick Mode ───────────────────────────────────────────────────────
+
+function wirePickFace() {
+  const canvas = document.getElementById('editor-canvas') as HTMLCanvasElement
+  const pickMuzzleBtn = document.getElementById('pick-muzzle-btn')!
+  const pickProjBtn = document.getElementById('pick-proj-btn')!
+  const pickStatus = document.getElementById('pick-status')!
+  const pickInfo = document.getElementById('pick-info')!
+  const pickCancelBtn = document.getElementById('pick-cancel-btn')!
+
+  function enterPickMode(target: PickTarget) {
+    pickMode = target
+    canvas.classList.add('pick-mode')
+    controls.enabled = false
+    pickStatus.style.display = 'block'
+    if (target === 'muzzle') {
+      pickMuzzleBtn.classList.add('picking')
+    } else {
+      pickProjBtn.classList.add('picking')
+    }
+  }
+
+  function exitPickMode() {
+    pickMode = null
+    canvas.classList.remove('pick-mode')
+    controls.enabled = true
+    pickStatus.style.display = 'none'
+    pickMuzzleBtn.classList.remove('picking')
+    pickProjBtn.classList.remove('picking')
+  }
+
+  pickMuzzleBtn.addEventListener('click', () => {
+    if (pickMode) { exitPickMode(); return }
+    enterPickMode('muzzle')
+  })
+
+  pickProjBtn.addEventListener('click', () => {
+    if (pickMode) { exitPickMode(); return }
+    enterPickMode('projectile')
+  })
+
+  pickCancelBtn.addEventListener('click', () => exitPickMode())
+
+  canvas.addEventListener('click', (e) => {
+    if (!pickMode || !currentModel) return
+
+    const rect = canvas.getBoundingClientRect()
+    pickMouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1
+    pickMouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
+
+    raycaster.setFromCamera(pickMouse, camera)
+
+    // Collect all meshes from the model
+    const meshes: THREE.Mesh[] = []
+    currentModel.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) meshes.push(child as THREE.Mesh)
+    })
+
+    const intersects = raycaster.intersectObjects(meshes, false)
+    if (intersects.length === 0) return
+
+    const hit = intersects[0]
+    const hitMesh = hit.object as THREE.Mesh
+    const hitPoint = hit.point.clone()
+    const hitNormal = hit.face ? hit.face.normal.clone() : new THREE.Vector3(0, 1, 0)
+
+    // Transform normal to world space
+    const normalMatrix = new THREE.Matrix3().getNormalMatrix(hitMesh.matrixWorld)
+    hitNormal.applyMatrix3(normalMatrix).normalize()
+
+    // Find the best bone to attach to (for skinned meshes)
+    const attachParent = findBestBone(hitMesh, hit) || currentModel
+
+    // Compute local offset relative to the attach parent
+    const parentWorldInv = new THREE.Matrix4().copy(attachParent.matrixWorld).invert()
+    const localOffset = hitPoint.clone().applyMatrix4(parentWorldInv)
+    const localNormal = hitNormal.clone().transformDirection(parentWorldInv)
+
+    const attachment: AttachmentInfo = {
+      bone: attachParent,
+      localOffset,
+      localNormal,
+    }
+
+    const marker = pickMode === 'muzzle' ? muzzleMarker : projectileMarker
+    if (marker) {
+      // Reparent marker to the attachment bone
+      marker.removeFromParent()
+      attachParent.add(marker)
+      marker.position.copy(localOffset)
+    }
+
+    if (pickMode === 'muzzle') {
+      muzzleAttachment = attachment
+      // Update offset sliders to reflect the local position
+      setSliderValue('muzzle-xoffset', localOffset.x)
+      setSliderValue('muzzle-yoffset', localOffset.y)
+      setSliderValue('muzzle-zoffset', localOffset.z)
+      effects.muzzle.xOffset = localOffset.x
+      effects.muzzle.yOffset = localOffset.y
+      effects.muzzle.zOffset = localOffset.z
+    } else {
+      projectileAttachment = attachment
+      setSliderValue('proj-x', localOffset.x)
+      setSliderValue('proj-y', localOffset.y)
+      setSliderValue('proj-z', localOffset.z)
+      effects.projectile.spawnX = localOffset.x
+      effects.projectile.spawnY = localOffset.y
+      effects.projectile.spawnZ = localOffset.z
+    }
+
+    // Show info
+    const boneName = (attachParent as THREE.Bone).isBone ? attachParent.name : 'mesh root'
+    pickInfo.style.display = 'block'
+    pickInfo.textContent = `Attached to: ${boneName} | Offset: (${localOffset.x.toFixed(2)}, ${localOffset.y.toFixed(2)}, ${localOffset.z.toFixed(2)})`
+
+    // Highlight the picked face briefly
+    highlightFace(hit)
+
+    exitPickMode()
+    showStatus(`${pickMode === 'muzzle' ? 'Muzzle' : 'Projectile'} point attached to ${boneName}`)
+  })
+}
+
+function findBestBone(mesh: THREE.Mesh, hit: THREE.Intersection): THREE.Object3D | null {
+  // For skinned meshes, find the bone with highest influence on the hit face
+  if (!(mesh as THREE.SkinnedMesh).isSkinnedMesh) {
+    // For non-skinned, walk up to find a Bone parent or return model root
+    let parent: THREE.Object3D | null = mesh
+    while (parent) {
+      if ((parent as THREE.Bone).isBone) return parent
+      parent = parent.parent
+    }
+    return null
+  }
+
+  const skinnedMesh = mesh as THREE.SkinnedMesh
+  const skinIndex = skinnedMesh.geometry.attributes.skinIndex
+  const skinWeight = skinnedMesh.geometry.attributes.skinWeight
+  if (!skinIndex || !skinWeight || !hit.face) return null
+
+  // Get the 3 vertex indices of the hit face
+  const faceIndices = [hit.face.a, hit.face.b, hit.face.c]
+
+  // Accumulate bone weights across the face
+  const boneWeights = new Map<number, number>()
+  for (const vi of faceIndices) {
+    for (let j = 0; j < 4; j++) {
+      const boneIdx = skinIndex.getComponent(vi, j)
+      const weight = skinWeight.getComponent(vi, j)
+      if (weight > 0) {
+        boneWeights.set(boneIdx, (boneWeights.get(boneIdx) || 0) + weight)
+      }
+    }
+  }
+
+  // Find the bone with highest total weight
+  let bestBoneIdx = 0
+  let bestWeight = 0
+  for (const [idx, w] of boneWeights) {
+    if (w > bestWeight) {
+      bestWeight = w
+      bestBoneIdx = idx
+    }
+  }
+
+  // Get the actual bone from the skeleton
+  const skeleton = skinnedMesh.skeleton
+  if (skeleton && skeleton.bones[bestBoneIdx]) {
+    return skeleton.bones[bestBoneIdx]
+  }
+
+  return null
+}
+
+function highlightFace(hit: THREE.Intersection) {
+  if (!hit.face) return
+
+  const hitMesh = hit.object as THREE.Mesh
+  const geo = hitMesh.geometry
+
+  // Create a small triangle highlight at the hit face
+  const posAttr = geo.attributes.position
+  const index = geo.index
+
+  const vA = new THREE.Vector3()
+  const vB = new THREE.Vector3()
+  const vC = new THREE.Vector3()
+
+  // hit.face.a/b/c are already resolved vertex indices
+  vA.fromBufferAttribute(posAttr, hit.face.a)
+  vB.fromBufferAttribute(posAttr, hit.face.b)
+  vC.fromBufferAttribute(posAttr, hit.face.c)
+
+  // Transform to world space
+  vA.applyMatrix4(hitMesh.matrixWorld)
+  vB.applyMatrix4(hitMesh.matrixWorld)
+  vC.applyMatrix4(hitMesh.matrixWorld)
+
+  const triGeo = new THREE.BufferGeometry().setFromPoints([vA, vB, vC])
+  const triMat = new THREE.MeshBasicMaterial({
+    color: 0x00ff88,
+    transparent: true,
+    opacity: 0.7,
+    side: THREE.DoubleSide,
+    depthTest: false,
+  })
+  const triMesh = new THREE.Mesh(triGeo, triMat)
+  triMesh.renderOrder = 999
+  scene.add(triMesh)
+
+  // Remove after 1 second
+  setTimeout(() => {
+    scene.remove(triMesh)
+    triGeo.dispose()
+    triMat.dispose()
+  }, 1000)
 }
 
 // ─── Bottom Bar ────────────────────────────────────────────────────────────
