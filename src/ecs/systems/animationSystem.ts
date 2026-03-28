@@ -42,16 +42,15 @@ export function animationSystem(world: IWorld, _dt: number) {
         anim = 'Idle'
       }
     }
-    // Tank (pool 2) — uses Quaternius tank animation names
+    // Tank (pool 2) — turret rotation handled by renderSystem via bones
     else if (poolId === 2) {
+      // New tank model (tank-v3) has no skeletal animations,
+      // turret/barrel aiming is done via direct bone manipulation.
+      // Try legacy animation names as fallback for idle rumble.
       if (isMoving) {
         anim = 'TankArmature|Tank_Forward'
-      } else if (hasComponent(world, AttackTarget, eid)) {
-        // Tank has no shoot anim — use idle (turret stays still)
-        anim = 'TankArmature|Tank_Forward' // slight idle rumble
       } else {
-        // No idle animation — just stop at frame 0 of forward
-        anim = 'TankArmature|Tank_Forward'
+        anim = 'Idle'
       }
     }
     // Marine / other humanoid
@@ -64,7 +63,7 @@ export function animationSystem(world: IWorld, _dt: number) {
 
     // Dying
     if (hasComponent(world, Health, eid) && Health.current[eid] <= 0) {
-      anim = poolId === 2 ? 'TankArmature|Tank_Forward' : 'Death'
+      anim = poolId === 2 ? 'Idle' : 'Death'
     }
 
     mgr.playAnimation(eid, anim)

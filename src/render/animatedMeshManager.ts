@@ -13,6 +13,8 @@ interface AnimatedUnit {
   mixer: THREE.AnimationMixer
   actions: Map<string, THREE.AnimationAction>
   currentAnim: string
+  turretBone?: THREE.Bone
+  barrelBone?: THREE.Bone
 }
 
 /**
@@ -84,7 +86,17 @@ export class AnimatedMeshManager {
       idle.play()
     }
 
-    this.units.set(eid, { mesh: clone, mixer, actions, currentAnim: 'Idle' })
+    // Find turret/barrel bones for independent rotation
+    let turretBone: THREE.Bone | undefined
+    let barrelBone: THREE.Bone | undefined
+    clone.traverse((child) => {
+      if ((child as THREE.Bone).isBone) {
+        if (child.name === 'Turret') turretBone = child as THREE.Bone
+        if (child.name === 'Barrel') barrelBone = child as THREE.Bone
+      }
+    })
+
+    this.units.set(eid, { mesh: clone, mixer, actions, currentAnim: 'Idle', turretBone, barrelBone })
     return 0
   }
 
@@ -113,6 +125,47 @@ export class AnimatedMeshManager {
     if (!unit) return
     unit.mesh.position.set(x, y, z)
     unit.mesh.rotation.y = rotY + this.rotationOffset
+  }
+
+  // Reusable objects to avoid per-frame allocations
+  private static _v3 = new THREE.Vector3()
+  private static _q1 = new THREE.Quaternion()
+  private static _up = new THREE.Vector3(0, 1, 0)
+  private static _right = new THREE.Vector3(1, 0, 0)
+
+  /**
+   * Rotate turret toward a world-space target, and pitch barrel to aim at it.
+   * Uses smooth interpolation (slerp) for natural rotation.
+   */
+  updateTurretAim(eid: number, targetX: number, targetY: number, targetZ: number, dt: number) {
+    const unit = this.units.get(eid)
+    if (!unit?.turretBone) return
+
+    // Convert target to mesh local space (accounts for position, rotation, scale)
+    const lt = AnimatedMeshManager._v3.set(targetX, targetY, targetZ)
+    unit.mesh.worldToLocal(lt)
+
+    // Turret yaw: barrel faces -Z at rest in glTF/Three.js local space.
+    // To rotate -Z toward (lt.x, lt.z), yaw = atan2(-x, -z).
+    const yaw = Math.atan2(-lt.x, -lt.z)
+    const q = AnimatedMeshManager._q1
+    q.setFromAxisAngle(AnimatedMeshManager._up, yaw)
+    unit.turretBone.quaternion.slerp(q, Math.min(1, dt * 4))
+
+    // Barrel pitch: tilt up/down toward target
+    if (unit.barrelBone) {
+      const horizDist = Math.sqrt(lt.x * lt.x + lt.z * lt.z)
+      // Barrel pivot is at ~Y=1.8 in model local space
+      const dy = lt.y - 1.8
+      const pitch = Math.atan2(dy, horizDist)
+      q.setFromAxisAngle(AnimatedMeshManager._right, pitch)
+      unit.barrelBone.quaternion.slerp(q, Math.min(1, dt * 4))
+    }
+  }
+
+  /** Check if this unit has turret bones */
+  hasTurret(eid: number): boolean {
+    return !!this.units.get(eid)?.turretBone
   }
 
   playAnimation(eid: number, name: string, crossFadeDuration = 0.15) {
