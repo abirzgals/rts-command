@@ -374,7 +374,8 @@ async function loadModel(modelKey: string) {
   if (!def) return
 
   // Save current model's effects and events before switching
-  if (currentKey) {
+  // (skip on first load to avoid overwriting data just loaded from server)
+  if (currentModel && currentKey) {
     savedEffects.set(currentKey, JSON.parse(JSON.stringify(effects)))
     savedEvents.set(currentKey, [...animEvents])
   }
@@ -410,12 +411,9 @@ async function loadModel(modelKey: string) {
   firePointAttachment = null
   animEvents = []
   selectedEventId = null
-  // Hide pick info & reset events UI
+  // Hide pick info
   const pickInfo = document.getElementById('pick-info')
   if (pickInfo) pickInfo.style.display = 'none'
-  const editPanel = document.getElementById('event-edit-panel')
-  if (editPanel) editPanel.style.display = 'none'
-  if ((window as any).__renderEventsList) (window as any).__renderEventsList()
 
   // Load or use cache
   let gltf = gltfCache.get(def.modelUrl)
@@ -491,6 +489,11 @@ async function loadModel(modelKey: string) {
   updateBadges(gltf)
   updateOverlays()
   updateTurretSectionVisibility()
+  syncEffectsUI()
+  selectedEventId = null
+  const editPanel = document.getElementById('event-edit-panel')
+  if (editPanel) editPanel.style.display = 'none'
+  if ((window as any).__renderEventsList) (window as any).__renderEventsList()
 
   // Show/hide effects panel for non-units
   const effectSections = document.querySelectorAll<HTMLElement>('.effects-section')
@@ -2333,6 +2336,52 @@ function applyLoadedConfig(data: Record<string, any>) {
   }
 }
 
+
+/** Sync all effects UI controls to match the current `effects` object */
+function syncEffectsUI() {
+  // Fire point
+  setSliderValue('fp-x', effects.firePoint.x)
+  setSliderValue('fp-y', effects.firePoint.y)
+  setSliderValue('fp-z', effects.firePoint.z)
+
+  // Muzzle
+  const mc = document.getElementById('muzzle-color') as HTMLInputElement
+  if (mc) mc.value = effects.muzzle.color
+  setSliderValue('muzzle-intensity', effects.muzzle.intensity)
+  setSliderValue('muzzle-range', effects.muzzle.range)
+  setSliderValue('muzzle-duration', effects.muzzle.duration)
+
+  // Projectile
+  const pt = document.getElementById('proj-type') as HTMLSelectElement
+  if (pt) pt.value = effects.projectile.type
+  const pc = document.getElementById('proj-color') as HTMLInputElement
+  if (pc) pc.value = effects.projectile.color
+  setSliderValue('proj-size', effects.projectile.size)
+  setSliderValue('proj-speed', effects.projectile.speed)
+  setSliderValue('proj-arc', effects.projectile.arcHeight)
+  const arcRow = document.getElementById('proj-arc-row')
+  if (arcRow) arcRow.style.display = effects.projectile.type === 'bullet' ? 'none' : 'flex'
+
+  // Impact
+  const it = document.getElementById('impact-type') as HTMLSelectElement
+  if (it) it.value = effects.impact.type
+  const ic = document.getElementById('impact-color') as HTMLInputElement
+  if (ic) ic.value = effects.impact.color
+  setSliderValue('impact-size', effects.impact.size)
+  setSliderValue('impact-particles', effects.impact.particles)
+  setSliderValue('impact-lifetime', effects.impact.lifetime)
+
+  // Explosion
+  setSliderValue('expl-radius', effects.explosion.radius)
+  setSliderValue('expl-particles', effects.explosion.particles)
+
+  // Smoke
+  const sc = document.getElementById('smoke-color') as HTMLInputElement
+  if (sc) sc.value = effects.smoke.color
+  setSliderValue('smoke-opacity', effects.smoke.opacity)
+  setSliderValue('smoke-lifetime', effects.smoke.lifetime)
+  setSliderValue('smoke-count', effects.smoke.count)
+}
 
 function resetEffectsUI() {
   // Fire point
