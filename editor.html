@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RTS Command - Unit Editor</title>
+  <style>
+    /* ── Reset & Base ─────────────────────────────────────────── */
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%; height: 100%; overflow: hidden;
+      background: #0d1117; color: #c9d1d9;
+      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 13px; line-height: 1.4;
+      user-select: none;
+    }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #161b22; }
+    ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #484f58; }
+
+    /* ── Layout ───────────────────────────────────────────────── */
+    #app {
+      display: grid;
+      grid-template-columns: 280px 1fr 300px;
+      grid-template-rows: 44px 1fr 48px;
+      width: 100%; height: 100%;
+    }
+
+    /* ── Top Bar ──────────────────────────────────────────────── */
+    #top-bar {
+      grid-column: 1 / -1;
+      background: linear-gradient(180deg, #161b22, #0d1117);
+      border-bottom: 1px solid #21262d;
+      display: flex; align-items: center;
+      padding: 0 16px; gap: 16px;
+    }
+    #top-bar h1 {
+      font-size: 15px; font-weight: 600; color: #58a6ff;
+      letter-spacing: 0.5px;
+    }
+    #top-bar .separator { width: 1px; height: 20px; background: #30363d; }
+    #top-bar .breadcrumb { color: #8b949e; font-size: 12px; }
+    #top-bar .spacer { flex: 1; }
+    #top-bar .fps { color: #484f58; font-size: 11px; font-family: monospace; }
+
+    /* ── Side Panels ──────────────────────────────────────────── */
+    .panel {
+      background: #161b22;
+      border-right: 1px solid #21262d;
+      overflow-y: auto;
+      display: flex; flex-direction: column;
+    }
+    .panel.right {
+      border-right: none;
+      border-left: 1px solid #21262d;
+    }
+
+    .panel-section {
+      padding: 12px;
+      border-bottom: 1px solid #21262d;
+    }
+    .panel-section:last-child { border-bottom: none; }
+
+    .section-title {
+      font-size: 11px; font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: #8b949e;
+      margin-bottom: 10px;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .section-title .icon { font-size: 14px; opacity: 0.7; }
+
+    /* ── Unit Tabs ────────────────────────────────────────────── */
+    .unit-tabs {
+      display: flex; gap: 4px;
+    }
+    .unit-tab {
+      flex: 1; padding: 8px 4px;
+      background: #0d1117; border: 1px solid #21262d;
+      border-radius: 6px; color: #8b949e;
+      cursor: pointer; text-align: center;
+      font-size: 12px; font-weight: 500;
+      transition: all 0.15s;
+    }
+    .unit-tab:hover { background: #161b22; color: #c9d1d9; border-color: #30363d; }
+    .unit-tab.active {
+      background: #1f6feb20; color: #58a6ff;
+      border-color: #1f6feb; font-weight: 600;
+    }
+    .unit-tab .tab-icon { font-size: 18px; display: block; margin-bottom: 2px; }
+
+    /* ── Stat Row (slider + input combo) ──────────────────────── */
+    .stat-row {
+      display: flex; align-items: center;
+      margin-bottom: 6px; gap: 6px;
+    }
+    .stat-label {
+      width: 80px; flex-shrink: 0;
+      font-size: 11px; color: #8b949e;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .stat-slider {
+      flex: 1; min-width: 0;
+      -webkit-appearance: none; appearance: none;
+      height: 4px; background: #21262d; border-radius: 2px;
+      outline: none; cursor: pointer;
+    }
+    .stat-slider::-webkit-slider-thumb {
+      -webkit-appearance: none; appearance: none;
+      width: 14px; height: 14px; border-radius: 50%;
+      background: #58a6ff; border: 2px solid #0d1117;
+      cursor: pointer; transition: background 0.1s;
+    }
+    .stat-slider::-webkit-slider-thumb:hover { background: #79c0ff; }
+    .stat-slider::-moz-range-thumb {
+      width: 14px; height: 14px; border-radius: 50%;
+      background: #58a6ff; border: 2px solid #0d1117;
+      cursor: pointer;
+    }
+    .stat-input {
+      width: 52px; flex-shrink: 0;
+      background: #0d1117; border: 1px solid #21262d;
+      border-radius: 4px; color: #c9d1d9;
+      padding: 3px 6px; font-size: 11px;
+      text-align: right; font-family: monospace;
+      outline: none;
+    }
+    .stat-input:focus { border-color: #58a6ff; }
+
+    /* ── Toggle Switches ──────────────────────────────────────── */
+    .toggle-row {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 6px; padding: 4px 0;
+    }
+    .toggle-label { font-size: 12px; color: #c9d1d9; }
+    .toggle-switch {
+      position: relative; width: 36px; height: 20px;
+      background: #21262d; border-radius: 10px;
+      cursor: pointer; transition: background 0.2s;
+    }
+    .toggle-switch.on { background: #1f6feb; }
+    .toggle-switch::after {
+      content: '';
+      position: absolute; top: 2px; left: 2px;
+      width: 16px; height: 16px; border-radius: 50%;
+      background: #c9d1d9; transition: transform 0.2s;
+    }
+    .toggle-switch.on::after { transform: translateX(16px); }
+
+    /* ── Buttons ──────────────────────────────────────────────── */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      gap: 6px; padding: 6px 12px;
+      background: #21262d; border: 1px solid #30363d;
+      border-radius: 6px; color: #c9d1d9;
+      font-size: 12px; cursor: pointer;
+      transition: all 0.15s; white-space: nowrap;
+    }
+    .btn:hover { background: #30363d; border-color: #484f58; }
+    .btn:active { transform: scale(0.97); }
+    .btn.primary { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+    .btn.primary:hover { background: #388bfd; }
+    .btn.danger { background: #da3633; border-color: #da3633; color: #fff; }
+    .btn.danger:hover { background: #f85149; }
+    .btn.success { background: #238636; border-color: #238636; color: #fff; }
+    .btn.success:hover { background: #2ea043; }
+    .btn.small { padding: 4px 8px; font-size: 11px; }
+    .btn-group { display: flex; gap: 4px; flex-wrap: wrap; }
+
+    /* ── Dropdowns ────────────────────────────────────────────── */
+    .select-wrap select {
+      width: 100%; padding: 6px 8px;
+      background: #0d1117; border: 1px solid #21262d;
+      border-radius: 4px; color: #c9d1d9;
+      font-size: 12px; cursor: pointer; outline: none;
+    }
+    .select-wrap select:focus { border-color: #58a6ff; }
+    .select-wrap select option { background: #0d1117; }
+
+    /* ── Color Picker ────────────────────────────────────────── */
+    .color-input {
+      width: 32px; height: 24px;
+      background: none; border: 1px solid #30363d;
+      border-radius: 4px; cursor: pointer;
+      padding: 1px;
+    }
+    .color-input::-webkit-color-swatch-wrapper { padding: 0; }
+    .color-input::-webkit-color-swatch { border: none; border-radius: 3px; }
+
+    /* ── Animation Timeline ──────────────────────────────────── */
+    .timeline-bar {
+      width: 100%; height: 24px;
+      background: #0d1117; border: 1px solid #21262d;
+      border-radius: 4px; position: relative;
+      cursor: pointer; margin: 8px 0;
+    }
+    .timeline-progress {
+      height: 100%; background: #1f6feb30;
+      border-radius: 3px; position: relative;
+      pointer-events: none;
+    }
+    .timeline-thumb {
+      position: absolute; top: -2px; right: -4px;
+      width: 8px; height: 28px; background: #58a6ff;
+      border-radius: 2px; pointer-events: none;
+    }
+
+    /* ── Clip List ────────────────────────────────────────────── */
+    .clip-item {
+      display: flex; align-items: center;
+      padding: 4px 8px; margin-bottom: 2px;
+      background: #0d1117; border-radius: 4px;
+      gap: 8px; cursor: pointer;
+      transition: background 0.1s;
+    }
+    .clip-item:hover { background: #161b22; }
+    .clip-item.active { background: #1f6feb20; border-left: 2px solid #58a6ff; }
+    .clip-item .clip-name { flex: 1; font-size: 12px; color: #c9d1d9; }
+    .clip-item .clip-duration { font-size: 10px; color: #484f58; font-family: monospace; }
+    .clip-play-btn {
+      width: 22px; height: 22px; border-radius: 50%;
+      background: #21262d; border: 1px solid #30363d;
+      color: #8b949e; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 10px; transition: all 0.1s;
+    }
+    .clip-play-btn:hover { background: #1f6feb; color: #fff; border-color: #1f6feb; }
+
+    /* ── Viewport ─────────────────────────────────────────────── */
+    #viewport {
+      position: relative;
+      background: #0d1117;
+      overflow: hidden;
+    }
+    #viewport canvas {
+      display: block; width: 100%; height: 100%;
+    }
+    .viewport-overlay {
+      position: absolute; bottom: 8px; left: 8px;
+      display: flex; gap: 6px;
+    }
+    .viewport-badge {
+      background: rgba(13,17,23,0.85);
+      border: 1px solid #21262d;
+      border-radius: 4px; padding: 3px 8px;
+      font-size: 10px; color: #8b949e;
+      font-family: monospace;
+      backdrop-filter: blur(4px);
+    }
+
+    /* ── Bottom Bar ───────────────────────────────────────────── */
+    #bottom-bar {
+      grid-column: 1 / -1;
+      background: #161b22;
+      border-top: 1px solid #21262d;
+      display: flex; align-items: center;
+      padding: 0 16px; gap: 8px;
+    }
+    #bottom-bar .spacer { flex: 1; }
+    #bottom-bar .status {
+      font-size: 11px; color: #484f58;
+      font-family: monospace;
+    }
+
+    /* ── Faction Toggle ───────────────────────────────────────── */
+    .faction-toggle {
+      display: flex; border-radius: 6px;
+      overflow: hidden; border: 1px solid #21262d;
+    }
+    .faction-btn {
+      padding: 5px 14px; font-size: 11px;
+      background: #0d1117; color: #8b949e;
+      border: none; cursor: pointer;
+      transition: all 0.15s;
+    }
+    .faction-btn:first-child { border-right: 1px solid #21262d; }
+    .faction-btn.active-player { background: #1a3a5c; color: #58a6ff; }
+    .faction-btn.active-enemy { background: #5c1a1a; color: #ff6b6b; }
+
+    /* ── Loading overlay ──────────────────────────────────────── */
+    #loading-overlay {
+      position: fixed; inset: 0;
+      background: #0d1117;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      z-index: 1000; gap: 16px;
+      transition: opacity 0.3s;
+    }
+    #loading-overlay.hidden { opacity: 0; pointer-events: none; }
+    .spinner {
+      width: 40px; height: 40px;
+      border: 3px solid #21262d; border-top-color: #58a6ff;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-text { color: #8b949e; font-size: 13px; }
+
+    /* ── Export Modal ──────────────────────────────────────────── */
+    #export-modal {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.6);
+      display: none; align-items: center; justify-content: center;
+      z-index: 500;
+    }
+    #export-modal.visible { display: flex; }
+    .modal-content {
+      background: #161b22; border: 1px solid #30363d;
+      border-radius: 8px; padding: 20px;
+      width: 560px; max-height: 70vh;
+      display: flex; flex-direction: column; gap: 12px;
+    }
+    .modal-content h2 {
+      font-size: 16px; color: #c9d1d9; font-weight: 600;
+    }
+    .modal-content textarea {
+      width: 100%; height: 300px;
+      background: #0d1117; border: 1px solid #21262d;
+      border-radius: 6px; padding: 12px;
+      color: #79c0ff; font-family: 'Consolas', 'Fira Code', monospace;
+      font-size: 12px; resize: none;
+      outline: none; line-height: 1.5;
+    }
+    .modal-actions {
+      display: flex; justify-content: flex-end; gap: 8px;
+    }
+
+    /* ── Swatch Row ───────────────────────────────────────────── */
+    .swatch-row {
+      display: flex; gap: 4px; align-items: center;
+    }
+    .swatch {
+      width: 24px; height: 24px; border-radius: 4px;
+      border: 2px solid transparent; cursor: pointer;
+      transition: border-color 0.1s;
+    }
+    .swatch:hover { border-color: #58a6ff; }
+    .swatch.active { border-color: #58a6ff; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- ─── Top Bar ──────────────────────────────────────────── -->
+    <div id="top-bar">
+      <h1>RTS COMMAND</h1>
+      <div class="separator"></div>
+      <span class="breadcrumb">Unit Editor</span>
+      <div class="spacer"></div>
+      <span class="fps" id="fps-display">-- fps</span>
+    </div>
+
+    <!-- ─── Left Panel ───────────────────────────────────────── -->
+    <div class="panel left" id="left-panel">
+      <!-- Unit Selector -->
+      <div class="panel-section">
+        <div class="section-title"><span class="icon">&#9881;</span> Unit Type</div>
+        <div class="unit-tabs" id="unit-tabs">
+          <div class="unit-tab active" data-unit="worker">
+            <span class="tab-icon">&#9935;</span> Worker
+          </div>
+          <div class="unit-tab" data-unit="marine">
+            <span class="tab-icon">&#9876;</span> Marine
+          </div>
+          <div class="unit-tab" data-unit="tank">
+            <span class="tab-icon">&#9748;</span> Tank
+          </div>
+        </div>
+      </div>
+
+      <!-- Faction Toggle -->
+      <div class="panel-section">
+        <div class="section-title"><span class="icon">&#9873;</span> Faction Color</div>
+        <div class="faction-toggle" id="faction-toggle">
+          <button class="faction-btn active-player" data-faction="player">Player (Blue)</button>
+          <button class="faction-btn" data-faction="enemy">Enemy (Red)</button>
+        </div>
+      </div>
+
+      <!-- Stats Editor -->
+      <div class="panel-section" id="stats-section">
+        <div class="section-title"><span class="icon">&#9878;</span> Unit Stats</div>
+        <div id="stats-container">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── Center Viewport ──────────────────────────────────── -->
+    <div id="viewport">
+      <canvas id="editor-canvas"></canvas>
+      <div class="viewport-overlay">
+        <div class="viewport-badge" id="badge-model">--</div>
+        <div class="viewport-badge" id="badge-tris">-- tris</div>
+        <div class="viewport-badge" id="badge-anims">-- anims</div>
+      </div>
+    </div>
+
+    <!-- ─── Right Panel ──────────────────────────────────────── -->
+    <div class="panel right" id="right-panel">
+      <!-- Visual Overlays -->
+      <div class="panel-section">
+        <div class="section-title"><span class="icon">&#128065;</span> Visual Overlays</div>
+        <div id="overlays-container">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+      <!-- Animation Controls -->
+      <div class="panel-section">
+        <div class="section-title"><span class="icon">&#9654;</span> Animation</div>
+        <div class="select-wrap" style="margin-bottom:8px">
+          <select id="anim-select"><option value="">-- no animations --</option></select>
+        </div>
+        <div class="btn-group" style="margin-bottom:8px">
+          <button class="btn small" id="anim-play">&#9654; Play</button>
+          <button class="btn small" id="anim-pause">&#10074;&#10074; Pause</button>
+          <button class="btn small" id="anim-stop">&#9632; Stop</button>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Speed</span>
+          <input type="range" class="stat-slider" id="anim-speed" min="0.1" max="3" step="0.1" value="1">
+          <input type="text" class="stat-input" id="anim-speed-val" value="1.0x" readonly>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Crossfade</span>
+          <input type="range" class="stat-slider" id="anim-crossfade" min="0" max="1" step="0.05" value="0.15">
+          <input type="text" class="stat-input" id="anim-crossfade-val" value="0.15s" readonly>
+        </div>
+        <div class="timeline-bar" id="anim-timeline">
+          <div class="timeline-progress" id="anim-progress" style="width:0%">
+            <div class="timeline-thumb"></div>
+          </div>
+        </div>
+        <div id="clip-list" style="max-height:140px; overflow-y:auto;">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+      <!-- Turret Control (Tank only) -->
+      <div class="panel-section" id="turret-section" style="display:none">
+        <div class="section-title"><span class="icon">&#9678;</span> Turret Control</div>
+        <div class="stat-row">
+          <span class="stat-label">Turret Yaw</span>
+          <input type="range" class="stat-slider" id="turret-yaw" min="-180" max="180" step="1" value="0">
+          <input type="text" class="stat-input" id="turret-yaw-val" value="0" readonly>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Barrel Pitch</span>
+          <input type="range" class="stat-slider" id="barrel-pitch" min="-30" max="30" step="1" value="0">
+          <input type="text" class="stat-input" id="barrel-pitch-val" value="0" readonly>
+        </div>
+      </div>
+
+      <!-- Muzzle Flash -->
+      <div class="panel-section">
+        <div class="section-title"><span class="icon">&#10026;</span> Muzzle Flash</div>
+        <div class="stat-row">
+          <span class="stat-label">Color</span>
+          <input type="color" class="color-input" id="muzzle-color" value="#ffaa44">
+          <span style="flex:1"></span>
+          <button class="btn small success" id="fire-btn">Fire!</button>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Intensity</span>
+          <input type="range" class="stat-slider" id="muzzle-intensity" min="1" max="20" step="0.5" value="8">
+          <input type="text" class="stat-input" id="muzzle-intensity-val" value="8" readonly>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Range</span>
+          <input type="range" class="stat-slider" id="muzzle-range" min="1" max="30" step="0.5" value="12">
+          <input type="text" class="stat-input" id="muzzle-range-val" value="12" readonly>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Y Offset</span>
+          <input type="range" class="stat-slider" id="muzzle-yoffset" min="0" max="4" step="0.1" value="1.5">
+          <input type="text" class="stat-input" id="muzzle-yoffset-val" value="1.5" readonly>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Duration</span>
+          <input type="range" class="stat-slider" id="muzzle-duration" min="0.02" max="0.5" step="0.01" value="0.1">
+          <input type="text" class="stat-input" id="muzzle-duration-val" value="0.10s" readonly>
+        </div>
+      </div>
+
+      <!-- Projectile -->
+      <div class="panel-section">
+        <div class="section-title"><span class="icon">&#10132;</span> Projectile</div>
+        <div class="stat-row">
+          <span class="stat-label">Type</span>
+          <div class="select-wrap" style="flex:1">
+            <select id="proj-type">
+              <option value="bullet">Bullet</option>
+              <option value="shell">Shell</option>
+            </select>
+          </div>
+          <button class="btn small success" id="launch-btn">Launch!</button>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Color</span>
+          <input type="color" class="color-input" id="proj-color" value="#ffee44">
+          <span style="flex:1"></span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Size</span>
+          <input type="range" class="stat-slider" id="proj-size" min="0.02" max="0.3" step="0.01" value="0.08">
+          <input type="text" class="stat-input" id="proj-size-val" value="0.08" readonly>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Speed</span>
+          <input type="range" class="stat-slider" id="proj-speed" min="5" max="50" step="1" value="25">
+          <input type="text" class="stat-input" id="proj-speed-val" value="25" readonly>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Spawn Y</span>
+          <input type="range" class="stat-slider" id="proj-y" min="0.2" max="4" step="0.1" value="1.0">
+          <input type="text" class="stat-input" id="proj-y-val" value="1.0" readonly>
+        </div>
+        <div class="stat-row" id="proj-arc-row">
+          <span class="stat-label">Arc Height</span>
+          <input type="range" class="stat-slider" id="proj-arc" min="0" max="10" step="0.5" value="4">
+          <input type="text" class="stat-input" id="proj-arc-val" value="4" readonly>
+        </div>
+      </div>
+
+      <!-- Explosion -->
+      <div class="panel-section">
+        <div class="section-title"><span class="icon">&#128165;</span> Explosion</div>
+        <div class="stat-row" style="margin-bottom:8px">
+          <span class="stat-label">Colors</span>
+          <div class="swatch-row" id="explosion-swatches">
+            <div class="swatch active" style="background:#ff6600" data-color="#ff6600"></div>
+            <div class="swatch" style="background:#ff4400" data-color="#ff4400"></div>
+            <div class="swatch" style="background:#441100" data-color="#441100"></div>
+          </div>
+          <span style="flex:1"></span>
+          <button class="btn small danger" id="explode-btn">Explode!</button>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Radius</span>
+          <input type="range" class="stat-slider" id="expl-radius" min="0.5" max="5" step="0.1" value="2">
+          <input type="text" class="stat-input" id="expl-radius-val" value="2.0" readonly>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Particles</span>
+          <input type="range" class="stat-slider" id="expl-particles" min="2" max="20" step="1" value="8">
+          <input type="text" class="stat-input" id="expl-particles-val" value="8" readonly>
+        </div>
+      </div>
+
+      <!-- Smoke -->
+      <div class="panel-section">
+        <div class="section-title"><span class="icon">&#9729;</span> Smoke</div>
+        <div class="stat-row">
+          <span class="stat-label">Color</span>
+          <input type="color" class="color-input" id="smoke-color" value="#888888">
+          <span style="flex:1"></span>
+          <button class="btn small" id="puff-btn">Puff!</button>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Opacity</span>
+          <input type="range" class="stat-slider" id="smoke-opacity" min="0.1" max="1" step="0.05" value="0.6">
+          <input type="text" class="stat-input" id="smoke-opacity-val" value="0.60" readonly>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Lifetime</span>
+          <input type="range" class="stat-slider" id="smoke-lifetime" min="0.2" max="3" step="0.1" value="0.75">
+          <input type="text" class="stat-input" id="smoke-lifetime-val" value="0.75s" readonly>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Count</span>
+          <input type="range" class="stat-slider" id="smoke-count" min="1" max="20" step="1" value="4">
+          <input type="text" class="stat-input" id="smoke-count-val" value="4" readonly>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── Bottom Bar ───────────────────────────────────────── -->
+    <div id="bottom-bar">
+      <button class="btn primary" id="export-btn">&#128190; Export Config</button>
+      <button class="btn" id="copy-btn">&#128203; Copy to Clipboard</button>
+      <button class="btn danger" id="reset-btn">&#8634; Reset to Default</button>
+      <div class="spacer"></div>
+      <span class="status" id="status-text">Ready</span>
+    </div>
+  </div>
+
+  <!-- ─── Export Modal ─────────────────────────────────────── -->
+  <div id="export-modal">
+    <div class="modal-content">
+      <h2>Exported Configuration</h2>
+      <textarea id="export-json" readonly></textarea>
+      <div class="modal-actions">
+        <button class="btn" id="modal-copy-btn">&#128203; Copy</button>
+        <button class="btn primary" id="modal-close-btn">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Loading ──────────────────────────────────────────── -->
+  <div id="loading-overlay">
+    <div class="spinner"></div>
+    <div class="loading-text">Loading models...</div>
+  </div>
+
+  <script type="module" src="/src/editor.ts"></script>
+</body>
+</html>
