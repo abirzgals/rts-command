@@ -1260,6 +1260,11 @@ function launchEffect() {
   const totalTime = totalDist / speed
   const arcHeight = isBullet ? 0.2 : effects.projectile.arcHeight
 
+  // Orient projectile toward target initially
+  proj.lookAt(endPos)
+
+  const prevPos = startPos.clone()
+
   liveEffects.push({
     objects: [proj],
     update(dt) {
@@ -1267,10 +1272,20 @@ function launchEffect() {
       const t = Math.min(1, elapsed / totalTime)
 
       // Lerp position
+      prevPos.copy(proj.position)
       proj.position.lerpVectors(startPos, endPos, t)
       // Add arc
       const arcT = Math.sin(t * Math.PI) * arcHeight
       proj.position.y += arcT
+
+      // Orient projectile along movement direction
+      if (t < 1) {
+        const lookTarget = proj.position.clone()
+        const tNext = Math.min(1, t + 0.01)
+        lookTarget.lerpVectors(startPos, endPos, tNext)
+        lookTarget.y += Math.sin(tNext * Math.PI) * arcHeight
+        proj.lookAt(lookTarget)
+      }
 
       if (t >= 1) {
         scene.remove(proj)
