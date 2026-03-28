@@ -38,11 +38,15 @@ export function pathfindingSystem(world: IWorld, _dt: number) {
     // Workers ignore dynamic unit costs while mining
     const isWorker = hasComponent(world, WorkerC, eid)
     const radius = hasComponent(world, CollisionRadius, eid) ? CollisionRadius.value[eid] : 0.4
-    const waypoints = findPath(sx, sz, gx, gz, isWorker, radius)
+    // Try with full radius, then zero clearance as fallback
+    let waypoints = findPath(sx, sz, gx, gz, isWorker, radius)
+    if (!waypoints && radius > 0) {
+      waypoints = findPath(sx, sz, gx, gz, isWorker, 0)
+    }
     computed++
 
     if (!waypoints || waypoints.length === 0) {
-      // No path found or already at goal — leave MoveTarget for direct movement fallback
+      // No path found — let direct movement handle it as last resort
       continue
     }
 

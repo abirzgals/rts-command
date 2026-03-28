@@ -229,8 +229,8 @@ export function movementSystem(world: IWorld, dt: number) {
     const dz = tz - pz
     const dist = Math.sqrt(dx * dx + dz * dz)
 
-    // Don't use direct movement for long distances — wait for pathfinding
-    if (dist > 3) continue
+    // Long distances: wait for pathfinding, but not forever
+    // (pathfinding will assign PathFollower next frame if a path exists)
 
     if (dist < ARRIVE_THRESHOLD) {
       removeComponent(world, MoveTarget, eid)
