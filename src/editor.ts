@@ -37,6 +37,7 @@ interface EffectsConfig {
   firePoint: { x: number; y: number; z: number }
   muzzle: { color: string; intensity: number; range: number; duration: number }
   projectile: { type: 'bullet' | 'shell'; color: string; size: number; speed: number; arcHeight: number }
+  impact: { type: 'sparks' | 'fire' | 'dust' | 'explosion'; color: string; size: number; particles: number; lifetime: number }
   explosion: { colors: string[]; radius: number; particles: number }
   smoke: { color: string; opacity: number; lifetime: number; count: number }
 }
@@ -79,6 +80,7 @@ const DEFAULT_EFFECTS: EffectsConfig = {
   firePoint: { x: 0, y: 1.5, z: 0.6 },
   muzzle: { color: '#ffaa44', intensity: 8, range: 12, duration: 0.1 },
   projectile: { type: 'bullet', color: '#ffee44', size: 0.08, speed: 25, arcHeight: 4 },
+  impact: { type: 'sparks', color: '#ffaa22', size: 0.4, particles: 6, lifetime: 0.3 },
   explosion: { colors: ['#ff6600', '#ff4400', '#441100'], radius: 2.0, particles: 8 },
   smoke: { color: '#888888', opacity: 0.6, lifetime: 0.75, count: 4 },
 }
@@ -1120,6 +1122,34 @@ function wireEffectControls() {
 
   document.getElementById('launch-btn')!.addEventListener('click', launchEffect)
 
+  // ── Impact ──
+  const impactType = document.getElementById('impact-type') as HTMLSelectElement
+  if (impactType) {
+    impactType.addEventListener('change', () => {
+      effects.impact.type = impactType.value as any
+      // Set sensible defaults per type
+      const defaults: Record<string, { color: string; size: number; particles: number; lifetime: number }> = {
+        sparks: { color: '#ffaa22', size: 0.4, particles: 8, lifetime: 0.3 },
+        fire: { color: '#ff4400', size: 0.6, particles: 6, lifetime: 0.5 },
+        dust: { color: '#aa9977', size: 0.5, particles: 5, lifetime: 0.6 },
+        explosion: { color: '#ff6600', size: 0.8, particles: 10, lifetime: 0.4 },
+      }
+      const d = defaults[impactType.value] || defaults.sparks
+      ;(document.getElementById('impact-color') as HTMLInputElement).value = d.color
+      setSliderValue('impact-size', d.size)
+      setSliderValue('impact-particles', d.particles)
+      setSliderValue('impact-lifetime', d.lifetime)
+      effects.impact = { type: impactType.value as any, ...d }
+    })
+  }
+  const impactColor = document.getElementById('impact-color') as HTMLInputElement
+  if (impactColor) impactColor.addEventListener('input', () => { effects.impact.color = impactColor.value })
+  wireSliderPair('impact-size', 'impact-size-val', (v) => { effects.impact.size = v })
+  wireSliderPair('impact-particles', 'impact-particles-val', (v) => { effects.impact.particles = Math.round(v) })
+  wireSliderPair('impact-lifetime', 'impact-lifetime-val', (v) => { effects.impact.lifetime = v }, 's')
+  const impactBtn = document.getElementById('impact-btn')
+  if (impactBtn) impactBtn.addEventListener('click', impactEffect)
+
   // ── Explosion ──
   wireSliderPair('expl-radius', 'expl-radius-val', (v) => { effects.explosion.radius = v })
   wireSliderPair('expl-particles', 'expl-particles-val', (v) => { effects.explosion.particles = Math.round(v) })
@@ -1318,10 +1348,8 @@ function launchEffect() {
         mat.dispose()
         trailGeo.dispose()
         trailMat.dispose()
-        // Spawn explosion at impact
-        if (!isBullet) {
-          spawnExplosion(endPos.x, endPos.y, endPos.z)
-        }
+        // Spawn impact effect at hit point
+        spawnImpact(endPos.x, endPos.y, endPos.z)
         return false
       }
       return true
@@ -1420,6 +1448,108 @@ function spawnExplosion(x: number, y: number, z: number) {
       return true
     },
   })
+}
+
+function spawnImpact(x: number, y: number, z: number) {
+  const cfg = effects.impact
+  const color = new THREE.Color(cfg.color)
+  const geo = new THREE.SphereGeometry(0.04, 4, 4)
+
+  const isSparks = cfg.type === 'sparks'
+  const isFire = cfg.type === 'fire'
+  const isDust = cfg.type === 'dust'
+
+  // Flash at impact point
+  const flashGeo = new THREE.SphereGeometry(cfg.size * 0.5, 6, 6)
+  const flashMat = new THREE.MeshBasicMaterial({
+    color, transparent: true, opacity: 0.9, depthWrite: false,
+  })
+  const flash = new THREE.Mesh(flashGeo, flashMat)
+  flash.position.set(x, y + 0.1, z)
+  scene.add(flash)
+
+  // Point light for flash
+  const light = new THREE.PointLight(color, 4, cfg.size * 6)
+  light.position.set(x, y + 0.2, z)
+  scene.add(light)
+
+  // Particles
+  const parts: { mesh: THREE.Mesh; vx: number; vy: number; vz: number; life: number; maxLife: number }[] = []
+  for (let i = 0; i < cfg.particles; i++) {
+    const pMat = new THREE.MeshBasicMaterial({
+      color: isSparks ? new THREE.Color().setHSL(0.08 + Math.random() * 0.06, 1, 0.5 + Math.random() * 0.4) : color,
+      transparent: true, opacity: isSparks ? 1.0 : 0.7, depthWrite: false,
+    })
+    const pMesh = new THREE.Mesh(geo, pMat)
+    pMesh.position.set(x, y + 0.1, z)
+    const spread = isSparks ? 6 : isDust ? 2 : 4
+    const upward = isSparks ? 4 + Math.random() * 4 : isFire ? 2 + Math.random() * 3 : 1 + Math.random() * 2
+    pMesh.scale.setScalar(isSparks ? 0.5 + Math.random() * 0.5 : 1)
+    scene.add(pMesh)
+    parts.push({
+      mesh: pMesh,
+      vx: (Math.random() - 0.5) * spread,
+      vy: upward,
+      vz: (Math.random() - 0.5) * spread,
+      life: 0,
+      maxLife: cfg.lifetime * (0.4 + Math.random() * 0.6),
+    })
+  }
+
+  let elapsed = 0
+  const totalLife = cfg.lifetime
+
+  liveEffects.push({
+    objects: [flash, light as any, ...parts.map(p => p.mesh)],
+    update(dt) {
+      elapsed += dt
+      const t = elapsed / totalLife
+
+      // Flash shrinks and fades
+      flash.scale.setScalar(1 - t * 0.5)
+      flashMat.opacity = 0.9 * Math.max(0, 1 - t * 3)
+      light.intensity = 4 * Math.max(0, 1 - t * 4)
+
+      // Particles
+      for (const p of parts) {
+        p.life += dt
+        if (p.life >= p.maxLife) { p.mesh.visible = false; continue }
+        const pt = p.life / p.maxLife
+        p.mesh.position.x += p.vx * dt
+        p.mesh.position.y += p.vy * dt
+        p.mesh.position.z += p.vz * dt
+        if (isSparks) {
+          p.vy -= 12 * dt // heavy gravity for sparks
+          p.mesh.scale.setScalar((1 - pt) * 0.6)
+        } else if (isFire) {
+          p.vy -= 2 * dt
+          p.mesh.scale.setScalar(0.5 + pt * 2);
+          (p.mesh.material as THREE.MeshBasicMaterial).color.setHSL(0.08 - pt * 0.08, 1, 0.5 - pt * 0.3)
+        } else if (isDust) {
+          p.vy -= 1 * dt
+          p.mesh.scale.setScalar(0.5 + pt * 3)
+        } else {
+          p.vy -= 8 * dt
+          p.mesh.scale.setScalar(1 + pt)
+        }
+        ;(p.mesh.material as THREE.MeshBasicMaterial).opacity = (isSparks ? 1.0 : 0.7) * (1 - pt)
+      }
+
+      if (elapsed >= totalLife) {
+        scene.remove(flash); flashGeo.dispose(); flashMat.dispose()
+        scene.remove(light); light.dispose()
+        for (const p of parts) { scene.remove(p.mesh); (p.mesh.material as THREE.Material).dispose() }
+        geo.dispose()
+        return false
+      }
+      return true
+    },
+  })
+}
+
+function impactEffect() {
+  spawnImpact(0, 0.3, 2)
+  showStatus('Impact effect!')
 }
 
 function explodeEffect() {
@@ -2070,6 +2200,13 @@ function resetEffectsUI() {
   setSliderValue('proj-speed', DEFAULT_EFFECTS.projectile.speed)
   setSliderValue('proj-arc', DEFAULT_EFFECTS.projectile.arcHeight)
   document.getElementById('proj-arc-row')!.style.display = 'none'
+
+  // Impact
+  ;(document.getElementById('impact-type') as HTMLSelectElement).value = DEFAULT_EFFECTS.impact.type
+  ;(document.getElementById('impact-color') as HTMLInputElement).value = DEFAULT_EFFECTS.impact.color
+  setSliderValue('impact-size', DEFAULT_EFFECTS.impact.size)
+  setSliderValue('impact-particles', DEFAULT_EFFECTS.impact.particles)
+  setSliderValue('impact-lifetime', DEFAULT_EFFECTS.impact.lifetime)
 
   // Explosion
   setSliderValue('expl-radius', DEFAULT_EFFECTS.explosion.radius)

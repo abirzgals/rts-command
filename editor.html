@@ -622,6 +622,43 @@
         </div>
       </div>
 
+      <!-- Impact (on hit) -->
+      <div class="panel-section effects-section">
+        <div class="section-title"><span class="icon">&#10038;</span> Impact Effect</div>
+        <div class="stat-row">
+          <span class="stat-label">Type</span>
+          <div class="select-wrap" style="flex:1">
+            <select id="impact-type">
+              <option value="sparks">Sparks</option>
+              <option value="fire">Fire</option>
+              <option value="dust">Dust</option>
+              <option value="explosion">Explosion</option>
+            </select>
+          </div>
+          <button class="btn small success" id="impact-btn">Test!</button>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Color</span>
+          <input type="color" class="color-input" id="impact-color" value="#ffaa22">
+          <span style="flex:1"></span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Size</span>
+          <input type="range" class="stat-slider" id="impact-size" min="0.1" max="2" step="0.05" value="0.4">
+          <input type="text" class="stat-input" id="impact-size-val" value="0.4" readonly>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Particles</span>
+          <input type="range" class="stat-slider" id="impact-particles" min="1" max="20" step="1" value="6">
+          <input type="text" class="stat-input" id="impact-particles-val" value="6" readonly>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Lifetime</span>
+          <input type="range" class="stat-slider" id="impact-lifetime" min="0.1" max="1.5" step="0.05" value="0.3">
+          <input type="text" class="stat-input" id="impact-lifetime-val" value="0.3s" readonly>
+        </div>
+      </div>
+
       <!-- Explosion -->
       <div class="panel-section effects-section">
         <div class="section-title"><span class="icon">&#128165;</span> Explosion</div>
