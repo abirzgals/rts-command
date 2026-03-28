@@ -18,44 +18,51 @@ export function initRenderer(canvas: HTMLCanvasElement) {
   renderer.setSize(window.innerWidth, window.innerHeight)
   renderer.shadowMap.enabled = true
   renderer.shadowMap.type = THREE.PCFSoftShadowMap
-  renderer.setClearColor(0x7799bb)
-  renderer.toneMapping = THREE.NoToneMapping
+  renderer.setClearColor(0x88aacc)
+  renderer.toneMapping = THREE.ACESFilmicToneMapping
+  renderer.toneMappingExposure = 1.1
 
   // Scene
   scene = new THREE.Scene()
-  scene.fog = new THREE.FogExp2(0x8faab8, 0.004)
+  scene.fog = new THREE.FogExp2(0x8faab8, 0.003)
 
   // Camera
   camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.5, 400)
   camera.position.set(-80, 40, -60)
   camera.lookAt(-80, 0, -80)
 
-  // ── Lighting ─────────────────────────────────────────
-  // Hemisphere light: sky blue above, warm earth below
-  const hemi = new THREE.HemisphereLight(0x87ceeb, 0x4a3520, 0.5)
+  // ── Lighting (photorealistic setup) ──────────────────
+  // Hemisphere light: warm sky above, cool ground bounce below
+  const hemi = new THREE.HemisphereLight(0x9ec5e8, 0x5a4a3a, 0.6)
   scene.add(hemi)
 
-  // Sun (directional with shadows)
-  const sun = new THREE.DirectionalLight(0xffffff, 1.3)
+  // Sun (warm directional with high-res shadows)
+  const sun = new THREE.DirectionalLight(0xfff4e0, 1.5)
   sun.position.set(60, 100, 40)
   sun.castShadow = true
-  sun.shadow.mapSize.set(2048, 2048)
-  sun.shadow.camera.left = -120
-  sun.shadow.camera.right = 120
-  sun.shadow.camera.top = 120
-  sun.shadow.camera.bottom = -120
+  sun.shadow.mapSize.set(4096, 4096)
+  sun.shadow.camera.left = -130
+  sun.shadow.camera.right = 130
+  sun.shadow.camera.top = 130
+  sun.shadow.camera.bottom = -130
   sun.shadow.camera.near = 10
-  sun.shadow.camera.far = 250
-  sun.shadow.bias = -0.001
+  sun.shadow.camera.far = 300
+  sun.shadow.bias = -0.0005
+  sun.shadow.normalBias = 0.02
   scene.add(sun)
 
-  // Fill light (cool blue from the other side)
-  const fill = new THREE.DirectionalLight(0x4488cc, 0.4)
-  fill.position.set(-40, 30, -60)
+  // Fill light (cool blue from opposite side for dimension)
+  const fill = new THREE.DirectionalLight(0x5599dd, 0.35)
+  fill.position.set(-50, 40, -70)
   scene.add(fill)
 
-  // Subtle ambient
-  const ambient = new THREE.AmbientLight(0x334455, 0.3)
+  // Back-rim light (subtle warm kick from behind)
+  const rim = new THREE.DirectionalLight(0xffcc88, 0.2)
+  rim.position.set(-30, 60, 80)
+  scene.add(rim)
+
+  // Subtle ambient base
+  const ambient = new THREE.AmbientLight(0x3a4455, 0.35)
   scene.add(ambient)
 
   // Raycaster

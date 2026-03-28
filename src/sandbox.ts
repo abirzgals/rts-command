@@ -24,7 +24,7 @@ import {
 
 // ── Terrain ─────────────────────────────────────────────────────────────────
 import { generateTerrain, getTerrainHeight, reseedTerrain } from './terrain/heightmap'
-import { createTerrainMesh, terrainMesh } from './terrain/terrainMesh'
+import { createTerrainMesh, terrainMesh, waterMesh, updateWater } from './terrain/terrainMesh'
 
 // ── Pathfinding ─────────────────────────────────────────────────────────────
 import { initNavGrid } from './pathfinding/navGrid'
@@ -186,6 +186,7 @@ function gameLoop(time: number) {
   renderSystem(world, dt)
   updateAllAnimations(dt)
   updateEffects(dt)
+  updateWater(dt)
   selectionVisualSystem(world, dt)
 
   renderer.render(scene, camera)
@@ -261,11 +262,8 @@ function regenerateMap() {
   scene.traverse((obj) => {
     if ((obj as THREE.Mesh).isMesh) {
       const mesh = obj as THREE.Mesh
-      // Identify terrain mesh (vertex-colored Lambert) and water plane (Phong, transparent)
-      if (mesh === terrainMesh ||
-          (mesh.geometry instanceof THREE.PlaneGeometry &&
-           mesh.material instanceof THREE.MeshPhongMaterial &&
-           (mesh.material as THREE.MeshPhongMaterial).transparent)) {
+      // Identify terrain mesh and water mesh
+      if (mesh === terrainMesh || mesh === waterMesh) {
         toRemove.push(mesh)
       }
     }

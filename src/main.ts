@@ -13,7 +13,7 @@ import {
 // Terrain
 import { generateTerrain, getTerrainHeight, getTerrainTypeAt, T_CLIFF, T_WATER, T_ROCK, GRID_RES, gridToWorld } from './terrain/heightmap'
 import { isWorldWalkable } from './pathfinding/navGrid'
-import { createTerrainMesh } from './terrain/terrainMesh'
+import { createTerrainMesh, updateWater } from './terrain/terrainMesh'
 import { initNavGrid } from './pathfinding/navGrid'
 
 // Systems
@@ -287,6 +287,7 @@ function gameLoop(time: number) {
   renderSystem(world, dt)
   updateAllAnimations(dt)
   updateEffects(dt)
+  updateWater(dt)
   selectionVisualSystem(world, dt)
   updateDebugOverlay(world)
 
