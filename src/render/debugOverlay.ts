@@ -6,8 +6,8 @@ import {
   AttackTarget, WorkerC, Dead, Velocity, Selected, CollisionRadius,
 } from '../ecs/components'
 import { getPath } from '../pathfinding/pathStore'
-import { getTerrainHeight, GRID_RES, gridToWorld } from '../terrain/heightmap'
-import { walkable } from '../pathfinding/navGrid'
+import { getTerrainHeight, GRID_RES, gridToWorld, CELL_SIZE, worldToGrid } from '../terrain/heightmap'
+import { walkable, dynamicCost } from '../pathfinding/navGrid'
 import { scene } from './engine'
 import { FACTION_PLAYER } from '../game/config'
 
@@ -17,6 +17,10 @@ let colliderLines: THREE.LineSegments | null = null
 let navGridMesh: THREE.Mesh | null = null
 let navGridBuilt = false
 let enabled = false
+
+// Clearance overlay for selected unit
+let clearanceMesh: THREE.Mesh | null = null
+let lastClearanceEid = -1
 
 const MAX_PATH_POINTS = 8000
 const pathPositions = new Float32Array(MAX_PATH_POINTS * 3)
@@ -62,6 +66,10 @@ export function toggleDebug() {
     navGridBuilt = true
   }
   if (navGridMesh) navGridMesh.visible = enabled
+  if (!enabled && clearanceMesh) {
+    scene.remove(clearanceMesh); clearanceMesh.geometry.dispose(); (clearanceMesh.material as THREE.Material).dispose()
+    clearanceMesh = null; lastClearanceEid = -1
+  }
 
   // Show/hide legend
   let legend = document.getElementById('debug-legend')
@@ -78,7 +86,9 @@ export function toggleDebug() {
       <span style="color:#888">●</span> idle<br>
       <span style="color:#0f0">●</span> selected<br>
       <span style="color:#ff0">○</span> collider<br>
-      <span style="color:#f00;opacity:0.5">■</span> blocked cell
+      <span style="color:#f00;opacity:0.5">■</span> blocked cell<br>
+      <span style="color:#1b4">■</span> passable (selected)
+      <span style="color:#c21">■</span> blocked (selected)
     `
     Object.assign(legend.style, {
       position: 'absolute', top: '44px', left: '8px',
@@ -341,4 +351,102 @@ export function updateDebugOverlay(world: IWorld) {
   colliderGeometry.setDrawRange(0, colliderIdx)
   colliderGeometry.attributes.position.needsUpdate = true
   colliderGeometry.attributes.color.needsUpdate = true
+
+  // ── Clearance overlay for selected unit ──────────
+  // Find single selected unit
+  let selectedEid = -1
+  for (const eid of entities) {
+    if (hasComponent(world, Dead, eid)) continue
+    if (hasComponent(world, Selected, eid)) {
+      if (selectedEid >= 0) { selectedEid = -1; break } // multiple selected — skip
+      selectedEid = eid
+    }
+  }
+
+  if (selectedEid >= 0 && hasComponent(world, CollisionRadius, selectedEid)) {
+    const unitRadius = CollisionRadius.value[selectedEid]
+    const clearance = Math.ceil(unitRadius / CELL_SIZE)
+    const ux = Position.x[selectedEid]
+    const uz = Position.z[selectedEid]
+    const [ugx, ugz] = worldToGrid(ux, uz)
+
+    // Only rebuild if unit changed
+    if (selectedEid !== lastClearanceEid) {
+      lastClearanceEid = selectedEid
+      if (clearanceMesh) { scene.remove(clearanceMesh); clearanceMesh.geometry.dispose(); (clearanceMesh.material as THREE.Material).dispose(); clearanceMesh = null }
+
+      // Show cells in a radius around the unit — green=passable, red=blocked
+      const VIEW_R = 20  // cells around unit to visualize
+      const totalCells = (VIEW_R * 2 + 1) * (VIEW_R * 2 + 1)
+      const positions = new Float32Array(totalCells * 6 * 3)
+      const colors = new Float32Array(totalCells * 6 * 3)
+      let vi = 0, ci = 0
+
+      for (let dz = -VIEW_R; dz <= VIEW_R; dz++) {
+        for (let dx = -VIEW_R; dx <= VIEW_R; dx++) {
+          const gx = ugx + dx
+          const gz = ugz + dz
+          if (gx < 0 || gx >= GRID_RES || gz < 0 || gz >= GRID_RES) continue
+
+          // Check clearance at this cell
+          let passable = true
+          if (clearance <= 0) {
+            const i = gz * GRID_RES + gx
+            passable = walkable[i] === 1 && dynamicCost[i] < 50
+          } else {
+            for (let cdz = -clearance; cdz <= clearance && passable; cdz++) {
+              for (let cdx = -clearance; cdx <= clearance && passable; cdx++) {
+                if (cdx * cdx + cdz * cdz > clearance * clearance) continue
+                const nx = gx + cdx, nz = gz + cdz
+                if (nx < 0 || nx >= GRID_RES || nz < 0 || nz >= GRID_RES) { passable = false; break }
+                const ni = nz * GRID_RES + nx
+                if (walkable[ni] === 0 || dynamicCost[ni] >= 50) { passable = false; break }
+              }
+            }
+          }
+
+          const [wx, wz] = gridToWorld(gx, gz)
+          const y = getTerrainHeight(wx, wz) + 0.15
+          const half = 0.42
+
+          const r = passable ? 0.1 : 0.8
+          const g = passable ? 0.7 : 0.1
+          const b = 0.1
+
+          // Two triangles
+          positions[vi++] = wx - half; positions[vi++] = y; positions[vi++] = wz - half
+          positions[vi++] = wx + half; positions[vi++] = y; positions[vi++] = wz - half
+          positions[vi++] = wx + half; positions[vi++] = y; positions[vi++] = wz + half
+          positions[vi++] = wx - half; positions[vi++] = y; positions[vi++] = wz - half
+          positions[vi++] = wx + half; positions[vi++] = y; positions[vi++] = wz + half
+          positions[vi++] = wx - half; positions[vi++] = y; positions[vi++] = wz + half
+
+          for (let t = 0; t < 6; t++) {
+            colors[ci++] = r; colors[ci++] = g; colors[ci++] = b
+          }
+        }
+      }
+
+      const geo = new THREE.BufferGeometry()
+      geo.setAttribute('position', new THREE.BufferAttribute(positions.slice(0, vi), 3))
+      geo.setAttribute('color', new THREE.BufferAttribute(colors.slice(0, ci), 3))
+
+      clearanceMesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+        vertexColors: true, transparent: true, opacity: 0.3,
+        side: THREE.DoubleSide, depthWrite: false,
+      }))
+      clearanceMesh.frustumCulled = false
+      clearanceMesh.renderOrder = 97
+      scene.add(clearanceMesh)
+    }
+  } else {
+    // No single selection — remove clearance overlay
+    if (clearanceMesh) {
+      scene.remove(clearanceMesh)
+      clearanceMesh.geometry.dispose()
+      ;(clearanceMesh.material as THREE.Material).dispose()
+      clearanceMesh = null
+    }
+    lastClearanceEid = -1
+  }
 }
