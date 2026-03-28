@@ -61,7 +61,7 @@ import { gameState } from './game/state'
 
 let world: IWorld = createWorld()
 let rtsCamera: RTSCamera
-let paused = false
+let paused = true  // start paused — place units first, then press Play
 let entityCount = 0
 let selectedEntity: number | null = null
 let lastTime = 0
@@ -202,10 +202,16 @@ function gameLoop(time: number) {
 
 function wireControls() {
   // Pause / Play
+  btnPause.textContent = 'Play'  // start paused
   btnPause.addEventListener('click', () => {
     paused = !paused
     btnPause.textContent = paused ? 'Play' : 'Pause'
     btnPause.classList.toggle('primary', !paused)
+    // When pressing Play, clear palette selection
+    if (!paused) {
+      mobilePlacePayload = null
+      document.querySelectorAll('.palette-card').forEach(c => c.classList.remove('selected'))
+    }
   })
 
   // Reset All
@@ -216,6 +222,10 @@ function wireControls() {
 }
 
 function resetAll() {
+  paused = true
+  btnPause.textContent = 'Play'
+  btnPause.classList.remove('primary')
+
   // Mark every entity with Position as dead
   const nearby: number[] = []
   spatialHash.query(0, 0, MAP_SIZE * 2, nearby)
@@ -384,8 +394,13 @@ function raycastCanvasToGround(clientX: number, clientY: number): THREE.Vector3 
   return intersects.length > 0 ? intersects[0].point : null
 }
 
-/** Spawn an entity from a drag payload at world (x, z) */
+/** Spawn an entity from a drag payload at world (x, z). Auto-pauses if running. */
 function spawnFromPayload(payload: DragPayload, x: number, z: number) {
+  if (!paused) {
+    paused = true
+    btnPause.textContent = 'Play'
+    btnPause.classList.remove('primary')
+  }
   switch (payload.type) {
     case 'unit':
       spawnUnit(world, payload.id, payload.faction, x, z)
