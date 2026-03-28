@@ -1,7 +1,7 @@
 import { defineQuery, hasComponent, addComponent, removeComponent, Not } from 'bitecs'
 import type { IWorld } from 'bitecs'
 import { Position, MoveTarget, PathFollower, IsBuilding, MoveSpeed, CollisionRadius, Dead, WorkerC, Selectable } from '../components'
-import { findPath } from '../../pathfinding/astar'
+import { findPath, invalidateClearance } from '../../pathfinding/astar'
 import { storePath, removePath } from '../../pathfinding/pathStore'
 import { clearDynamicCosts, markUnitObstacle, markBuildingObstacle } from '../../pathfinding/navGrid'
 
@@ -12,17 +12,17 @@ const allUnitsQuery = defineQuery([Position, CollisionRadius, MoveSpeed])
 // Buildings as obstacles
 const buildingQuery = defineQuery([Position, IsBuilding, Selectable])
 
-const MAX_PATHS_PER_FRAME = 30
+const MAX_PATHS_PER_FRAME = 4
 
 export function pathfindingSystem(world: IWorld, _dt: number) {
   // Rebuild dynamic cost map — only buildings block paths.
-  // Units don't block each other's A* (separation handles that at runtime).
   clearDynamicCosts()
   const buildings = buildingQuery(world)
   for (const eid of buildings) {
     if (hasComponent(world, Dead, eid)) continue
     markBuildingObstacle(Position.x[eid], Position.z[eid], Selectable.radius[eid])
   }
+  invalidateClearance() // rebuild clearance maps with new building positions
 
   const entities = needsPathQuery(world)
   let computed = 0

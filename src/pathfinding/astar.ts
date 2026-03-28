@@ -95,27 +95,55 @@ function heuristic(ax: number, az: number, bx: number, bz: number): number {
 
 const BUILDING_BLOCK_THRESHOLD = 50
 
-/** Check if a cell has clearance for a unit of given grid radius.
- *  Checks both static walkability AND dynamic costs (buildings). */
-function hasClearance(gx: number, gz: number, clearance: number): boolean {
+// Precomputed clearance maps — built once per findPath call
+const clearanceCache = new Map<number, Uint8Array>()
+let clearanceDirty = true
+
+/** Mark clearance cache as dirty (call when nav grid or dynamic costs change) */
+export function invalidateClearance() { clearanceDirty = true }
+
+/** Build clearance map for a given radius. Cell=1 means passable with that clearance. */
+function getClearanceMap(clearance: number): Uint8Array {
+  if (!clearanceDirty && clearanceCache.has(clearance)) return clearanceCache.get(clearance)!
+  if (clearanceDirty) { clearanceCache.clear(); clearanceDirty = false }
+
+  const map = new Uint8Array(GRID_RES * GRID_RES)
+  const total = GRID_RES * GRID_RES
+
   if (clearance <= 0) {
-    if (!isWalkable(gx, gz)) return false
-    const i = gz * GRID_RES + gx
-    if (i >= 0 && i < GRID_RES * GRID_RES && dynamicCost[i] >= BUILDING_BLOCK_THRESHOLD) return false
-    return true
-  }
-  for (let dz = -clearance; dz <= clearance; dz++) {
-    for (let dx = -clearance; dx <= clearance; dx++) {
-      if (dx * dx + dz * dz > clearance * clearance) continue
-      const nx = gx + dx
-      const nz = gz + dz
-      if (!isWalkable(nx, nz)) return false
-      if (nx >= 0 && nx < GRID_RES && nz >= 0 && nz < GRID_RES) {
-        if (dynamicCost[nz * GRID_RES + nx] >= BUILDING_BLOCK_THRESHOLD) return false
+    // Simple: just walkable + no building
+    for (let i = 0; i < total; i++) {
+      map[i] = (walkable[i] === 1 && dynamicCost[i] < BUILDING_BLOCK_THRESHOLD) ? 1 : 0
+    }
+  } else {
+    // For each cell, check if all cells within radius are passable
+    for (let gz = 0; gz < GRID_RES; gz++) {
+      for (let gx = 0; gx < GRID_RES; gx++) {
+        let ok = true
+        outer: for (let dz = -clearance; dz <= clearance; dz++) {
+          for (let dx = -clearance; dx <= clearance; dx++) {
+            if (dx * dx + dz * dz > clearance * clearance) continue
+            const nx = gx + dx
+            const nz = gz + dz
+            if (nx < 0 || nx >= GRID_RES || nz < 0 || nz >= GRID_RES) { ok = false; break outer }
+            const ni = nz * GRID_RES + nx
+            if (walkable[ni] === 0 || dynamicCost[ni] >= BUILDING_BLOCK_THRESHOLD) { ok = false; break outer }
+          }
+        }
+        map[gz * GRID_RES + gx] = ok ? 1 : 0
       }
     }
   }
-  return true
+
+  clearanceCache.set(clearance, map)
+  return map
+}
+
+/** Fast clearance check — single array lookup */
+function hasClearance(gx: number, gz: number, clearance: number): boolean {
+  if (gx < 0 || gx >= GRID_RES || gz < 0 || gz >= GRID_RES) return false
+  const map = getClearanceMap(clearance)
+  return map[gz * GRID_RES + gx] === 1
 }
 
 // ── Main A* function ─────────────────────────────────────────
