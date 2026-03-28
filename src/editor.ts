@@ -614,33 +614,32 @@ function removeOverlays() {
 /** Get the horizontal fire direction in world space.
  *  Uses the picked face normal if available, otherwise model forward + turret yaw. */
 function getFireDirection(): THREE.Vector3 {
-  // Use saved face normal — either from live pick or restored from config
-  const localNormal = firePointAttachment
-    ? firePointAttachment.localNormal
-    : (effects.firePoint.normalX !== undefined
+  // Find the bone the fire point is attached to
+  let bone: THREE.Object3D | null = firePointAttachment?.bone ?? null
+  if (!bone && effects.firePoint.boneName && currentModel) {
+    currentModel.traverse((child) => {
+      if (child.name === effects.firePoint.boneName) bone = child
+    })
+  }
+  if (!bone) bone = barrelBone || turretBone || null
+
+  // If we have a bone, use its animated forward direction (-Z in bone local space)
+  // This dynamically follows animation every frame
+  if (bone) {
+    const boneQ = new THREE.Quaternion()
+    bone.getWorldQuaternion(boneQ)
+
+    // Bone's forward is its local -Z transformed to world space
+    // But for arms/hands the "forward" might be a saved normal direction
+    const localDir = (effects.firePoint.normalX !== undefined)
       ? new THREE.Vector3(effects.firePoint.normalX, effects.firePoint.normalY ?? 0, effects.firePoint.normalZ ?? 0)
-      : null)
+      : new THREE.Vector3(0, 0, -1)
 
-  if (localNormal && localNormal.lengthSq() > 0.001) {
-    // Find the bone to transform through
-    let bone: THREE.Object3D | null = firePointAttachment?.bone ?? null
-    if (!bone && effects.firePoint.boneName && currentModel) {
-      currentModel.traverse((child) => {
-        if (child.name === effects.firePoint.boneName) bone = child
-      })
-    }
-    if (!bone) bone = barrelBone || turretBone || currentModel
-
-    if (bone) {
-      const worldNormal = localNormal.clone()
-      const boneQ = new THREE.Quaternion()
-      bone.getWorldQuaternion(boneQ)
-      worldNormal.applyQuaternion(boneQ)
-      worldNormal.y = 0
-      if (worldNormal.lengthSq() > 0.001) {
-        worldNormal.normalize()
-        return worldNormal
-      }
+    localDir.applyQuaternion(boneQ)
+    localDir.y = 0
+    if (localDir.lengthSq() > 0.001) {
+      localDir.normalize()
+      return localDir
     }
   }
 
