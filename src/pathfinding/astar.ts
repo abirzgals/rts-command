@@ -262,21 +262,28 @@ function hasLineOfSight(x1: number, z1: number, x2: number, z2: number): boolean
   const [gx1, gz1] = worldToGrid(x1, z1)
   const [gx2, gz2] = worldToGrid(x2, z2)
 
-  // Bresenham line
-  let dx = Math.abs(gx2 - gx1)
-  let dz = Math.abs(gz2 - gz1)
-  let sx = gx1 < gx2 ? 1 : -1
-  let sz = gz1 < gz2 ? 1 : -1
-  let err = dx - dz
-  let cx = gx1, cz = gz1
+  // DDA line rasterization — more reliable than Bresenham for grid checks
+  const steps = Math.max(Math.abs(gx2 - gx1), Math.abs(gz2 - gz1))
+  if (steps === 0) return hasClearance(gx1, gz1, currentClearance)
 
-  while (cx !== gx2 || cz !== gz2) {
+  const stepX = (gx2 - gx1) / steps
+  const stepZ = (gz2 - gz1) / steps
+
+  for (let i = 0; i <= steps; i++) {
+    const cx = Math.round(gx1 + stepX * i)
+    const cz = Math.round(gz1 + stepZ * i)
     if (!hasClearance(cx, cz, currentClearance)) return false
-    const e2 = 2 * err
-    if (e2 > -dz) { err -= dz; cx += sx }
-    if (e2 < dx) { err += dx; cz += sz }
+    // Also check adjacent cell on diagonal to prevent corner cutting
+    if (i > 0) {
+      const prevX = Math.round(gx1 + stepX * (i - 1))
+      const prevZ = Math.round(gz1 + stepZ * (i - 1))
+      if (cx !== prevX && cz !== prevZ) {
+        // Diagonal step — check both axis-aligned neighbors
+        if (!hasClearance(prevX, cz, currentClearance) || !hasClearance(cx, prevZ, currentClearance)) return false
+      }
+    }
   }
-  return hasClearance(gx2, gz2, currentClearance)
+  return true
 }
 
 function findNearestWalkable(gx: number, gz: number): [number, number] | null {
