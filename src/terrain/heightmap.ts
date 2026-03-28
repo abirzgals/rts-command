@@ -27,17 +27,23 @@ const BASE_HEIGHT = 3.0      // guaranteed base height (well above water)
 
 // ── Perlin noise ─────────────────────────────────────────────
 const perm = new Uint8Array(512)
-;(() => {
+
+function seedPerlin(seed: number) {
   const p = new Uint8Array(256)
   for (let i = 0; i < 256; i++) p[i] = i
-  let seed = 42
   const rand = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646 }
   for (let i = 255; i > 0; i--) {
     const j = Math.floor(rand() * (i + 1))
     ;[p[i], p[j]] = [p[j], p[i]]
   }
   for (let i = 0; i < 512; i++) perm[i] = p[i & 255]
-})()
+}
+seedPerlin(42) // default seed
+
+/** Reseed the Perlin noise and regenerate terrain with a new random layout */
+export function reseedTerrain() {
+  seedPerlin(Math.floor(Math.random() * 2147483647))
+}
 
 function fade(t: number) { return t * t * t * (t * (t * 6 - 15) + 10) }
 function lerp(a: number, b: number, t: number) { return a + t * (b - a) }

@@ -23,7 +23,7 @@ import {
 } from './game/config'
 
 // ── Terrain ─────────────────────────────────────────────────────────────────
-import { generateTerrain, getTerrainHeight } from './terrain/heightmap'
+import { generateTerrain, getTerrainHeight, reseedTerrain } from './terrain/heightmap'
 import { createTerrainMesh, terrainMesh } from './terrain/terrainMesh'
 
 // ── Pathfinding ─────────────────────────────────────────────────────────────
@@ -65,6 +65,9 @@ let paused = false
 let entityCount = 0
 let selectedEntity: number | null = null
 let lastTime = 0
+
+// Mobile: selected palette item for tap-to-place
+let mobilePlacePayload: DragPayload | null = null
 
 // ── DOM refs ────────────────────────────────────────────────────────────────
 const canvas = document.getElementById('sandbox-canvas') as HTMLCanvasElement
@@ -266,7 +269,8 @@ function regenerateMap() {
     }
   }
 
-  // 3. Re-generate terrain heightmap + types
+  // 3. Reseed + re-generate terrain heightmap + types
+  reseedTerrain()
   generateTerrain()
 
   // 4. Recreate terrain mesh + ground plane
@@ -288,8 +292,10 @@ interface DragPayload {
 }
 
 function wireDragDrop() {
-  // Drag start on palette cards
-  document.querySelectorAll('.palette-card[draggable]').forEach(card => {
+  const allCards = document.querySelectorAll('.palette-card[draggable]')
+
+  // ── Desktop: HTML5 drag-and-drop ──
+  allCards.forEach(card => {
     card.addEventListener('dragstart', (e: Event) => {
       const evt = e as DragEvent
       const el = evt.currentTarget as HTMLElement
@@ -309,7 +315,6 @@ function wireDragDrop() {
     })
   })
 
-  // Canvas drop zone
   canvas.addEventListener('dragover', (e: DragEvent) => {
     e.preventDefault()
     e.dataTransfer!.dropEffect = 'copy'
@@ -319,16 +324,48 @@ function wireDragDrop() {
     e.preventDefault()
     const raw = e.dataTransfer!.getData('application/json')
     if (!raw) return
-
     let payload: DragPayload
     try { payload = JSON.parse(raw) } catch { return }
-
-    // Raycast to find world position on ground plane
     const pos = raycastCanvasToGround(e.clientX, e.clientY)
     if (!pos) return
-
     spawnFromPayload(payload, pos.x, pos.z)
   })
+
+  // ── Mobile: tap card to select, tap canvas to place ──
+  allCards.forEach(card => {
+    card.addEventListener('click', (e: Event) => {
+      e.preventDefault()
+      const el = e.currentTarget as HTMLElement
+      // Toggle selection
+      const wasSelected = el.classList.contains('selected')
+      allCards.forEach(c => c.classList.remove('selected'))
+      mobilePlacePayload = null
+
+      if (!wasSelected) {
+        el.classList.add('selected')
+        mobilePlacePayload = {
+          type: el.dataset.type as DragPayload['type'],
+          id: parseInt(el.dataset.id!, 10),
+          faction: parseInt(el.dataset.faction!, 10),
+        }
+      }
+    })
+  })
+
+  // Touch on canvas: place selected unit
+  canvas.addEventListener('touchend', (e: TouchEvent) => {
+    if (!mobilePlacePayload) return
+    e.preventDefault()
+    const touch = e.changedTouches[0]
+    const pos = raycastCanvasToGround(touch.clientX, touch.clientY)
+    if (!pos) return
+    spawnFromPayload(payload_copy(mobilePlacePayload), pos.x, pos.z)
+    // Keep the payload selected so user can place multiple
+  })
+}
+
+function payload_copy(p: DragPayload): DragPayload {
+  return { type: p.type, id: p.id, faction: p.faction }
 }
 
 /** Raycast from screen coords to the ground plane, accounting for canvas offset */
