@@ -306,12 +306,45 @@ export async function createMeshPools() {
   registerPool(21, new MeshPool(createGasGeyserGeometry(), gasMat, MAX_RESOURCES, SHADOWS))
 
   // ── Obstacle pools (IDs 22-25) ───────────────
-  const rockMat = new THREE.MeshPhongMaterial({ color: 0x888580, shininess: 10, flatShading: true })
-  registerPool(22, new MeshPool(geo('rock1', createRockGeometry), mat('rock1', rockMat), MAX_OBSTACLES, SHADOWS))
-  registerPool(23, new MeshPool(geo('tree1', createTreeGeometry), mat('tree1',
-    new THREE.MeshPhongMaterial({ color: 0x446633, shininess: 5, flatShading: true })), MAX_OBSTACLES, SHADOWS))
-  registerPool(24, new MeshPool(geo('boulder', createBoulderGeometry), mat('boulder', rockMat), MAX_OBSTACLES, SHADOWS))
-  registerPool(25, new MeshPool(geo('rock2', createCliffRockGeometry), mat('rock2', rockMat), MAX_OBSTACLES, SHADOWS))
+  const texLoader = new THREE.TextureLoader()
+
+  // Stone texture for rocks/boulders
+  const stoneTex = texLoader.load('/textures/stone.jpg')
+  stoneTex.wrapS = stoneTex.wrapT = THREE.RepeatWrapping
+  stoneTex.colorSpace = THREE.SRGBColorSpace
+  const stoneMat = new THREE.MeshStandardMaterial({
+    map: stoneTex, roughness: 0.9, metalness: 0.0,
+  })
+
+  // Leaf texture for tree canopies
+  const leafTex = texLoader.load('/textures/leaf.jpg')
+  leafTex.wrapS = leafTex.wrapT = THREE.RepeatWrapping
+  leafTex.colorSpace = THREE.SRGBColorSpace
+  const treeMat = new THREE.MeshStandardMaterial({
+    map: leafTex, roughness: 0.8, metalness: 0.0,
+    color: 0x77aa55, // tint green
+  })
+
+  // For GLB models: auto-generate UVs if missing, then apply texture
+  function texturedGeo(name: string, fallback: () => THREE.BufferGeometry): THREE.BufferGeometry {
+    const g = geo(name, fallback)
+    if (!g.attributes.uv) {
+      // Generate box-projected UVs from position
+      const pos = g.attributes.position
+      const uvs = new Float32Array(pos.count * 2)
+      for (let i = 0; i < pos.count; i++) {
+        uvs[i * 2] = pos.getX(i) * 0.5
+        uvs[i * 2 + 1] = pos.getZ(i) * 0.5
+      }
+      g.setAttribute('uv', new THREE.BufferAttribute(uvs, 2))
+    }
+    return g
+  }
+
+  registerPool(22, new MeshPool(texturedGeo('rock1', createRockGeometry), stoneMat, MAX_OBSTACLES, SHADOWS))
+  registerPool(23, new MeshPool(texturedGeo('tree1', createTreeGeometry), treeMat, MAX_OBSTACLES, SHADOWS))
+  registerPool(24, new MeshPool(texturedGeo('boulder', createBoulderGeometry), stoneMat.clone(), MAX_OBSTACLES, SHADOWS))
+  registerPool(25, new MeshPool(texturedGeo('rock2', createCliffRockGeometry), stoneMat.clone(), MAX_OBSTACLES, SHADOWS))
 
   // ── Projectiles (ID 30 = bullets, ID 31 = tank shells) ──
   registerPool(30, new MeshPool(
