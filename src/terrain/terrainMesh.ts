@@ -130,17 +130,15 @@ export function createTerrainMesh(): THREE.Mesh {
 
       void main() {
         vSplatUV = uv;
-        vec4 wp = modelMatrix * vec4(position, 1.0);
-        vTileUV = wp.xz * 0.1;
-        vHeight = wp.y;
+        vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+        vTileUV = worldPosition.xz * 0.1;
+        vHeight = worldPosition.y;
         vNorm = normalize((modelMatrix * vec4(normal, 0.0)).xyz);
 
-        gl_Position = projectionMatrix * viewMatrix * wp;
+        gl_Position = projectionMatrix * viewMatrix * worldPosition;
 
-        // Shadow coords
-        #ifdef USE_SHADOWMAP
-          vec4 shadowWorldPosition = wp;
-        #endif
+        // Variables required by shadowmap_vertex include
+        vec3 transformedNormal = vNorm;
         #include <shadowmap_vertex>
       }
     `,
