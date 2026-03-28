@@ -152,10 +152,11 @@ export function createTerrainMesh(): THREE.Mesh {
        varying float vHeight;`
     )
 
-    // Replace the map sampling with our splat blend
+    // Inject splat blending after color_fragment (which sets diffuseColor from the material color)
     shader.fragmentShader = shader.fragmentShader.replace(
-      '#include <map_fragment>',
-      `// Splat-blended terrain textures
+      '#include <color_fragment>',
+      `#include <color_fragment>
+       // Splat-blended terrain textures
        vec4 splat = texture2D(splatMap, vUv);
        vec3 tGrass = texture2D(texGrass, vWorldUV).rgb;
        vec3 tDirt = texture2D(texDirt, vWorldUV).rgb;
