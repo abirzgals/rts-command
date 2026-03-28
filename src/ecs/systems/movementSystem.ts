@@ -2,9 +2,27 @@ import { defineQuery, hasComponent, removeComponent, addComponent } from 'bitecs
 import type { IWorld } from 'bitecs'
 import { Position, Rotation, MoveTarget, MoveSpeed, Velocity, IsBuilding, PathFollower, Projectile, CollisionRadius, Dead } from '../components'
 import { getPath, removePath } from '../../pathfinding/pathStore'
-import { getTerrainHeight, getTerrainTypeAt, T_WATER } from '../../terrain/heightmap'
+import { getTerrainHeight, getTerrainTypeAt, T_WATER, T_CLIFF } from '../../terrain/heightmap'
 import { isWorldWalkable } from '../../pathfinding/navGrid'
 import { spatialHash } from '../../globals'
+
+/** Check if a circle of given radius is fully on walkable terrain */
+function isRadiusWalkable(x: number, z: number, radius: number): boolean {
+  // Check center + 4 cardinal points at radius distance
+  if (!isWorldWalkable(x, z)) return false
+  const t = getTerrainTypeAt(x, z)
+  if (t === T_WATER || t === T_CLIFF) return false
+  if (radius <= 0.2) return true
+  // Check perimeter points
+  for (let i = 0; i < 4; i++) {
+    const angle = i * Math.PI * 0.5
+    const cx = x + Math.cos(angle) * radius
+    const cz = z + Math.sin(angle) * radius
+    const ct = getTerrainTypeAt(cx, cz)
+    if (ct === T_WATER || ct === T_CLIFF || !isWorldWalkable(cx, cz)) return false
+  }
+  return true
+}
 
 const pathQuery = defineQuery([Position, PathFollower, MoveSpeed])
 const directQuery = defineQuery([Position, MoveTarget, MoveSpeed])
@@ -73,8 +91,8 @@ export function movementSystem(world: IWorld, dt: number) {
     if (sepX !== 0 || sepZ !== 0) {
       const newX = px + sepX * dt
       const newZ = pz + sepZ * dt
-      // Only apply separation if result is walkable
-      if (getTerrainTypeAt(newX, newZ) !== T_WATER && isWorldWalkable(newX, newZ)) {
+      // Only apply separation if result is walkable (radius-aware)
+      if (isRadiusWalkable(newX, newZ, myRadius * 0.6)) {
         Position.x[eid] = newX
         Position.z[eid] = newZ
         Position.y[eid] = getTerrainHeight(newX, newZ)
@@ -144,10 +162,22 @@ export function movementSystem(world: IWorld, dt: number) {
       newZ = pz + nz * step
     }
 
-    // Only block on water — trust the path for everything else
-    if (getTerrainTypeAt(newX, newZ) === T_WATER) {
-      forceRepath(world, eid, pathId)
-      continue
+    // Block on unwalkable terrain (check with unit radius)
+    const unitRadius = hasComponent(world, CollisionRadius, eid) ? CollisionRadius.value[eid] : 0.4
+    if (!isRadiusWalkable(newX, newZ, unitRadius * 0.6)) {
+      // Try sliding along X or Z axis separately
+      const slideX = px + nx * step
+      const slideZ = pz + nz * step
+      if (isRadiusWalkable(slideX, pz, unitRadius * 0.6)) {
+        newX = slideX
+        newZ = pz
+      } else if (isRadiusWalkable(px, slideZ, unitRadius * 0.6)) {
+        newX = px
+        newZ = slideZ
+      } else {
+        forceRepath(world, eid, pathId)
+        continue
+      }
     }
 
     Position.x[eid] = newX
@@ -212,14 +242,26 @@ export function movementSystem(world: IWorld, dt: number) {
       newZ = pz + nz * step
     }
 
-    // Block non-projectile units from walking into unwalkable terrain
+    // Block non-projectile units from walking into unwalkable terrain — slide along edges
     if (!isProjectile) {
-      const tt = getTerrainTypeAt(newX, newZ)
-      if (tt === T_WATER || !isWorldWalkable(newX, newZ)) {
-        removeComponent(world, MoveTarget, eid)
-        Velocity.x[eid] = 0
-        Velocity.z[eid] = 0
-        continue
+      const unitRadius = hasComponent(world, CollisionRadius, eid) ? CollisionRadius.value[eid] : 0.4
+      if (!isRadiusWalkable(newX, newZ, unitRadius * 0.6)) {
+        // Try sliding: move only along X or only along Z
+        const slideX = px + nx * step
+        const slideZ = pz + nz * step
+        if (isRadiusWalkable(slideX, pz, unitRadius * 0.6)) {
+          newX = slideX
+          newZ = pz
+        } else if (isRadiusWalkable(px, slideZ, unitRadius * 0.6)) {
+          newX = px
+          newZ = slideZ
+        } else {
+          // Completely blocked — stop
+          removeComponent(world, MoveTarget, eid)
+          Velocity.x[eid] = 0
+          Velocity.z[eid] = 0
+          continue
+        }
       }
     }
 
