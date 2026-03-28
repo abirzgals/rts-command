@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import { defineQuery, hasComponent } from 'bitecs'
 import type { IWorld } from 'bitecs'
 import { Position, Health, Dead, IsBuilding, Faction } from '../ecs/components'
-import { camera } from './engine'
+import { camera, renderer } from './engine'
 
 const hpQuery = defineQuery([Position, Health])
 
@@ -72,8 +72,12 @@ export function updateHPBars(world: IWorld) {
   const entities = hpQuery(world)
   const activeEids = new Set<number>()
 
-  const w = window.innerWidth
-  const h = window.innerHeight
+  // Use the canvas rect so HP bars align correctly when canvas doesn't fill the window
+  const canvasRect = renderer.domElement.getBoundingClientRect()
+  const w = canvasRect.width
+  const h = canvasRect.height
+  const offsetX = canvasRect.left
+  const offsetY = canvasRect.top
 
   for (const eid of entities) {
     if (hasComponent(world, Dead, eid)) continue
@@ -102,8 +106,8 @@ export function updateHPBars(world: IWorld) {
       continue
     }
 
-    const sx = ((_vec3.x + 1) / 2) * w
-    const sy = ((-_vec3.y + 1) / 2) * h
+    const sx = ((_vec3.x + 1) / 2) * w + offsetX
+    const sy = ((-_vec3.y + 1) / 2) * h + offsetY
 
     // Cull off-screen
     if (sx < -50 || sx > w + 50 || sy < -50 || sy > h + 50) {
