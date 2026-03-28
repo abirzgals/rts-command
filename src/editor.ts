@@ -62,12 +62,17 @@ const ALL_MODELS: ModelConfig[] = [
   { key: 'factory', name: 'Factory', category: 'buildings', modelUrl: '/models/factory.glb', scale: 4.5, rotationOffset: 0, icon: '\u2692',
     hp: 1000, armor: 1, selectionRadius: 1.8, collisionRadius: 1.8 },
   // ── Resources ──
-  { key: 'minerals', name: 'Minerals', category: 'resources', modelUrl: '/models/gold.glb', scale: 1.5, rotationOffset: 0, icon: '\u2666' },
+  { key: 'minerals', name: 'Minerals', category: 'resources', modelUrl: '/models/gold.glb', scale: 1.5, rotationOffset: 0, icon: '\u2666',
+    collisionRadius: 0.6 },
   // ── Obstacles ──
-  { key: 'rock1', name: 'Rock 1', category: 'obstacles', modelUrl: '/models/rock1.glb', scale: 5.0, rotationOffset: 0, icon: '\u26F0' },
-  { key: 'rock2', name: 'Rock 2', category: 'obstacles', modelUrl: '/models/rock2.glb', scale: 5.0, rotationOffset: 0, icon: '\u26F0' },
-  { key: 'tree1', name: 'Tree', category: 'obstacles', modelUrl: '/models/tree1.glb', scale: 6.0, rotationOffset: 0, icon: '\u2663' },
-  { key: 'boulder', name: 'Boulder', category: 'obstacles', modelUrl: '/models/boulder.glb', scale: 6.0, rotationOffset: 0, icon: '\u2B24' },
+  { key: 'rock1', name: 'Rock 1', category: 'obstacles', modelUrl: '/models/rock1.glb', scale: 5.0, rotationOffset: 0, icon: '\u26F0',
+    collisionRadius: 1.0 },
+  { key: 'rock2', name: 'Rock 2', category: 'obstacles', modelUrl: '/models/rock2.glb', scale: 5.0, rotationOffset: 0, icon: '\u26F0',
+    collisionRadius: 1.2 },
+  { key: 'tree1', name: 'Tree', category: 'obstacles', modelUrl: '/models/tree1.glb', scale: 6.0, rotationOffset: 0, icon: '\u2663',
+    collisionRadius: 0.5 },
+  { key: 'boulder', name: 'Boulder', category: 'obstacles', modelUrl: '/models/boulder.glb', scale: 6.0, rotationOffset: 0, icon: '\u2B24',
+    collisionRadius: 1.5 },
 ]
 
 const MODEL_MAP = new Map<string, ModelConfig>()

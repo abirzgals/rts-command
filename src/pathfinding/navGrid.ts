@@ -45,8 +45,11 @@ export function initNavGrid() {
 export function blockCells(wx: number, wz: number, radius: number) {
   const [cx, cz] = worldToGrid(wx, wz)
   const r = Math.ceil(radius / CELL_SIZE)
+  const rSq = (radius / CELL_SIZE) * (radius / CELL_SIZE)
   for (let dz = -r; dz <= r; dz++) {
     for (let dx = -r; dx <= r; dx++) {
+      // Circular check — don't block corners
+      if (dx * dx + dz * dz > rSq) continue
       const gx = cx + dx
       const gz = cz + dz
       if (gx >= 0 && gx < GRID_RES && gz >= 0 && gz < GRID_RES) {
