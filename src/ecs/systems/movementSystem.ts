@@ -2,24 +2,33 @@ import { defineQuery, hasComponent, removeComponent, addComponent } from 'bitecs
 import type { IWorld } from 'bitecs'
 import { Position, Rotation, MoveTarget, MoveSpeed, Velocity, IsBuilding, PathFollower, Projectile, CollisionRadius, Dead } from '../components'
 import { getPath, removePath } from '../../pathfinding/pathStore'
-import { getTerrainHeight, getTerrainTypeAt, T_WATER, T_CLIFF } from '../../terrain/heightmap'
-import { isWorldWalkable } from '../../pathfinding/navGrid'
+import { getTerrainHeight, getTerrainTypeAt, T_WATER, T_CLIFF, worldToGrid, GRID_RES } from '../../terrain/heightmap'
+import { isWorldWalkable, dynamicCost } from '../../pathfinding/navGrid'
 import { spatialHash } from '../../globals'
 
-/** Check if a circle of given radius is fully on walkable terrain */
+const BUILDING_COST_THRESHOLD = 50 // dynamicCost above this = building (impassable)
+
+/** Check if a point is blocked by a building (dynamic obstacle) */
+function isBlockedByBuilding(x: number, z: number): boolean {
+  const [gx, gz] = worldToGrid(x, z)
+  if (gx < 0 || gx >= GRID_RES || gz < 0 || gz >= GRID_RES) return false
+  return dynamicCost[gz * GRID_RES + gx] >= BUILDING_COST_THRESHOLD
+}
+
+/** Check if a circle of given radius is fully on walkable terrain and not inside buildings */
 function isRadiusWalkable(x: number, z: number, radius: number): boolean {
-  // Check center + 4 cardinal points at radius distance
   if (!isWorldWalkable(x, z)) return false
   const t = getTerrainTypeAt(x, z)
   if (t === T_WATER || t === T_CLIFF) return false
+  if (isBlockedByBuilding(x, z)) return false
   if (radius <= 0.2) return true
-  // Check perimeter points
   for (let i = 0; i < 4; i++) {
     const angle = i * Math.PI * 0.5
     const cx = x + Math.cos(angle) * radius
     const cz = z + Math.sin(angle) * radius
     const ct = getTerrainTypeAt(cx, cz)
     if (ct === T_WATER || ct === T_CLIFF || !isWorldWalkable(cx, cz)) return false
+    if (isBlockedByBuilding(cx, cz)) return false
   }
   return true
 }
