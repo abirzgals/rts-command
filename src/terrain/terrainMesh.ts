@@ -14,227 +14,197 @@ export function updateWater(dt: number) {
   if (waterUniforms) waterUniforms.time.value += dt
 }
 
-// ── Biome base colors (used immediately, replaced by textures when loaded) ─
+// ── Splat map from terrain types ────────────────────────────
 
-const BIOME_COLORS: [number, number, number][] = []
-BIOME_COLORS[T_GRASS]      = [0.30, 0.50, 0.18]
-BIOME_COLORS[T_DARK_GRASS] = [0.20, 0.38, 0.12]
-BIOME_COLORS[T_DIRT]       = [0.50, 0.40, 0.25]
-BIOME_COLORS[T_ROCK]       = [0.42, 0.40, 0.38]
-BIOME_COLORS[T_CLIFF]      = [0.35, 0.32, 0.30]
-BIOME_COLORS[T_WATER]      = [0.30, 0.42, 0.32]
-
-// Terrain type → texture mapping
-const BIOME_TEX_MAP: Record<number, string> = {
-  [T_GRASS]: '/textures/grass.jpg',
-  [T_DARK_GRASS]: '/textures/grass.jpg',
-  [T_DIRT]: '/textures/dirt.jpg',
-  [T_ROCK]: '/textures/rock.jpg',
-  [T_CLIFF]: '/textures/cliff.jpg',
-  [T_WATER]: '/textures/dirt.jpg',
-}
-
-// ── Bake textures into vertex colors ────────────────────────
-
-/** Load an image and draw it to a canvas for pixel sampling */
-function loadImageData(url: string): Promise<ImageData> {
-  return new Promise((resolve) => {
-    const img = new Image()
-    img.crossOrigin = 'anonymous'
-    img.onload = () => {
-      const c = document.createElement('canvas')
-      c.width = img.width; c.height = img.height
-      const ctx = c.getContext('2d')!
-      ctx.drawImage(img, 0, 0)
-      resolve(ctx.getImageData(0, 0, img.width, img.height))
+function generateSplatMap(): THREE.DataTexture {
+  const raw = new Float32Array(GRID_RES * GRID_RES * 4)
+  for (let gz = 0; gz < GRID_RES; gz++) {
+    for (let gx = 0; gx < GRID_RES; gx++) {
+      const i = (gz * GRID_RES + gx) * 4
+      const tt = terrainType[gz * GRID_RES + gx]
+      raw[i]     = (tt === T_GRASS || tt === T_DARK_GRASS) ? 1 : 0
+      raw[i + 1] = (tt === T_DIRT || tt === T_WATER) ? 1 : 0
+      raw[i + 2] = (tt === T_ROCK) ? 1 : 0
+      raw[i + 3] = (tt === T_CLIFF) ? 1 : 0
     }
-    img.onerror = () => {
-      // Fallback: 1x1 gray
-      const c = document.createElement('canvas')
-      c.width = 1; c.height = 1
-      const ctx = c.getContext('2d')!
-      ctx.fillStyle = '#888'
-      ctx.fillRect(0, 0, 1, 1)
-      resolve(ctx.getImageData(0, 0, 1, 1))
+  }
+  // 2-pass blur
+  const tmp = new Float32Array(raw.length)
+  for (let pass = 0; pass < 2; pass++) {
+    const src = pass === 0 ? raw : tmp
+    const dst = pass === 0 ? tmp : raw
+    for (let gz = 0; gz < GRID_RES; gz++) {
+      for (let gx = 0; gx < GRID_RES; gx++) {
+        let r = 0, g = 0, b = 0, a = 0, w = 0
+        for (let dz = -1; dz <= 1; dz++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            const nx = Math.max(0, Math.min(GRID_RES - 1, gx + dx))
+            const nz = Math.max(0, Math.min(GRID_RES - 1, gz + dz))
+            const ni = (nz * GRID_RES + nx) * 4
+            const wt = (dx === 0 && dz === 0) ? 4 : (dx === 0 || dz === 0) ? 2 : 1
+            r += src[ni] * wt; g += src[ni+1] * wt; b += src[ni+2] * wt; a += src[ni+3] * wt; w += wt
+          }
+        }
+        const di = (gz * GRID_RES + gx) * 4
+        dst[di] = r/w; dst[di+1] = g/w; dst[di+2] = b/w; dst[di+3] = a/w
+      }
     }
-    img.src = url
-  })
+  }
+  const data = new Uint8Array(GRID_RES * GRID_RES * 4)
+  for (let i = 0; i < GRID_RES * GRID_RES; i++) {
+    const si = i * 4
+    const sum = raw[si] + raw[si+1] + raw[si+2] + raw[si+3]
+    const inv = sum > 0.001 ? 255 / sum : 0
+    data[si] = raw[si]*inv; data[si+1] = raw[si+1]*inv; data[si+2] = raw[si+2]*inv; data[si+3] = raw[si+3]*inv
+  }
+  const tex = new THREE.DataTexture(data, GRID_RES, GRID_RES, THREE.RGBAFormat)
+  tex.needsUpdate = true
+  tex.minFilter = THREE.LinearFilter
+  tex.magFilter = THREE.LinearFilter
+  return tex
 }
 
-/** Sample a pixel from ImageData using tiled UV coordinates */
-function sampleTexture(img: ImageData, u: number, v: number): [number, number, number] {
-  // Tile the UVs
-  const x = ((u % 1) + 1) % 1
-  const y = ((v % 1) + 1) % 1
-  const px = Math.floor(x * img.width) % img.width
-  const py = Math.floor(y * img.height) % img.height
-  const i = (py * img.width + px) * 4
-  return [img.data[i] / 255, img.data[i + 1] / 255, img.data[i + 2] / 255]
-}
+// ── Main ────────────────────────────────────────────────────
 
-// ── Build geometry ──────────────────────────────────────────
+export function createTerrainMesh(): THREE.Mesh {
+  const loader = new THREE.TextureLoader()
+  function loadTex(url: string): THREE.Texture {
+    const t = loader.load(url)
+    t.wrapS = t.wrapT = THREE.RepeatWrapping
+    t.minFilter = THREE.LinearMipmapLinearFilter
+    t.colorSpace = THREE.SRGBColorSpace
+    return t
+  }
 
-function buildGeometry(): THREE.PlaneGeometry {
+  const texGrass = loadTex('/textures/grass.jpg')
+  const texDirt  = loadTex('/textures/dirt.jpg')
+  const texRock  = loadTex('/textures/rock.jpg')
+  const texCliff = loadTex('/textures/cliff.jpg')
+  const splatMap = generateSplatMap()
+
+  // Geometry
   const geo = new THREE.PlaneGeometry(MAP_SIZE, MAP_SIZE, GRID_RES - 1, GRID_RES - 1)
   geo.rotateX(-Math.PI / 2)
-
   const pos = geo.attributes.position
   for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i)
-    const z = pos.getZ(i)
-    const gx = Math.round((x + MAP_SIZE / 2) / (MAP_SIZE / (GRID_RES - 1)))
-    const gz = Math.round((z + MAP_SIZE / 2) / (MAP_SIZE / (GRID_RES - 1)))
-    const cgx = Math.max(0, Math.min(GRID_RES - 1, gx))
-    const cgz = Math.max(0, Math.min(GRID_RES - 1, gz))
-    pos.setY(i, heightData[cgz * GRID_RES + cgx])
+    const x = pos.getX(i), z = pos.getZ(i)
+    const gx = Math.round((x + MAP_SIZE/2) / (MAP_SIZE/(GRID_RES-1)))
+    const gz = Math.round((z + MAP_SIZE/2) / (MAP_SIZE/(GRID_RES-1)))
+    pos.setY(i, heightData[Math.max(0,Math.min(GRID_RES-1,gz)) * GRID_RES + Math.max(0,Math.min(GRID_RES-1,gx))])
   }
   pos.needsUpdate = true
   geo.computeVertexNormals()
-  return geo
-}
 
-/** Set vertex colors from biome base colors */
-function setBaseColors(geo: THREE.PlaneGeometry): Float32Array {
-  const pos = geo.attributes.position
-  const colors = new Float32Array(pos.count * 3)
-
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i), z = pos.getZ(i)
-    const gx = Math.round((x + MAP_SIZE / 2) / (MAP_SIZE / (GRID_RES - 1)))
-    const gz = Math.round((z + MAP_SIZE / 2) / (MAP_SIZE / (GRID_RES - 1)))
-    const cgx = Math.max(0, Math.min(GRID_RES - 1, gx))
-    const cgz = Math.max(0, Math.min(GRID_RES - 1, gz))
-
-    const tt = terrainType[cgz * GRID_RES + cgx]
-    const h = heightData[cgz * GRID_RES + cgx]
-    const bc = BIOME_COLORS[tt] || BIOME_COLORS[T_GRASS]
-    const hf = 0.9 + Math.min(h, 10) * 0.015
-    const n = Math.sin(x * 0.5) * Math.cos(z * 0.7) * 0.03
-
-    colors[i * 3]     = Math.max(0, Math.min(1, bc[0] * hf + n))
-    colors[i * 3 + 1] = Math.max(0, Math.min(1, bc[1] * hf + n))
-    colors[i * 3 + 2] = Math.max(0, Math.min(1, bc[2] * hf + n * 0.5))
-  }
-  return colors
-}
-
-/** Replace vertex colors with texture-sampled colors (called async after textures load) */
-async function bakeTextureColors(geo: THREE.PlaneGeometry) {
-  // Load all unique textures
-  const urls = new Set(Object.values(BIOME_TEX_MAP))
-  const loaded = new Map<string, ImageData>()
-  await Promise.all([...urls].map(async (url) => {
-    loaded.set(url, await loadImageData(url))
-  }))
-
-  const pos = geo.attributes.position
-  const colors = geo.attributes.color as THREE.BufferAttribute
-  const texScale = 0.1 // tile every 10 world units
-
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i), z = pos.getZ(i)
-    const gx = Math.round((x + MAP_SIZE / 2) / (MAP_SIZE / (GRID_RES - 1)))
-    const gz = Math.round((z + MAP_SIZE / 2) / (MAP_SIZE / (GRID_RES - 1)))
-    const cgx = Math.max(0, Math.min(GRID_RES - 1, gx))
-    const cgz = Math.max(0, Math.min(GRID_RES - 1, gz))
-
-    const tt = terrainType[cgz * GRID_RES + cgx]
-    const h = heightData[cgz * GRID_RES + cgx]
-    const hf = 0.9 + Math.min(h, 10) * 0.015
-
-    const texUrl = BIOME_TEX_MAP[tt] || BIOME_TEX_MAP[T_GRASS]
-    const img = loaded.get(texUrl)
-    if (!img) continue
-
-    // Sample texture at tiled world coordinates
-    const [r, g, b] = sampleTexture(img, x * texScale, z * texScale)
-
-    // Blend with neighbors for smooth transitions (simple 1-cell blur)
-    let br = r, bg = g, bb = b, w = 1
-    for (const [dx, dz] of [[-1,0],[1,0],[0,-1],[0,1]] as const) {
-      const nx = Math.max(0, Math.min(GRID_RES - 1, cgx + dx))
-      const nz = Math.max(0, Math.min(GRID_RES - 1, cgz + dz))
-      const ntt = terrainType[nz * GRID_RES + nx]
-      if (ntt !== tt) {
-        const ntexUrl = BIOME_TEX_MAP[ntt] || BIOME_TEX_MAP[T_GRASS]
-        const nimg = loaded.get(ntexUrl)
-        if (nimg) {
-          const [nr, ng, nb] = sampleTexture(nimg, x * texScale, z * texScale)
-          br += nr * 0.3; bg += ng * 0.3; bb += nb * 0.3; w += 0.3
-        }
-      }
+  // Get sun direction
+  let sunDir = new THREE.Vector3(0.5, 0.8, 0.3).normalize()
+  scene.traverse((obj) => {
+    if ((obj as THREE.DirectionalLight).isDirectionalLight && (obj as THREE.DirectionalLight).castShadow) {
+      sunDir = (obj as THREE.DirectionalLight).position.clone().normalize()
     }
+  })
 
-    colors.setXYZ(i, (br / w) * hf, (bg / w) * hf, (bb / w) * hf)
-  }
-  colors.needsUpdate = true
-}
+  // Full custom ShaderMaterial with manual shadow sampling
+  const customUniforms = THREE.UniformsUtils.merge([
+    THREE.UniformsLib.lights,
+    {
+      splatMap: { value: splatMap },
+      texGrass: { value: texGrass },
+      texDirt:  { value: texDirt },
+      texRock:  { value: texRock },
+      texCliff: { value: texCliff },
+      sunDir:   { value: sunDir },
+    }
+  ])
 
-// ── Main terrain creation ───────────────────────────────────
+  const mat = new THREE.ShaderMaterial({
+    uniforms: customUniforms,
+    lights: true,
+    vertexShader: /* glsl */ `
+      varying vec2 vSplatUV;
+      varying vec2 vTileUV;
+      varying vec3 vNorm;
+      varying float vHeight;
 
-export function createTerrainMesh(): THREE.Mesh {
-  const geo = buildGeometry()
-  const baseColors = setBaseColors(geo)
-  geo.setAttribute('color', new THREE.BufferAttribute(baseColors, 3))
+      #include <common>
+      #include <shadowmap_pars_vertex>
 
-  const mat = new THREE.MeshStandardMaterial({
-    vertexColors: true,
-    roughness: 0.85,
-    metalness: 0.0,
+      void main() {
+        vSplatUV = uv;
+        vec4 wp = modelMatrix * vec4(position, 1.0);
+        vTileUV = wp.xz * 0.1;
+        vHeight = wp.y;
+        vNorm = normalize((modelMatrix * vec4(normal, 0.0)).xyz);
+
+        gl_Position = projectionMatrix * viewMatrix * wp;
+
+        // Shadow coords
+        #ifdef USE_SHADOWMAP
+          vec4 shadowWorldPosition = wp;
+        #endif
+        #include <shadowmap_vertex>
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform sampler2D splatMap, texGrass, texDirt, texRock, texCliff;
+      uniform vec3 sunDir;
+
+      varying vec2 vSplatUV, vTileUV;
+      varying vec3 vNorm;
+      varying float vHeight;
+
+      #include <common>
+      #include <packing>
+      #include <lights_pars_begin>
+      #include <shadowmap_pars_fragment>
+      #include <shadowmask_pars_fragment>
+
+      void main() {
+        vec4 sp = texture2D(splatMap, vSplatUV);
+        vec3 tg = texture2D(texGrass, vTileUV).rgb;
+        vec3 td = texture2D(texDirt,  vTileUV).rgb;
+        vec3 tr = texture2D(texRock,  vTileUV * 0.7).rgb;
+        vec3 tc = texture2D(texCliff, vTileUV * 0.5).rgb;
+        vec3 albedo = tg * sp.r + td * sp.g + tr * sp.b + tc * sp.a;
+
+        float ndl = max(dot(normalize(vNorm), sunDir), 0.0);
+        float hf = 0.9 + clamp(vHeight * 0.015, 0.0, 0.2);
+
+        // Try shadow mask, fallback to 1.0
+        float shadow = getShadowMask();
+
+        vec3 col = albedo * (0.35 + 0.65 * ndl * shadow) * hf;
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `,
   })
 
   terrainMesh = new THREE.Mesh(geo, mat)
   terrainMesh.receiveShadow = true
   scene.add(terrainMesh)
 
-  // Async: load textures and bake into vertex colors (upgrades appearance)
-  bakeTextureColors(geo).catch(() => {})
-
   createWater()
   return terrainMesh
 }
 
-// ── Animated water ──────────────────────────────────────────
+// ── Water ───────────────────────────────────────────────────
 
 function createWater() {
-  const waterGeo = new THREE.PlaneGeometry(MAP_SIZE, MAP_SIZE, 64, 64)
-  waterGeo.rotateX(-Math.PI / 2)
+  const g = new THREE.PlaneGeometry(MAP_SIZE, MAP_SIZE, 64, 64)
+  g.rotateX(-Math.PI / 2)
   waterUniforms = { time: { value: 0 } }
-
-  const waterMat = new THREE.ShaderMaterial({
-    uniforms: {
-      time: waterUniforms.time,
-      waterColor: { value: new THREE.Color(0.12, 0.30, 0.50) },
-      foamColor: { value: new THREE.Color(0.55, 0.70, 0.82) },
-    },
-    vertexShader: `
-      uniform float time;
-      varying vec2 vUv;
-      varying float vWave;
-      void main() {
-        vUv = uv;
-        vec3 p = position;
-        float w = sin(p.x*0.3+time*1.2)*0.3 + sin(p.z*0.4+time*0.8)*0.2 + sin((p.x+p.z)*0.2+time*1.5)*0.15;
-        p.y = -1.2 + w;
-        vWave = w;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
-      }
-    `,
-    fragmentShader: `
-      uniform vec3 waterColor, foamColor;
-      uniform float time;
-      varying vec2 vUv;
-      varying float vWave;
-      void main() {
-        float c = pow(sin(vUv.x*40.0+time*2.0)*sin(vUv.y*40.0+time*1.5)*0.5+0.5, 3.0)*0.3;
-        vec3 col = mix(waterColor + c*foamColor, foamColor, smoothstep(0.2,0.4,vWave)*0.3);
-        gl_FragColor = vec4(col, 0.55 + c*0.15);
-      }
-    `,
+  const m = new THREE.ShaderMaterial({
+    uniforms: { time: waterUniforms.time, wc: { value: new THREE.Color(0.12,0.30,0.50) }, fc: { value: new THREE.Color(0.55,0.70,0.82) } },
+    vertexShader: `uniform float time; varying vec2 vu; varying float vw;
+      void main(){ vu=uv; vec3 p=position;
+        float w=sin(p.x*.3+time*1.2)*.3+sin(p.z*.4+time*.8)*.2+sin((p.x+p.z)*.2+time*1.5)*.15;
+        p.y=-1.2+w; vw=w; gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.); }`,
+    fragmentShader: `uniform vec3 wc,fc; uniform float time; varying vec2 vu; varying float vw;
+      void main(){ float c=pow(sin(vu.x*40.+time*2.)*sin(vu.y*40.+time*1.5)*.5+.5,3.)*.3;
+        vec3 col=mix(wc+c*fc,fc,smoothstep(.2,.4,vw)*.3);
+        gl_FragColor=vec4(col,.55+c*.15); }`,
     transparent: true, depthWrite: false, side: THREE.DoubleSide,
   })
-
-  waterMesh = new THREE.Mesh(waterGeo, waterMat)
+  waterMesh = new THREE.Mesh(g, m)
   waterMesh.renderOrder = 1
   scene.add(waterMesh)
 }
