@@ -34,8 +34,8 @@ interface ModelConfig {
 }
 
 interface EffectsConfig {
-  muzzle: { color: string; intensity: number; range: number; yOffset: number; duration: number }
-  projectile: { type: 'bullet' | 'shell'; color: string; size: number; speed: number; spawnY: number; arcHeight: number }
+  muzzle: { color: string; intensity: number; range: number; xOffset: number; yOffset: number; zOffset: number; duration: number }
+  projectile: { type: 'bullet' | 'shell'; color: string; size: number; speed: number; spawnX: number; spawnY: number; spawnZ: number; arcHeight: number }
   explosion: { colors: string[]; radius: number; particles: number }
   smoke: { color: string; opacity: number; lifetime: number; count: number }
 }
@@ -75,8 +75,8 @@ ALL_MODELS.forEach(m => MODEL_MAP.set(m.key, m))
 type UnitConfig = ModelConfig
 
 const DEFAULT_EFFECTS: EffectsConfig = {
-  muzzle: { color: '#ffaa44', intensity: 8, range: 12, yOffset: 1.5, duration: 0.1 },
-  projectile: { type: 'bullet', color: '#ffee44', size: 0.08, speed: 25, spawnY: 1.0, arcHeight: 4 },
+  muzzle: { color: '#ffaa44', intensity: 8, range: 12, xOffset: 0, yOffset: 1.5, zOffset: 0.6, duration: 0.1 },
+  projectile: { type: 'bullet', color: '#ffee44', size: 0.08, speed: 25, spawnX: 0, spawnY: 1.0, spawnZ: 0.8, arcHeight: 4 },
   explosion: { colors: ['#ff6600', '#ff4400', '#441100'], radius: 2.0, particles: 8 },
   smoke: { color: '#888888', opacity: 0.6, lifetime: 0.75, count: 4 },
 }
@@ -469,18 +469,28 @@ function updateOverlays() {
   const markerGeo = new THREE.SphereGeometry(0.08, 8, 8)
   const markerMat = new THREE.MeshBasicMaterial({ color: 0xffaa44 })
   muzzleMarker = new THREE.Mesh(markerGeo, markerMat)
-  muzzleMarker.position.set(0, parseFloat((document.getElementById('muzzle-yoffset') as HTMLInputElement).value) || 1.5, 0.6)
+  muzzleMarker.position.set(effects.muzzle.xOffset, effects.muzzle.yOffset, effects.muzzle.zOffset)
   muzzleMarker.visible = overlayVisibility.muzzleFlash
-  scene.add(muzzleMarker)
 
   // Projectile spawn marker (small arrow/cone)
   const arrowGeo = new THREE.ConeGeometry(0.06, 0.18, 6)
-  arrowGeo.rotateX(-Math.PI / 2) // point forward along +Z
+  arrowGeo.rotateX(-Math.PI / 2)
   const arrowMat = new THREE.MeshBasicMaterial({ color: 0xffee44 })
   projectileMarker = new THREE.Mesh(arrowGeo, arrowMat)
-  projectileMarker.position.set(0, parseFloat((document.getElementById('proj-y') as HTMLInputElement).value) || 1.0, 0.8)
+  projectileMarker.position.set(effects.projectile.spawnX, effects.projectile.spawnY, effects.projectile.spawnZ)
   projectileMarker.visible = overlayVisibility.projectileSpawn
-  scene.add(projectileMarker)
+
+  // Attach markers to turret bone if present (so they rotate with turret)
+  if (barrelBone) {
+    barrelBone.add(muzzleMarker)
+    barrelBone.add(projectileMarker)
+  } else if (turretBone) {
+    turretBone.add(muzzleMarker)
+    turretBone.add(projectileMarker)
+  } else {
+    scene.add(muzzleMarker)
+    scene.add(projectileMarker)
+  }
 
   // HP bar preview
   hpBarGroup = createHPBarPreview()
@@ -493,8 +503,8 @@ function removeOverlays() {
   if (selectionRing) { scene.remove(selectionRing); selectionRing.geometry.dispose(); (selectionRing.material as THREE.Material).dispose(); selectionRing = null }
   if (attackRangeRing) { scene.remove(attackRangeRing); attackRangeRing.geometry.dispose(); (attackRangeRing.material as THREE.Material).dispose(); attackRangeRing = null }
   if (collisionRing) { scene.remove(collisionRing); collisionRing.geometry.dispose(); (collisionRing.material as THREE.Material).dispose(); collisionRing = null }
-  if (muzzleMarker) { scene.remove(muzzleMarker); muzzleMarker.geometry.dispose(); (muzzleMarker.material as THREE.Material).dispose(); muzzleMarker = null }
-  if (projectileMarker) { scene.remove(projectileMarker); projectileMarker.geometry.dispose(); (projectileMarker.material as THREE.Material).dispose(); projectileMarker = null }
+  if (muzzleMarker) { muzzleMarker.removeFromParent(); muzzleMarker.geometry.dispose(); (muzzleMarker.material as THREE.Material).dispose(); muzzleMarker = null }
+  if (projectileMarker) { projectileMarker.removeFromParent(); projectileMarker.geometry.dispose(); (projectileMarker.material as THREE.Material).dispose(); projectileMarker = null }
   if (hpBarGroup) { scene.remove(hpBarGroup); disposeObject(hpBarGroup); hpBarGroup = null }
 }
 
@@ -967,7 +977,10 @@ function wireTurretControls() {
     const deg = parseFloat(pitchSlider.value)
     pitchVal.value = deg + '\u00B0'
     if (barrelBone) {
-      barrelBone.quaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), deg * Math.PI / 180)
+      // Barrel bone rest pose points along -Z (forward) in glTF space.
+      // Pitch rotates around local X axis to tilt up/down.
+      const rad = deg * Math.PI / 180
+      barrelBone.quaternion.setFromEuler(new THREE.Euler(rad, 0, 0))
     }
   })
 }
@@ -983,9 +996,17 @@ function wireEffectControls() {
   // ── Muzzle flash ──
   wireSliderPair('muzzle-intensity', 'muzzle-intensity-val', (v) => { effects.muzzle.intensity = v })
   wireSliderPair('muzzle-range', 'muzzle-range-val', (v) => { effects.muzzle.range = v })
+  wireSliderPair('muzzle-xoffset', 'muzzle-xoffset-val', (v) => {
+    effects.muzzle.xOffset = v
+    if (muzzleMarker) muzzleMarker.position.x = v
+  })
   wireSliderPair('muzzle-yoffset', 'muzzle-yoffset-val', (v) => {
     effects.muzzle.yOffset = v
     if (muzzleMarker) muzzleMarker.position.y = v
+  })
+  wireSliderPair('muzzle-zoffset', 'muzzle-zoffset-val', (v) => {
+    effects.muzzle.zOffset = v
+    if (muzzleMarker) muzzleMarker.position.z = v
   })
   wireSliderPair('muzzle-duration', 'muzzle-duration-val', (v) => { effects.muzzle.duration = v }, 's')
 
@@ -1006,9 +1027,17 @@ function wireEffectControls() {
 
   wireSliderPair('proj-size', 'proj-size-val', (v) => { effects.projectile.size = v })
   wireSliderPair('proj-speed', 'proj-speed-val', (v) => { effects.projectile.speed = v })
+  wireSliderPair('proj-x', 'proj-x-val', (v) => {
+    effects.projectile.spawnX = v
+    if (projectileMarker) projectileMarker.position.x = v
+  })
   wireSliderPair('proj-y', 'proj-y-val', (v) => {
     effects.projectile.spawnY = v
     if (projectileMarker) projectileMarker.position.y = v
+  })
+  wireSliderPair('proj-z', 'proj-z-val', (v) => {
+    effects.projectile.spawnZ = v
+    if (projectileMarker) projectileMarker.position.z = v
   })
   wireSliderPair('proj-arc', 'proj-arc-val', (v) => { effects.projectile.arcHeight = v })
 
@@ -1067,10 +1096,11 @@ function updateProjDefaults() {
     setSliderValue('proj-speed', 15)
     setSliderValue('proj-size', 0.12)
     setSliderValue('proj-y', 2.0)
+    setSliderValue('proj-z', 1.0)
     setSliderValue('proj-arc', 4)
     const colorEl = document.getElementById('proj-color') as HTMLInputElement
     colorEl.value = '#ff4400'
-    effects.projectile = { ...effects.projectile, speed: 15, size: 0.12, spawnY: 2.0, color: '#ff4400', arcHeight: 4 }
+    effects.projectile = { ...effects.projectile, speed: 15, size: 0.12, spawnY: 2.0, spawnZ: 1.0, color: '#ff4400', arcHeight: 4 }
   }
 }
 
@@ -1096,8 +1126,16 @@ function updateExplosionColors() {
 
 function fireEffect() {
   const color = new THREE.Color(effects.muzzle.color)
+  // Get world position from the muzzle marker (which may be attached to turret/barrel bone)
+  const worldPos = new THREE.Vector3()
+  if (muzzleMarker) {
+    muzzleMarker.getWorldPosition(worldPos)
+  } else {
+    worldPos.set(effects.muzzle.xOffset, effects.muzzle.yOffset, effects.muzzle.zOffset)
+  }
+
   const light = new THREE.PointLight(color, effects.muzzle.intensity, effects.muzzle.range)
-  light.position.set(0, effects.muzzle.yOffset, 0.6)
+  light.position.copy(worldPos)
   scene.add(light)
 
   // Flash sphere
@@ -1108,7 +1146,7 @@ function fireEffect() {
     opacity: 0.9,
   })
   const flashMesh = new THREE.Mesh(flashGeo, flashMat)
-  flashMesh.position.copy(light.position)
+  flashMesh.position.copy(worldPos)
   scene.add(flashMesh)
 
   let elapsed = 0
@@ -1147,7 +1185,13 @@ function launchEffect() {
   const mat = new THREE.MeshBasicMaterial({ color })
   const proj = new THREE.Mesh(geo, mat)
 
-  const startPos = new THREE.Vector3(0, effects.projectile.spawnY, 0.6)
+  // Get world position from the projectile marker (attached to turret/barrel bone)
+  const startPos = new THREE.Vector3()
+  if (projectileMarker) {
+    projectileMarker.getWorldPosition(startPos)
+  } else {
+    startPos.set(effects.projectile.spawnX, effects.projectile.spawnY, effects.projectile.spawnZ)
+  }
   const endPos = new THREE.Vector3(0, 0.5, 8)
   proj.position.copy(startPos)
   scene.add(proj)
@@ -1512,7 +1556,9 @@ function resetEffectsUI() {
   ;(document.getElementById('muzzle-color') as HTMLInputElement).value = DEFAULT_EFFECTS.muzzle.color
   setSliderValue('muzzle-intensity', DEFAULT_EFFECTS.muzzle.intensity)
   setSliderValue('muzzle-range', DEFAULT_EFFECTS.muzzle.range)
+  setSliderValue('muzzle-xoffset', DEFAULT_EFFECTS.muzzle.xOffset)
   setSliderValue('muzzle-yoffset', DEFAULT_EFFECTS.muzzle.yOffset)
+  setSliderValue('muzzle-zoffset', DEFAULT_EFFECTS.muzzle.zOffset)
   setSliderValue('muzzle-duration', DEFAULT_EFFECTS.muzzle.duration)
 
   // Projectile
@@ -1520,7 +1566,9 @@ function resetEffectsUI() {
   ;(document.getElementById('proj-color') as HTMLInputElement).value = DEFAULT_EFFECTS.projectile.color
   setSliderValue('proj-size', DEFAULT_EFFECTS.projectile.size)
   setSliderValue('proj-speed', DEFAULT_EFFECTS.projectile.speed)
+  setSliderValue('proj-x', DEFAULT_EFFECTS.projectile.spawnX)
   setSliderValue('proj-y', DEFAULT_EFFECTS.projectile.spawnY)
+  setSliderValue('proj-z', DEFAULT_EFFECTS.projectile.spawnZ)
   setSliderValue('proj-arc', DEFAULT_EFFECTS.projectile.arcHeight)
   document.getElementById('proj-arc-row')!.style.display = 'none'
 

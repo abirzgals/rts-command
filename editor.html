@@ -490,9 +490,19 @@
           <input type="text" class="stat-input" id="muzzle-range-val" value="12" readonly>
         </div>
         <div class="stat-row">
+          <span class="stat-label">X Offset</span>
+          <input type="range" class="stat-slider" id="muzzle-xoffset" min="-3" max="3" step="0.05" value="0">
+          <input type="text" class="stat-input" id="muzzle-xoffset-val" value="0" readonly>
+        </div>
+        <div class="stat-row">
           <span class="stat-label">Y Offset</span>
-          <input type="range" class="stat-slider" id="muzzle-yoffset" min="0" max="4" step="0.1" value="1.5">
+          <input type="range" class="stat-slider" id="muzzle-yoffset" min="0" max="6" step="0.05" value="1.5">
           <input type="text" class="stat-input" id="muzzle-yoffset-val" value="1.5" readonly>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Z Offset</span>
+          <input type="range" class="stat-slider" id="muzzle-zoffset" min="-3" max="5" step="0.05" value="0.6">
+          <input type="text" class="stat-input" id="muzzle-zoffset-val" value="0.6" readonly>
         </div>
         <div class="stat-row">
           <span class="stat-label">Duration</span>
@@ -530,9 +540,19 @@
           <input type="text" class="stat-input" id="proj-speed-val" value="25" readonly>
         </div>
         <div class="stat-row">
+          <span class="stat-label">Spawn X</span>
+          <input type="range" class="stat-slider" id="proj-x" min="-3" max="3" step="0.05" value="0">
+          <input type="text" class="stat-input" id="proj-x-val" value="0" readonly>
+        </div>
+        <div class="stat-row">
           <span class="stat-label">Spawn Y</span>
-          <input type="range" class="stat-slider" id="proj-y" min="0.2" max="4" step="0.1" value="1.0">
+          <input type="range" class="stat-slider" id="proj-y" min="0.2" max="6" step="0.05" value="1.0">
           <input type="text" class="stat-input" id="proj-y-val" value="1.0" readonly>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Spawn Z</span>
+          <input type="range" class="stat-slider" id="proj-z" min="-3" max="5" step="0.05" value="0.8">
+          <input type="text" class="stat-input" id="proj-z-val" value="0.8" readonly>
         </div>
         <div class="stat-row" id="proj-arc-row">
           <span class="stat-label">Arc Height</span>
