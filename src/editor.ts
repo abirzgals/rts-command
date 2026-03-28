@@ -545,9 +545,26 @@ function removeOverlays() {
   if (hpBarGroup) { scene.remove(hpBarGroup); disposeObject(hpBarGroup); hpBarGroup = null }
 }
 
-/** Get the horizontal fire direction in world space based on turret/model rotation */
+/** Get the horizontal fire direction in world space.
+ *  Uses the picked face normal if available, otherwise model forward + turret yaw. */
 function getFireDirection(): THREE.Vector3 {
-  const fwd = new THREE.Vector3(0, 0, -1) // Three.js forward
+  // If a face was picked, use its normal transformed to world space
+  if (firePointAttachment) {
+    const worldNormal = firePointAttachment.localNormal.clone()
+    // Transform local normal to world space through the attachment bone
+    const boneQ = new THREE.Quaternion()
+    firePointAttachment.bone.getWorldQuaternion(boneQ)
+    worldNormal.applyQuaternion(boneQ)
+    // Flatten to horizontal
+    worldNormal.y = 0
+    if (worldNormal.lengthSq() > 0.001) {
+      worldNormal.normalize()
+      return worldNormal
+    }
+  }
+
+  // Fallback: model forward + turret yaw
+  const fwd = new THREE.Vector3(0, 0, -1)
   if (!currentModel) return fwd
 
   currentModel.getWorldQuaternion(_tmpQ)
@@ -559,7 +576,6 @@ function getFireDirection(): THREE.Vector3 {
     const localBoneQ = modelInv.multiply(boneQ)
     const euler = new THREE.Euler().setFromQuaternion(localBoneQ)
     const yawOnly = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, euler.y, 0))
-    // Recompute _tmpQ since modelInv.multiply() mutated it
     currentModel.getWorldQuaternion(_tmpQ)
     fwd.applyQuaternion(_tmpQ)
     fwd.applyQuaternion(yawOnly)
