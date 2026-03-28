@@ -11,12 +11,10 @@ const buildingQuery = defineQuery([Position, IsBuilding, Selectable])
 const MAX_PATHS_PER_FRAME = 4
 let lastBuildingCount = -1
 
-// Track last target per entity to avoid recomputing same path
-const lastTargetX = new Float32Array(8000)
-const lastTargetZ = new Float32Array(8000)
-const pathAttempted = new Uint8Array(8000) // 1 = already tried for current target
+// Simple cooldown per entity — don't retry pathfinding more than once per second
+const pathCooldown = new Float32Array(8000)
 
-export function pathfindingSystem(world: IWorld, _dt: number) {
+export function pathfindingSystem(world: IWorld, dt: number) {
   // Rebuild dynamic costs when building count changes
   const buildings = buildingQuery(world)
   if (buildings.length !== lastBuildingCount) {
@@ -36,34 +34,29 @@ export function pathfindingSystem(world: IWorld, _dt: number) {
     if (computed >= MAX_PATHS_PER_FRAME) break
     if (hasComponent(world, Dead, eid)) continue
 
-    const gx = MoveTarget.x[eid]
-    const gz = MoveTarget.z[eid]
-
-    // Skip if we already tried pathfinding for this exact target
-    if (pathAttempted[eid] === 1 &&
-        Math.abs(lastTargetX[eid] - gx) < 0.5 &&
-        Math.abs(lastTargetZ[eid] - gz) < 0.5) {
-      continue
-    }
-
-    // Mark this target as attempted
-    lastTargetX[eid] = gx
-    lastTargetZ[eid] = gz
-    pathAttempted[eid] = 1
+    // Cooldown — don't retry failed paths every frame
+    if (pathCooldown[eid] > 0) { pathCooldown[eid] -= dt; continue }
 
     const sx = Position.x[eid]
     const sz = Position.z[eid]
-    const isWorker = hasComponent(world, WorkerC, eid)
-    const radius = hasComponent(world, CollisionRadius, eid) ? CollisionRadius.value[eid] : 0.4
+    const gx = MoveTarget.x[eid]
+    const gz = MoveTarget.z[eid]
 
-    let waypoints = findPath(sx, sz, gx, gz, isWorker, radius)
-    if (!waypoints && radius > 0) {
-      waypoints = findPath(sx, sz, gx, gz, isWorker, 0)
-    }
+    // Very short distance — skip pathfinding, direct movement handles it
+    const ddx = gx - sx, ddz = gz - sz
+    if (ddx * ddx + ddz * ddz < 4) continue
+
+    const isWorker = hasComponent(world, WorkerC, eid)
+    // No clearance for pathfinding — let movement system handle wall sliding
+    const waypoints = findPath(sx, sz, gx, gz, isWorker, 0)
     computed++
 
-    if (!waypoints || waypoints.length === 0) continue
+    if (!waypoints || waypoints.length === 0) {
+      pathCooldown[eid] = 1.0 // retry after 1 second
+      continue
+    }
 
+    pathCooldown[eid] = 0
     const pathId = storePath(waypoints)
     addComponent(world, PathFollower, eid)
     PathFollower.waypointIndex[eid] = 0
@@ -71,7 +64,7 @@ export function pathfindingSystem(world: IWorld, _dt: number) {
   }
 }
 
-/** Reset path attempt tracking for an entity (call when target changes) */
+/** Reset pathfinding cooldown for an entity */
 export function resetPathAttempt(eid: number) {
-  pathAttempted[eid] = 0
+  pathCooldown[eid] = 0
 }
