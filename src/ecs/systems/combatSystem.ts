@@ -10,6 +10,8 @@ import { UT_TANK } from '../../game/config'
 import { spawnMuzzleFlash } from '../../render/effects'
 import { spatialHash } from '../../globals'
 import { editorConfig } from '../../render/meshPools'
+import { getAnimManager } from '../../render/animatedMeshManager'
+import { MeshRef } from '../components'
 
 const UT_TO_KEY: Record<number, string> = { 0: 'worker', 1: 'marine', 2: 'tank' }
 
@@ -101,6 +103,18 @@ function getFirePoint(world: IWorld, attacker: number): { x: number; y: number; 
   const utId = hasComponent(world, UnitTypeC, attacker) ? UnitTypeC.id[attacker] : -1
   const key = UT_TO_KEY[utId]
   const fp = key ? editorConfig?.[key]?.firePoint : null
+
+  // For animated units with bones, transform the local offset through the bone hierarchy
+  if (fp && hasComponent(world, MeshRef, attacker)) {
+    const poolId = MeshRef.poolId[attacker]
+    const animMgr = getAnimManager(poolId)
+    if (animMgr && animMgr.has(attacker)) {
+      const worldPos = animMgr.getFirePointWorld(attacker, fp.x ?? 0, fp.y ?? 1.5, fp.z ?? 0, fp.boneName)
+      if (worldPos) return { x: worldPos.x, y: worldPos.y, z: worldPos.z }
+    }
+  }
+
+  // Fallback: simple offset from unit position
   return {
     x: Position.x[attacker] + (fp?.x ?? 0),
     y: Position.y[attacker] + (fp?.y ?? 1.5),

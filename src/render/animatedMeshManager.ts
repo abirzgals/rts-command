@@ -168,6 +168,30 @@ export class AnimatedMeshManager {
     return !!this.units.get(eid)?.turretBone
   }
 
+  /**
+   * Get the world-space position of a fire point defined by a local offset
+   * relative to a named bone. If boneName is not found, falls back to
+   * barrel → turret → mesh root.
+   */
+  getFirePointWorld(eid: number, localX: number, localY: number, localZ: number, boneName?: string): THREE.Vector3 | null {
+    const unit = this.units.get(eid)
+    if (!unit) return null
+
+    // Find the parent bone
+    let parent: THREE.Object3D | null = null
+    if (boneName) {
+      unit.mesh.traverse((child) => {
+        if (child.name === boneName) parent = child
+      })
+    }
+    if (!parent) parent = unit.barrelBone || unit.turretBone || unit.mesh
+
+    // Transform local offset to world space
+    const v = AnimatedMeshManager._v3.set(localX, localY, localZ)
+    parent.localToWorld(v)
+    return v.clone()
+  }
+
   playAnimation(eid: number, name: string, crossFadeDuration = 0.15) {
     const unit = this.units.get(eid)
     if (!unit) return
