@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RTS Command - Sandbox</title>
+  <style>
+    /* ── Reset & Base ─────────────────────────────────────────── */
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%; height: 100%; overflow: hidden;
+      background: #0d1117; color: #c9d1d9;
+      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 13px; line-height: 1.4;
+      user-select: none;
+    }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #161b22; }
+    ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #484f58; }
+
+    /* ── Layout ───────────────────────────────────────────────── */
+    #app {
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      grid-template-rows: 44px 1fr 32px;
+      width: 100%; height: 100%;
+    }
+
+    /* ── Top Bar ──────────────────────────────────────────────── */
+    #top-bar {
+      grid-column: 1 / -1;
+      background: linear-gradient(180deg, #161b22, #0d1117);
+      border-bottom: 1px solid #21262d;
+      display: flex; align-items: center;
+      padding: 0 16px; gap: 12px;
+    }
+    #top-bar h1 {
+      font-size: 15px; font-weight: 600; color: #58a6ff;
+      letter-spacing: 0.5px;
+    }
+    .separator { width: 1px; height: 20px; background: #30363d; }
+    .spacer { flex: 1; }
+
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      gap: 5px; padding: 5px 11px;
+      background: #21262d; border: 1px solid #30363d;
+      border-radius: 6px; color: #c9d1d9;
+      font-size: 12px; cursor: pointer;
+      transition: all 0.15s; white-space: nowrap;
+    }
+    .btn:hover { background: #30363d; border-color: #484f58; }
+    .btn:active { transform: scale(0.97); }
+    .btn.primary { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+    .btn.primary:hover { background: #388bfd; }
+    .btn.danger { background: #da3633; border-color: #da3633; color: #fff; }
+    .btn.danger:hover { background: #f85149; }
+
+    .nav-link {
+      color: #8b949e; text-decoration: none; font-size: 12px;
+      padding: 4px 8px; border-radius: 4px;
+      transition: all 0.15s;
+    }
+    .nav-link:hover { color: #c9d1d9; background: #21262d; }
+
+    .fps { color: #484f58; font-size: 11px; font-family: monospace; }
+
+    /* ── Left Sidebar (Palette) ───────────────────────────────── */
+    #palette {
+      background: #161b22;
+      border-right: 1px solid #21262d;
+      overflow-y: auto;
+      display: flex; flex-direction: column;
+    }
+
+    .palette-section {
+      border-bottom: 1px solid #21262d;
+    }
+    .palette-section:last-child { border-bottom: none; }
+
+    .palette-header {
+      display: flex; align-items: center; gap: 6px;
+      padding: 8px 12px; cursor: pointer;
+      font-size: 11px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.8px;
+      transition: background 0.15s;
+    }
+    .palette-header:hover { background: #1c2129; }
+
+    .palette-header .chevron {
+      font-size: 10px; transition: transform 0.2s;
+      color: inherit; opacity: 0.6;
+    }
+    .palette-header.collapsed .chevron { transform: rotate(-90deg); }
+
+    .palette-header.player { color: #58a6ff; }
+    .palette-header.enemy { color: #f85149; }
+    .palette-header.resource { color: #3fb950; }
+    .palette-header.obstacle { color: #8b949e; }
+
+    .palette-body {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 4px; padding: 4px 10px 10px 10px;
+      overflow: hidden;
+      max-height: 500px;
+      transition: max-height 0.25s ease, padding 0.25s ease, opacity 0.2s ease;
+      opacity: 1;
+    }
+    .palette-body.hidden {
+      max-height: 0; padding-top: 0; padding-bottom: 0;
+      opacity: 0;
+    }
+
+    .palette-card {
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 7px 4px;
+      background: #0d1117; border: 1px solid #21262d;
+      border-radius: 6px; cursor: grab;
+      text-align: center; font-size: 11px;
+      transition: all 0.15s;
+      gap: 2px;
+    }
+    .palette-card:hover { background: #161b22; border-color: #30363d; }
+    .palette-card:active { cursor: grabbing; }
+    .palette-card .card-icon { font-size: 18px; line-height: 1; }
+    .palette-card .card-name { font-size: 10px; color: #8b949e; line-height: 1.2; }
+
+    .palette-card.player { border-color: #1f3a5f; }
+    .palette-card.player:hover { border-color: #2d5a8e; background: #0d1a2d; }
+    .palette-card.enemy { border-color: #5f1f1f; }
+    .palette-card.enemy:hover { border-color: #8e2d2d; background: #2d0d0d; }
+    .palette-card.resource { border-color: #1f4a2a; }
+    .palette-card.resource:hover { border-color: #2d6e3e; background: #0d1f12; }
+    .palette-card.obstacle { border-color: #30363d; }
+    .palette-card.obstacle:hover { border-color: #484f58; }
+
+    /* Dragging feedback */
+    .palette-card.dragging { opacity: 0.4; transform: scale(0.95); }
+
+    /* ── Canvas ───────────────────────────────────────────────── */
+    #sandbox-canvas {
+      width: 100%; height: 100%;
+      display: block;
+      background: #000;
+    }
+
+    /* ── Status Bar ───────────────────────────────────────────── */
+    #status-bar {
+      grid-column: 1 / -1;
+      background: linear-gradient(0deg, #161b22, #0d1117);
+      border-top: 1px solid #21262d;
+      display: flex; align-items: center;
+      padding: 0 16px; gap: 16px;
+      font-size: 11px; color: #8b949e;
+    }
+    #status-bar .entity-count { color: #58a6ff; font-weight: 600; }
+    #status-bar .hint { color: #484f58; }
+    #status-bar .selected-info { color: #c9d1d9; margin-left: auto; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- ── Top Bar ──────────────────────────────────────────── -->
+    <div id="top-bar">
+      <h1>RTS Sandbox</h1>
+      <div class="separator"></div>
+      <button class="btn" id="btn-regen">Regenerate Map</button>
+      <button class="btn danger" id="btn-reset">Reset All</button>
+      <button class="btn primary" id="btn-pause">Pause</button>
+      <div class="spacer"></div>
+      <span class="fps" id="fps">-- FPS</span>
+      <div class="separator"></div>
+      <a class="nav-link" href="/index.html">Game</a>
+      <a class="nav-link" href="/editor.html">Editor</a>
+    </div>
+
+    <!-- ── Left Sidebar: Palette ───────────────────────────── -->
+    <div id="palette">
+
+      <!-- Player Units -->
+      <div class="palette-section">
+        <div class="palette-header player" data-section="player-units">
+          <span class="chevron">&#9660;</span>
+          Player Units
+        </div>
+        <div class="palette-body" id="player-units">
+          <div class="palette-card player" draggable="true" data-type="unit" data-id="0" data-faction="0">
+            <span class="card-icon">&#x26CF;</span>
+            <span class="card-name">Worker</span>
+          </div>
+          <div class="palette-card player" draggable="true" data-type="unit" data-id="1" data-faction="0">
+            <span class="card-icon">&#x2694;</span>
+            <span class="card-name">Marine</span>
+          </div>
+          <div class="palette-card player" draggable="true" data-type="unit" data-id="2" data-faction="0">
+            <span class="card-icon">&#x2617;</span>
+            <span class="card-name">Tank</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Player Buildings -->
+      <div class="palette-section">
+        <div class="palette-header player" data-section="player-buildings">
+          <span class="chevron">&#9660;</span>
+          Player Buildings
+        </div>
+        <div class="palette-body" id="player-buildings">
+          <div class="palette-card player" draggable="true" data-type="building" data-id="100" data-faction="0">
+            <span class="card-icon">&#x2302;</span>
+            <span class="card-name">Command Center</span>
+          </div>
+          <div class="palette-card player" draggable="true" data-type="building" data-id="101" data-faction="0">
+            <span class="card-icon">&#x2302;</span>
+            <span class="card-name">Supply Depot</span>
+          </div>
+          <div class="palette-card player" draggable="true" data-type="building" data-id="102" data-faction="0">
+            <span class="card-icon">&#x2694;</span>
+            <span class="card-name">Barracks</span>
+          </div>
+          <div class="palette-card player" draggable="true" data-type="building" data-id="103" data-faction="0">
+            <span class="card-icon">&#x2692;</span>
+            <span class="card-name">Factory</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Enemy Units -->
+      <div class="palette-section">
+        <div class="palette-header enemy" data-section="enemy-units">
+          <span class="chevron">&#9660;</span>
+          Enemy Units
+        </div>
+        <div class="palette-body" id="enemy-units">
+          <div class="palette-card enemy" draggable="true" data-type="unit" data-id="0" data-faction="1">
+            <span class="card-icon">&#x26CF;</span>
+            <span class="card-name">Worker</span>
+          </div>
+          <div class="palette-card enemy" draggable="true" data-type="unit" data-id="1" data-faction="1">
+            <span class="card-icon">&#x2694;</span>
+            <span class="card-name">Marine</span>
+          </div>
+          <div class="palette-card enemy" draggable="true" data-type="unit" data-id="2" data-faction="1">
+            <span class="card-icon">&#x2617;</span>
+            <span class="card-name">Tank</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Enemy Buildings -->
+      <div class="palette-section">
+        <div class="palette-header enemy" data-section="enemy-buildings">
+          <span class="chevron">&#9660;</span>
+          Enemy Buildings
+        </div>
+        <div class="palette-body" id="enemy-buildings">
+          <div class="palette-card enemy" draggable="true" data-type="building" data-id="100" data-faction="1">
+            <span class="card-icon">&#x2302;</span>
+            <span class="card-name">Command Center</span>
+          </div>
+          <div class="palette-card enemy" draggable="true" data-type="building" data-id="101" data-faction="1">
+            <span class="card-icon">&#x2302;</span>
+            <span class="card-name">Supply Depot</span>
+          </div>
+          <div class="palette-card enemy" draggable="true" data-type="building" data-id="102" data-faction="1">
+            <span class="card-icon">&#x2694;</span>
+            <span class="card-name">Barracks</span>
+          </div>
+          <div class="palette-card enemy" draggable="true" data-type="building" data-id="103" data-faction="1">
+            <span class="card-icon">&#x2692;</span>
+            <span class="card-name">Factory</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Resources -->
+      <div class="palette-section">
+        <div class="palette-header resource" data-section="resources">
+          <span class="chevron">&#9660;</span>
+          Resources
+        </div>
+        <div class="palette-body" id="resources">
+          <div class="palette-card resource" draggable="true" data-type="resource" data-id="0" data-faction="-1">
+            <span class="card-icon">&#x2666;</span>
+            <span class="card-name">Minerals</span>
+          </div>
+          <div class="palette-card resource" draggable="true" data-type="resource" data-id="1" data-faction="-1">
+            <span class="card-icon">&#x2618;</span>
+            <span class="card-name">Gas Geyser</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Obstacles -->
+      <div class="palette-section">
+        <div class="palette-header obstacle" data-section="obstacles">
+          <span class="chevron">&#9660;</span>
+          Obstacles
+        </div>
+        <div class="palette-body" id="obstacles">
+          <div class="palette-card obstacle" draggable="true" data-type="obstacle" data-id="22" data-faction="-1">
+            <span class="card-icon">&#x26F0;</span>
+            <span class="card-name">Rock 1</span>
+          </div>
+          <div class="palette-card obstacle" draggable="true" data-type="obstacle" data-id="25" data-faction="-1">
+            <span class="card-icon">&#x26F0;</span>
+            <span class="card-name">Rock 2</span>
+          </div>
+          <div class="palette-card obstacle" draggable="true" data-type="obstacle" data-id="23" data-faction="-1">
+            <span class="card-icon">&#x2663;</span>
+            <span class="card-name">Tree</span>
+          </div>
+          <div class="palette-card obstacle" draggable="true" data-type="obstacle" data-id="24" data-faction="-1">
+            <span class="card-icon">&#x2B24;</span>
+            <span class="card-name">Boulder</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ── 3D Canvas ───────────────────────────────────────── -->
+    <canvas id="sandbox-canvas"></canvas>
+
+    <!-- ── Status Bar ──────────────────────────────────────── -->
+    <div id="status-bar">
+      <span>Entities: <span class="entity-count" id="entity-count">0</span></span>
+      <span class="hint">Click to select &middot; Delete to remove &middot; Drag from palette to place</span>
+      <span class="selected-info" id="selected-info"></span>
+    </div>
+  </div>
+
+  <!-- Collapsible sections script (inline, no module needed) -->
+  <script>
+    document.querySelectorAll('.palette-header').forEach(header => {
+      header.addEventListener('click', () => {
+        header.classList.toggle('collapsed')
+        const sectionId = header.getAttribute('data-section')
+        const body = document.getElementById(sectionId)
+        if (body) body.classList.toggle('hidden')
+      })
+    })
+  </script>
+
+  <script type="module" src="/src/sandbox.ts"></script>
+</body>
+</html>
