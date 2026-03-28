@@ -1199,25 +1199,49 @@ function launchEffect() {
   const mat = new THREE.MeshBasicMaterial({ color })
   const proj = new THREE.Mesh(geo, mat)
 
-  // Get world position and horizontal forward direction from the fire point marker
+  // Get world position from fire point marker, and forward direction from its parent bone
   const startPos = new THREE.Vector3()
   const fireDir = new THREE.Vector3(0, 0, 1) // default forward
   if (firePointMarker) {
     firePointMarker.getWorldPosition(startPos)
-    // Get forward direction from the fire point's world orientation
-    const fwd = new THREE.Vector3(0, 0, -1)
-    firePointMarker.getWorldQuaternion(_tmpQ)
-    fwd.applyQuaternion(_tmpQ)
-    // Flatten to horizontal (ignore pitch so projectile doesn't shoot into ground)
-    fwd.y = 0
-    if (fwd.lengthSq() > 0.001) {
-      fwd.normalize()
-      fireDir.copy(fwd)
+    // Get forward from the barrel/turret bone (parent of the marker), not the marker itself
+    const dirSource = barrelBone || turretBone || currentModel
+    if (dirSource) {
+      dirSource.getWorldQuaternion(_tmpQ)
+      // Barrel bone axis points along +Y in bone space (Blender convention after glTF export).
+      // The actual barrel "forward" in the game is the model's -Z rotated by turret+barrel.
+      // Use the model's forward direction rotated by the bone chain.
+      const fwd = new THREE.Vector3(0, 0, -1)
+      if (currentModel) {
+        // Get the combined rotation: model rotation + bone rotation
+        currentModel.getWorldQuaternion(_tmpQ)
+        // But we need just the turret/barrel yaw relative to model
+        if (turretBone) {
+          const boneQ = new THREE.Quaternion()
+          turretBone.getWorldQuaternion(boneQ)
+          // Extract just the Y rotation from the bone's world quaternion
+          // by removing the model's base rotation
+          const modelInv = _tmpQ.clone().invert()
+          const localBoneQ = modelInv.multiply(boneQ)
+          // Apply only the horizontal component
+          const euler = new THREE.Euler().setFromQuaternion(localBoneQ)
+          const yawOnly = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, euler.y, 0))
+          fwd.applyQuaternion(_tmpQ) // model rotation
+          fwd.applyQuaternion(yawOnly) // turret yaw on top
+        } else {
+          fwd.applyQuaternion(_tmpQ)
+        }
+      }
+      fwd.y = 0
+      if (fwd.lengthSq() > 0.001) {
+        fwd.normalize()
+        fireDir.copy(fwd)
+      }
     }
   } else {
     startPos.set(effects.firePoint.x, effects.firePoint.y, effects.firePoint.z)
   }
-  // Target = 8 units along horizontal fire direction, at ground level
+  // Target = 8 units along horizontal fire direction
   const endPos = startPos.clone().addScaledVector(fireDir, 8)
   endPos.y = 0.3
   proj.position.copy(startPos)
