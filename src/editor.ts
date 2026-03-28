@@ -156,6 +156,7 @@ let selectionRing: THREE.Mesh | null = null
 let attackRangeRing: THREE.Line | null = null
 let collisionRing: THREE.Line | null = null
 let firePointMarker: THREE.Mesh | null = null
+let fireDirectionArrow: THREE.ArrowHelper | null = null
 let hpBarGroup: THREE.Group | null = null
 
 const overlayVisibility: Record<string, boolean> = {
@@ -521,6 +522,13 @@ function updateOverlays() {
     scene.add(firePointMarker)
   }
 
+  // Fire direction arrow (in world space, updated each frame)
+  fireDirectionArrow = new THREE.ArrowHelper(
+    new THREE.Vector3(0, 0, -1), new THREE.Vector3(), 1.5, 0xff4400, 0.3, 0.15
+  )
+  fireDirectionArrow.visible = overlayVisibility.firePoint
+  scene.add(fireDirectionArrow)
+
   // HP bar preview
   hpBarGroup = createHPBarPreview()
   hpBarGroup.position.y = 3.5
@@ -533,7 +541,35 @@ function removeOverlays() {
   if (attackRangeRing) { scene.remove(attackRangeRing); attackRangeRing.geometry.dispose(); (attackRangeRing.material as THREE.Material).dispose(); attackRangeRing = null }
   if (collisionRing) { scene.remove(collisionRing); collisionRing.geometry.dispose(); (collisionRing.material as THREE.Material).dispose(); collisionRing = null }
   if (firePointMarker) { firePointMarker.removeFromParent(); firePointMarker.geometry.dispose(); (firePointMarker.material as THREE.Material).dispose(); firePointMarker = null }
+  if (fireDirectionArrow) { scene.remove(fireDirectionArrow); fireDirectionArrow.dispose(); fireDirectionArrow = null }
   if (hpBarGroup) { scene.remove(hpBarGroup); disposeObject(hpBarGroup); hpBarGroup = null }
+}
+
+/** Get the horizontal fire direction in world space based on turret/model rotation */
+function getFireDirection(): THREE.Vector3 {
+  const fwd = new THREE.Vector3(0, 0, -1) // Three.js forward
+  if (!currentModel) return fwd
+
+  currentModel.getWorldQuaternion(_tmpQ)
+
+  if (turretBone) {
+    const boneQ = new THREE.Quaternion()
+    turretBone.getWorldQuaternion(boneQ)
+    const modelInv = _tmpQ.clone().invert()
+    const localBoneQ = modelInv.multiply(boneQ)
+    const euler = new THREE.Euler().setFromQuaternion(localBoneQ)
+    const yawOnly = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, euler.y, 0))
+    // Recompute _tmpQ since modelInv.multiply() mutated it
+    currentModel.getWorldQuaternion(_tmpQ)
+    fwd.applyQuaternion(_tmpQ)
+    fwd.applyQuaternion(yawOnly)
+  } else {
+    fwd.applyQuaternion(_tmpQ)
+  }
+
+  fwd.y = 0
+  if (fwd.lengthSq() > 0.001) fwd.normalize()
+  return fwd
 }
 
 function createDashedCircle(radius: number, color: number, segments: number): THREE.Line {
@@ -835,6 +871,7 @@ function applyOverlayVisibility() {
   if (attackRangeRing) attackRangeRing.visible = overlayVisibility.attackRange
   if (collisionRing) collisionRing.visible = overlayVisibility.collisionBoundary
   if (firePointMarker) firePointMarker.visible = overlayVisibility.firePoint
+  if (fireDirectionArrow) fireDirectionArrow.visible = overlayVisibility.firePoint
   if (hpBarGroup) hpBarGroup.visible = overlayVisibility.hpBar
 }
 
@@ -1199,49 +1236,13 @@ function launchEffect() {
   const mat = new THREE.MeshBasicMaterial({ color })
   const proj = new THREE.Mesh(geo, mat)
 
-  // Get world position from fire point marker, and forward direction from its parent bone
   const startPos = new THREE.Vector3()
-  const fireDir = new THREE.Vector3(0, 0, 1) // default forward
   if (firePointMarker) {
     firePointMarker.getWorldPosition(startPos)
-    // Get forward from the barrel/turret bone (parent of the marker), not the marker itself
-    const dirSource = barrelBone || turretBone || currentModel
-    if (dirSource) {
-      dirSource.getWorldQuaternion(_tmpQ)
-      // Barrel bone axis points along +Y in bone space (Blender convention after glTF export).
-      // The actual barrel "forward" in the game is the model's -Z rotated by turret+barrel.
-      // Use the model's forward direction rotated by the bone chain.
-      const fwd = new THREE.Vector3(0, 0, -1)
-      if (currentModel) {
-        // Get the combined rotation: model rotation + bone rotation
-        currentModel.getWorldQuaternion(_tmpQ)
-        // But we need just the turret/barrel yaw relative to model
-        if (turretBone) {
-          const boneQ = new THREE.Quaternion()
-          turretBone.getWorldQuaternion(boneQ)
-          // Extract just the Y rotation from the bone's world quaternion
-          // by removing the model's base rotation
-          const modelInv = _tmpQ.clone().invert()
-          const localBoneQ = modelInv.multiply(boneQ)
-          // Apply only the horizontal component
-          const euler = new THREE.Euler().setFromQuaternion(localBoneQ)
-          const yawOnly = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, euler.y, 0))
-          fwd.applyQuaternion(_tmpQ) // model rotation
-          fwd.applyQuaternion(yawOnly) // turret yaw on top
-        } else {
-          fwd.applyQuaternion(_tmpQ)
-        }
-      }
-      fwd.y = 0
-      if (fwd.lengthSq() > 0.001) {
-        fwd.normalize()
-        fireDir.copy(fwd)
-      }
-    }
   } else {
     startPos.set(effects.firePoint.x, effects.firePoint.y, effects.firePoint.z)
   }
-  // Target = 8 units along horizontal fire direction
+  const fireDir = getFireDirection()
   const endPos = startPos.clone().addScaledVector(fireDir, 8)
   endPos.y = 0.3
   proj.position.copy(startPos)
@@ -2097,6 +2098,15 @@ function animate() {
     const progress = clip.duration > 0 ? (activeAction.time % clip.duration) / clip.duration : 0
     const progressEl = document.getElementById('anim-progress')
     if (progressEl) progressEl.style.width = (progress * 100) + '%'
+  }
+
+  // Update fire direction arrow position and direction each frame
+  if (fireDirectionArrow && fireDirectionArrow.visible && firePointMarker) {
+    const arrowPos = new THREE.Vector3()
+    firePointMarker.getWorldPosition(arrowPos)
+    fireDirectionArrow.position.copy(arrowPos)
+    const dir = getFireDirection()
+    fireDirectionArrow.setDirection(dir)
   }
 
   // HP bar billboard
