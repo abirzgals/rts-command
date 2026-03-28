@@ -614,22 +614,31 @@ function removeOverlays() {
 /** Get the horizontal fire direction in world space.
  *  Uses the picked face normal if available, otherwise model forward + turret yaw. */
 function getFireDirection(): THREE.Vector3 {
-  // Dynamic direction: compute from bone center → fire point position
-  // This follows animation naturally since both transform with the bone
-  if (firePointMarker) {
-    const fpWorld = new THREE.Vector3()
-    firePointMarker.getWorldPosition(fpWorld)
+  // Direction = bone origin → fire point, both in world space.
+  // The fire point local offset IS the barrel direction in bone space.
+  // Transform it to world by converting both endpoints.
+  let bone: THREE.Object3D | null = null
+  if (firePointMarker?.parent) {
+    bone = firePointMarker.parent
+  } else if (effects.firePoint.boneName && currentModel) {
+    currentModel.traverse((child) => {
+      if (child.name === effects.firePoint.boneName) bone = child
+    })
+  }
+  if (!bone) bone = barrelBone || turretBone || null
 
-    // Find the parent bone's world position
-    const parent = firePointMarker.parent
-    if (parent) {
-      const boneWorld = new THREE.Vector3()
-      parent.getWorldPosition(boneWorld)
-
-      // Direction from bone center to fire point
-      const dir = fpWorld.clone().sub(boneWorld)
+  if (bone) {
+    // Transform the fire point local offset direction through the bone
+    const fp = new THREE.Vector3(effects.firePoint.x, effects.firePoint.y, effects.firePoint.z)
+    // Normalize to get just direction, then transform to world
+    if (fp.lengthSq() > 0.001) {
+      const dir = fp.normalize()
+      // Transform direction only (not position) using bone's world quaternion
+      const boneQ = new THREE.Quaternion()
+      bone.getWorldQuaternion(boneQ)
+      dir.applyQuaternion(boneQ)
       dir.y = 0
-      if (dir.lengthSq() > 0.01) {
+      if (dir.lengthSq() > 0.001) {
         dir.normalize()
         return dir
       }
