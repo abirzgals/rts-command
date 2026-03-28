@@ -130,6 +130,10 @@ let animEvents: AnimEvent[] = []
 let nextEventId = 1
 let selectedEventId: number | null = null
 
+// Per-model storage for effects and events (persisted across model switches)
+const savedEffects = new Map<string, EffectsConfig>()
+const savedEvents = new Map<string, AnimEvent[]>()
+
 // ─── Three.js Core ─────────────────────────────────────────────────────────
 
 let renderer: THREE.WebGLRenderer
@@ -283,18 +287,30 @@ function init() {
     })
   })
 
-  // Mouse wheel on all sliders: ±0.1 per scroll tick
+  // Mouse wheel on sliders and their paired number inputs: ±step per scroll tick
   document.addEventListener('wheel', (e) => {
     const target = e.target as HTMLElement
-    if (target.tagName === 'INPUT' && (target as HTMLInputElement).type === 'range') {
-      e.preventDefault()
-      const slider = target as HTMLInputElement
-      const delta = e.deltaY < 0 ? 0.1 : -0.1
-      const newVal = Math.max(parseFloat(slider.min), Math.min(parseFloat(slider.max),
-        parseFloat(slider.value) + delta))
-      slider.value = String(newVal)
-      slider.dispatchEvent(new Event('input'))
+    if (target.tagName !== 'INPUT') return
+    const input = target as HTMLInputElement
+
+    // Find the slider: either it IS the slider, or it's the paired text input next to one
+    let slider: HTMLInputElement | null = null
+    if (input.type === 'range') {
+      slider = input
+    } else if (input.type === 'text' && input.classList.contains('stat-input')) {
+      // Find sibling slider in the same row
+      const row = input.closest('.stat-row')
+      if (row) slider = row.querySelector('input[type="range"]')
     }
+    if (!slider) return
+
+    e.preventDefault()
+    const step = parseFloat(slider.step) || 0.1
+    const delta = e.deltaY < 0 ? step : -step
+    const newVal = Math.max(parseFloat(slider.min), Math.min(parseFloat(slider.max),
+      parseFloat(slider.value) + delta))
+    slider.value = String(newVal)
+    slider.dispatchEvent(new Event('input'))
   }, { passive: false })
 
   // Render loop
@@ -357,9 +373,27 @@ async function loadModel(modelKey: string) {
   const def = MODEL_MAP.get(modelKey)
   if (!def) return
 
+  // Save current model's effects and events before switching
+  if (currentKey) {
+    savedEffects.set(currentKey, JSON.parse(JSON.stringify(effects)))
+    savedEvents.set(currentKey, [...animEvents])
+  }
+
   currentKey = modelKey
   currentUnit = modelKey
   config = { ...def }
+
+  // Restore effects and events for the new model (or reset to defaults)
+  if (savedEffects.has(modelKey)) {
+    effects = JSON.parse(JSON.stringify(savedEffects.get(modelKey)))
+  } else {
+    effects = JSON.parse(JSON.stringify(DEFAULT_EFFECTS))
+  }
+  if (savedEvents.has(modelKey)) {
+    animEvents = [...savedEvents.get(modelKey)!]
+  } else {
+    animEvents = []
+  }
 
   // Remove old model
   if (currentModel) {
@@ -2156,6 +2190,10 @@ function buildExportJSON(): string {
 }
 
 function buildFullConfigJSON(): string {
+  // Save current model's live state first
+  savedEffects.set(currentKey, JSON.parse(JSON.stringify(effects)))
+  savedEvents.set(currentKey, [...animEvents])
+
   // Build config for ALL models
   const allConfigs: Record<string, any> = {}
   for (const m of ALL_MODELS) {
@@ -2180,6 +2218,29 @@ function buildFullConfigJSON(): string {
         if ((m as any)[k] !== undefined) entry[k] = (m as any)[k]
       }
     }
+
+    // Include effects for this model (if any were configured)
+    const modelEffects = savedEffects.get(m.key)
+    if (modelEffects) {
+      entry.firePoint = modelEffects.firePoint
+      entry.muzzle = modelEffects.muzzle
+      entry.projectile = modelEffects.projectile
+      entry.impact = modelEffects.impact
+      entry.explosion = modelEffects.explosion
+      entry.smoke = modelEffects.smoke
+    }
+
+    // Include animation events for this model (if any)
+    const modelEvents = savedEvents.get(m.key)
+    if (modelEvents && modelEvents.length > 0) {
+      entry.events = modelEvents.map(e => ({
+        type: e.type,
+        label: e.label,
+        animation: e.animation,
+        time: e.time,
+      }))
+    }
+
     allConfigs[m.key] = entry
   }
   return JSON.stringify(allConfigs, null, 2)
@@ -2230,10 +2291,10 @@ async function loadConfigFromServer() {
 }
 
 function applyLoadedConfig(data: Record<string, any>) {
-  // Apply saved values to ALL_MODELS
   for (const m of ALL_MODELS) {
     const saved = data[m.key]
     if (!saved) continue
+    // Apply model stats
     if (saved.scale !== undefined) m.scale = saved.scale
     if (saved.rotationOffset !== undefined) m.rotationOffset = saved.rotationOffset
     if (saved.hp !== undefined) m.hp = saved.hp
@@ -2245,6 +2306,30 @@ function applyLoadedConfig(data: Record<string, any>) {
     if (saved.splash !== undefined) m.splash = saved.splash
     if (saved.selectionRadius !== undefined) m.selectionRadius = saved.selectionRadius
     if (saved.collisionRadius !== undefined) m.collisionRadius = saved.collisionRadius
+
+    // Restore effects
+    if (saved.firePoint || saved.muzzle || saved.projectile) {
+      const fx: EffectsConfig = JSON.parse(JSON.stringify(DEFAULT_EFFECTS))
+      if (saved.firePoint) fx.firePoint = saved.firePoint
+      if (saved.muzzle) fx.muzzle = { ...fx.muzzle, ...saved.muzzle }
+      if (saved.projectile) fx.projectile = { ...fx.projectile, ...saved.projectile }
+      if (saved.impact) fx.impact = { ...fx.impact, ...saved.impact }
+      if (saved.explosion) fx.explosion = { ...fx.explosion, ...saved.explosion }
+      if (saved.smoke) fx.smoke = { ...fx.smoke, ...saved.smoke }
+      savedEffects.set(m.key, fx)
+    }
+
+    // Restore animation events
+    if (saved.events && Array.isArray(saved.events)) {
+      const evts: AnimEvent[] = saved.events.map((e: any) => ({
+        id: nextEventId++,
+        type: e.type,
+        label: e.label,
+        animation: e.animation || null,
+        time: e.time || 0,
+      }))
+      savedEvents.set(m.key, evts)
+    }
   }
 }
 
