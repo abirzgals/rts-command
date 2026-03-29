@@ -1,0 +1,47 @@
+{
+  "worker": {
+    "name":"Worker","category":"units","modelUrl":"/models/worker.glb",
+    "scale":1.0,"rotationOffset":0,
+    "hp":40,"speed":3.5,"armor":0,"damage":5,"range":1.2,"cooldown":1.5,"splash":0,
+    "selectionRadius":0.4,"collisionRadius":0.4,
+    "firePoint":{"x":0,"y":1.2,"z":0.5}
+  },
+  "marine": {
+    "name":"Marine","category":"units","modelUrl":"/models/marine.glb",
+    "scale":1.0,"rotationOffset":0,
+    "hp":55,"speed":3.0,"armor":0,"damage":8,"range":6,"cooldown":0.8,"splash":0,
+    "selectionRadius":0.4,"collisionRadius":0.4,
+    "firePoint":{"x":0,"y":1.2,"z":0.5,"boneName":"mixamorig_RightHand"},
+    "muzzle":{"color":"#ffaa44","intensity":8,"range":12,"duration":0.08},
+    "projectile":{"type":"bullet","color":"#ffee44","size":0.08,"speed":25,"arcHeight":0.2},
+    "impact":{"type":"sparks","color":"#ffaa22","size":0.3,"particles":5,"lifetime":0.25},
+    "events":[
+      {"type":"shot","label":"Shot","animation":"Shoot_OneHanded","time":0.12},
+      {"type":"muzzle_flash","label":"Muzzle Flash","animation":"Shoot_OneHanded","time":0.10},
+      {"type":"death","label":"Death","animation":"Death","time":0.0}
+    ]
+  },
+  "tank": {
+    "name":"Tank","category":"units","modelUrl":"/models/tank-v3.glb",
+    "scale":0.55,"rotationOffset":3.14159,
+    "hp":160,"speed":2.0,"armor":2,"damage":30,"range":8,"cooldown":2.5,"splash":1.5,
+    "selectionRadius":1.2,"collisionRadius":1.2,
+    "firePoint":{"x":0,"y":1.8,"z":3.5,"boneName":"Barrel"},
+    "muzzle":{"color":"#ffaa44","intensity":12,"range":15,"duration":0.12},
+    "projectile":{"type":"shell","color":"#ff4400","size":0.12,"speed":15,"arcHeight":4},
+    "impact":{"type":"explosion","color":"#ff6600","size":0.8,"particles":10,"lifetime":0.4},
+    "events":[
+      {"type":"shot","label":"Shot","animation":null,"time":0.0},
+      {"type":"death","label":"Death","animation":null,"time":0.0}
+    ]
+  },
+  "command-center":{"name":"Command Center","category":"buildings","modelUrl":"/models/command-center.glb","scale":5.0,"rotationOffset":0,"hp":1500,"armor":1,"selectionRadius":2.0,"collisionRadius":2.0},
+  "supply-depot":{"name":"Supply Depot","category":"buildings","modelUrl":"/models/supply-depot.glb","scale":4.0,"rotationOffset":0,"hp":400,"armor":0,"selectionRadius":1.2,"collisionRadius":1.2},
+  "barracks":{"name":"Barracks","category":"buildings","modelUrl":"/models/barracks.glb","scale":4.5,"rotationOffset":0,"hp":800,"armor":1,"selectionRadius":1.5,"collisionRadius":1.5},
+  "factory":{"name":"Factory","category":"buildings","modelUrl":"/models/factory.glb","scale":4.5,"rotationOffset":0,"hp":1000,"armor":1,"selectionRadius":1.8,"collisionRadius":1.8},
+  "minerals":{"name":"Minerals","category":"resources","modelUrl":"/models/gold.glb","scale":1.5,"rotationOffset":0,"collisionRadius":0.6},
+  "rock1":{"name":"Rock 1","category":"obstacles","modelUrl":"/models/rock1.glb","scale":5.0,"rotationOffset":0,"collisionRadius":1.0},
+  "rock2":{"name":"Rock 2","category":"obstacles","modelUrl":"/models/rock2.glb","scale":5.0,"rotationOffset":0,"collisionRadius":1.2},
+  "tree1":{"name":"Tree","category":"obstacles","modelUrl":"/models/tree1.glb","scale":6.0,"rotationOffset":0,"collisionRadius":0.5},
+  "boulder":{"name":"Boulder","category":"obstacles","modelUrl":"/models/boulder.glb","scale":6.0,"rotationOffset":0,"collisionRadius":1.5}
+}

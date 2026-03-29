@@ -25,12 +25,18 @@ app.use(express.static(path.join(__dirname, 'dist')))
 
 // ─── REST API ─────────────────────────────────────────────────────────
 
-// GET /api/config — load the editor config
+// GET /api/config — load the editor config (data dir → built-in fallback)
 app.get('/api/config', (req, res) => {
   const file = path.join(DATA_DIR, 'editor-config.json')
-  if (!fs.existsSync(file)) return res.json({ data: null })
-  const data = JSON.parse(fs.readFileSync(file, 'utf-8'))
-  res.json({ data })
+  if (fs.existsSync(file)) {
+    return res.json({ data: JSON.parse(fs.readFileSync(file, 'utf-8')) })
+  }
+  // Fallback: check for built-in default
+  const fallback = path.join(__dirname, 'dist', 'default-config.json')
+  if (fs.existsSync(fallback)) {
+    return res.json({ data: JSON.parse(fs.readFileSync(fallback, 'utf-8')) })
+  }
+  res.json({ data: null })
 })
 
 // POST /api/config — save the editor config
