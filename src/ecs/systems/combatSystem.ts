@@ -94,6 +94,19 @@ export function combatSystem(world: IWorld, dt: number) {
     if (bestTarget >= 0) {
       addComponent(world, AttackTarget, eid)
       AttackTarget.eid[eid] = bestTarget
+
+      // Stop moving to engage — attack-move behavior
+      if (hasComponent(world, MoveTarget, eid) && !hasComponent(world, IsBuilding, eid)) {
+        removeComponent(world, MoveTarget, eid)
+      }
+
+      // Face target
+      const edx = Position.x[bestTarget] - px
+      const edz = Position.z[bestTarget] - pz
+      if (hasComponent(world, Rotation, eid) && bestDist > 0.1) {
+        Rotation.y[eid] = Math.atan2(edx, edz)
+      }
+
       tryAttack(world, eid, bestTarget, bestDist)
     }
   }
