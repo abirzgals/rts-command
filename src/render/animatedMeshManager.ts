@@ -24,7 +24,17 @@ interface AnimatedUnit {
   turretBone?: THREE.Bone
   barrelBone?: THREE.Bone
   recoil?: RecoilState
+  occlusionGroup?: THREE.Group // silhouette shown when occluded
 }
+
+// Shared material for occluded silhouette — renders only where depth test FAILS
+const occlusionMat = new THREE.MeshBasicMaterial({
+  color: 0x44aaff,
+  transparent: true,
+  opacity: 0.35,
+  depthFunc: THREE.GreaterDepth, // only draw where something is in front
+  depthWrite: false,
+})
 
 /**
  * Manages individual SkinnedMesh clones for animated units.
@@ -105,7 +115,30 @@ export class AnimatedMeshManager {
       }
     })
 
-    this.units.set(eid, { mesh: clone, mixer, actions, currentAnim: 'Idle', turretBone, barrelBone })
+    // Create occlusion silhouette — shows unit outline when behind obstacles
+    const occGroup = new THREE.Group()
+    clone.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        const mesh = child as THREE.Mesh
+        const occMesh = new THREE.Mesh(mesh.geometry, occlusionMat)
+        // Share skeleton for skinned meshes so silhouette follows animation
+        if ((mesh as THREE.SkinnedMesh).isSkinnedMesh) {
+          const skinned = mesh as THREE.SkinnedMesh
+          const occSkinned = new THREE.SkinnedMesh(mesh.geometry, occlusionMat)
+          occSkinned.skeleton = skinned.skeleton
+          occSkinned.bindMatrix.copy(skinned.bindMatrix)
+          occSkinned.bindMatrixInverse.copy(skinned.bindMatrixInverse)
+          occSkinned.renderOrder = 99
+          occGroup.add(occSkinned)
+        } else {
+          occMesh.renderOrder = 99
+          occGroup.add(occMesh)
+        }
+      }
+    })
+    clone.add(occGroup)
+
+    this.units.set(eid, { mesh: clone, mixer, actions, currentAnim: 'Idle', turretBone, barrelBone, occlusionGroup: occGroup })
     return 0
   }
 
