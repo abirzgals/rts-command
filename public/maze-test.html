@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Maze Pathfinding Test</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #111; color: #ddd; font-family: 'SF Mono', 'Fira Code', monospace; padding: 20px; }
+  h1 { font-size: 18px; margin-bottom: 12px; color: #8cf; }
+  .maps { display: flex; flex-wrap: wrap; gap: 24px; }
+  .map-card { background: #1a1a2e; border: 1px solid #333; border-radius: 8px; padding: 16px; }
+  .map-card h2 { font-size: 14px; margin-bottom: 8px; color: #aaf; }
+  .map-card .info { font-size: 11px; color: #888; margin-bottom: 8px; }
+  canvas { display: block; image-rendering: pixelated; border: 1px solid #444; }
+  .legend { display: flex; gap: 16px; margin: 16px 0; font-size: 12px; flex-wrap: wrap; }
+  .legend span { display: flex; align-items: center; gap: 4px; }
+  .legend .swatch { width: 14px; height: 14px; border: 1px solid #555; display: inline-block; }
+  .paths { font-size: 11px; margin-top: 8px; line-height: 1.6; }
+  .paths .marine { color: #4f8; }
+  .paths .tank { color: #f84; }
+  .paths .fail { color: #f44; }
+</style>
+</head>
+<body>
+<h1>Maze Pathfinding Visual Test</h1>
+<div class="legend">
+  <span><span class="swatch" style="background:#333"></span> Wall</span>
+  <span><span class="swatch" style="background:#2a3a2a"></span> Grass</span>
+  <span><span class="swatch" style="background:#4f8"></span> Marine path</span>
+  <span><span class="swatch" style="background:#f84"></span> Tank path</span>
+  <span><span class="swatch" style="background:#f44"></span> Start</span>
+  <span><span class="swatch" style="background:#44f"></span> Goal</span>
+  <span><span class="swatch" style="background:rgba(255,255,0,0.3)"></span> Tank clearance zone</span>
+</div>
+<div class="maps" id="maps"></div>
+
+<script>
+const CELL = 18;
+
+const MAPS = [
+  {
+    name: 'Wall with gap',
+    w: 20, h: 20,
+    grid: [
+      '....................','....................','....................','....................',
+      '....................','....................','....................','....................',
+      '....................',
+      '########....########',
+      '########....########',
+      '....................','....................','....................','....................',
+      '....................','....................','....................','....................',
+      '....................',
+    ],
+    tests: [
+      { name: 'Marine through gap', sx:10,sz:2, gx:10,gz:17, r:0.4, type:'marine' },
+      { name: 'Marine detour (no gap side)', sx:3,sz:2, gx:3,gz:17, r:0.4, type:'marine' },
+      { name: 'Tank through gap', sx:10,sz:2, gx:10,gz:17, r:1.2, type:'tank' },
+    ]
+  },
+  {
+    name: 'U-shape (open top)',
+    w: 20, h: 20,
+    grid: [
+      '....................','....................','....................','....................',
+      '....#..........#....',
+      '....#..........#....',
+      '....#..........#....',
+      '....#..........#....',
+      '....#..........#....',
+      '....#..........#....',
+      '....#..........#....',
+      '....#..........#....',
+      '....#..........#....',
+      '....############....',
+      '....................','....................','....................','....................',
+      '....................','....................',
+    ],
+    tests: [
+      { name: 'Marine outside (L→R)', sx:2,sz:8, gx:17,gz:8, r:0.4, type:'marine' },
+      { name: 'Marine escape from inside', sx:8,sz:8, gx:2,gz:8, r:0.4, type:'marine' },
+    ]
+  },
+  {
+    name: 'Tight Maze (tank test)',
+    w: 30, h: 20,
+    grid: [
+      '..............................','..............................',
+      '####..########################','..............................',
+      '..............................',
+      '########################..####','..............................',
+      '..............................',
+      '####....######################','..............................',
+      '..............................',
+      '##################....########','..............................',
+      '..............................',
+      '######...#####################','..............................',
+      '..............................',
+      '#################...##########','..............................',
+      '..............................',
+    ],
+    tests: [
+      { name: 'Marine full maze', sx:5,sz:0, gx:18,gz:19, r:0.4, type:'marine' },
+      { name: 'Tank full maze', sx:5,sz:0, gx:18,gz:19, r:1.2, type:'tank' },
+      { name: 'Tank 4-cell gap', sx:5,sz:7, gx:5,gz:9, r:1.2, type:'tank' },
+      { name: 'Tank 3-cell gap', sx:7,sz:13, gx:7,gz:15, r:1.2, type:'tank' },
+    ]
+  },
+  {
+    name: 'Narrow Corridor (2-cell)',
+    w: 20, h: 20,
+    grid: [
+      '....................','....................','....................','....................',
+      '########..##########',
+      '....................','....................','....................','....................',
+      '....................','....................','....................','....................',
+      '....................','....................','....................','....................',
+      '....................','....................','....................',
+    ],
+    tests: [
+      { name: 'Marine fits (r=0.4)', sx:9,sz:2, gx:9,gz:8, r:0.4, type:'marine' },
+      { name: 'Tank routes around (r=1.2)', sx:9,sz:2, gx:9,gz:8, r:1.2, type:'tank' },
+    ]
+  }
+];
+
+// Simple A* for visualization (runs in browser, simplified)
+function buildGrid(map) {
+  const W = map.w, H = map.h;
+  const walkable = new Uint8Array(W * H);
+  for (let z = 0; z < H; z++)
+    for (let x = 0; x < W; x++)
+      walkable[z * W + x] = map.grid[z][x] === '.' ? 1 : 0;
+  return walkable;
+}
+
+function buildClearance(walkable, W, H) {
+  const clr = new Float32Array(W * H);
+  clr.fill(255);
+  for (let i = 0; i < W * H; i++) if (!walkable[i]) clr[i] = 0;
+  // Forward
+  for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) {
+    const i = z * W + x; if (!clr[i]) continue;
+    let v = clr[i];
+    if (z > 0) v = Math.min(v, clr[i - W] + 1);
+    if (x > 0) v = Math.min(v, clr[i - 1] + 1);
+    if (z > 0 && x > 0) v = Math.min(v, clr[(z-1)*W+(x-1)] + 1);
+    if (z > 0 && x < W-1) v = Math.min(v, clr[(z-1)*W+(x+1)] + 1);
+    clr[i] = v;
+  }
+  // Backward
+  for (let z = H-1; z >= 0; z--) for (let x = W-1; x >= 0; x--) {
+    const i = z * W + x; if (!clr[i]) continue;
+    let v = clr[i];
+    if (z < H-1) v = Math.min(v, clr[i + W] + 1);
+    if (x < W-1) v = Math.min(v, clr[i + 1] + 1);
+    if (z < H-1 && x < W-1) v = Math.min(v, clr[(z+1)*W+(x+1)] + 1);
+    if (z < H-1 && x > 0) v = Math.min(v, clr[(z+1)*W+(x-1)] + 1);
+    clr[i] = v;
+  }
+  return clr;
+}
+
+const DIRS = [[1,0,1],[-1,0,1],[0,1,1],[0,-1,1],[1,1,1.414],[-1,1,1.414],[1,-1,1.414],[-1,-1,1.414]];
+
+function astar(walkable, clr, W, H, sx, sz, gx, gz, clearance) {
+  const N = W * H;
+  const g = new Float32Array(N).fill(Infinity);
+  const from = new Int32Array(N).fill(-1);
+  const closed = new Uint8Array(N);
+
+  function passable(x, z) {
+    if (x < 0 || x >= W || z < 0 || z >= H) return false;
+    return walkable[z*W+x] === 1 && clr[z*W+x] >= clearance;
+  }
+
+  const si = sz*W+sx;
+  g[si] = 0;
+  // Simple priority queue (array sorted by f)
+  const open = [[0 + Math.max(Math.abs(gx-sx), Math.abs(gz-sz)), si]];
+
+  while (open.length) {
+    open.sort((a,b) => a[0] - b[0]);
+    const [, ci] = open.shift();
+    if (closed[ci]) continue;
+    closed[ci] = 1;
+    const cx = ci % W, cz = (ci / W) | 0;
+    if (cx === gx && cz === gz) {
+      // Reconstruct
+      const path = [];
+      let c = ci;
+      while (c !== -1) { path.push([c % W, (c/W)|0]); c = from[c]; }
+      path.reverse();
+      return path;
+    }
+    for (const [dx, dz, cost] of DIRS) {
+      const nx = cx+dx, nz = cz+dz;
+      if (!passable(nx, nz)) continue;
+      if (dx !== 0 && dz !== 0) {
+        if (!passable(cx+dx, cz) || !passable(cx, cz+dz)) continue;
+      }
+      const ni = nz*W+nx;
+      const ng = g[ci] + cost;
+      if (ng < g[ni]) {
+        g[ni] = ng;
+        from[ni] = ci;
+        const h = Math.max(Math.abs(gx-nx), Math.abs(gz-nz)) + (Math.SQRT2-1)*Math.min(Math.abs(gx-nx), Math.abs(gz-nz));
+        open.push([ng + h, ni]);
+      }
+    }
+  }
+  return null;
+}
+
+const COLORS = { marine: '#44ff88', tank: '#ff8844' };
+const container = document.getElementById('maps');
+
+for (const map of MAPS) {
+  const card = document.createElement('div');
+  card.className = 'map-card';
+  card.innerHTML = `<h2>${map.name}</h2><div class="info">${map.w}x${map.h}</div>`;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = map.w * CELL;
+  canvas.height = map.h * CELL;
+  const ctx = canvas.getContext('2d');
+
+  const walkable = buildGrid(map);
+  const clr = buildClearance(walkable, map.w, map.h);
+
+  // Draw base grid
+  for (let z = 0; z < map.h; z++) {
+    for (let x = 0; x < map.w; x++) {
+      const w = walkable[z * map.w + x];
+      ctx.fillStyle = w ? '#1a2a1a' : '#333';
+      ctx.fillRect(x * CELL, z * CELL, CELL - 1, CELL - 1);
+    }
+  }
+
+  // Draw tank clearance exclusion zone (cells where tank can't go)
+  for (let z = 0; z < map.h; z++) {
+    for (let x = 0; x < map.w; x++) {
+      if (walkable[z*map.w+x] && clr[z*map.w+x] < 2) {
+        ctx.fillStyle = 'rgba(255,255,0,0.15)';
+        ctx.fillRect(x * CELL, z * CELL, CELL - 1, CELL - 1);
+      }
+    }
+  }
+
+  const pathsDiv = document.createElement('div');
+  pathsDiv.className = 'paths';
+
+  for (const test of map.tests) {
+    const clearance = test.r > 0.8 ? Math.ceil(test.r) : 0;
+    const t0 = performance.now();
+    const path = astar(walkable, clr, map.w, map.h, test.sx, test.sz, test.gx, test.gz, clearance);
+    const ms = (performance.now() - t0).toFixed(2);
+
+    // Draw start/goal
+    ctx.fillStyle = '#ff4444';
+    ctx.fillRect(test.sx * CELL + 2, test.sz * CELL + 2, CELL - 5, CELL - 5);
+    ctx.fillStyle = '#4444ff';
+    ctx.fillRect(test.gx * CELL + 2, test.gz * CELL + 2, CELL - 5, CELL - 5);
+
+    if (path) {
+      // Draw path
+      ctx.strokeStyle = COLORS[test.type];
+      ctx.lineWidth = test.type === 'tank' ? 3 : 2;
+      ctx.globalAlpha = 0.8;
+      ctx.beginPath();
+      ctx.moveTo(path[0][0] * CELL + CELL/2, path[0][1] * CELL + CELL/2);
+      for (let i = 1; i < path.length; i++) {
+        ctx.lineTo(path[i][0] * CELL + CELL/2, path[i][1] * CELL + CELL/2);
+      }
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+
+      pathsDiv.innerHTML += `<div class="${test.type}">${test.type === 'tank' ? '\u{1F69C}' : '\u{1F3C3}'} ${test.name}: ${path.length} cells, ${ms}ms</div>`;
+    } else {
+      pathsDiv.innerHTML += `<div class="fail">\u274C ${test.name}: NO PATH (${ms}ms)</div>`;
+    }
+  }
+
+  card.appendChild(canvas);
+  card.appendChild(pathsDiv);
+  container.appendChild(card);
+}
+</script>
+</body>
+</html>

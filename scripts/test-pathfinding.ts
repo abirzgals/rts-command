@@ -145,6 +145,38 @@ const TEST_MAPS: TestMap[] = [
       '....................',
     ],
   },
+  {
+    // Tight maze — corridors of varying width (2, 3, 4 cells)
+    // Tank (r=1.2, clearance=2) needs ~3+ cells to pass
+    // Marine (r=0.4, clearance=0) passes everywhere
+    // S = start area, G = goal area
+    name: 'Tight maze',
+    width: 30, height: 20,
+    grid: [
+      //0         1         2
+      //0123456789012345678901234567890
+      '..............................',  // 0  S area
+      '..............................',  // 1
+      '####..########################',  // 2  2-cell gap at x=4,5
+      '..............................',  // 3
+      '..............................',  // 4
+      '########################..####',  // 5  2-cell gap at x=24,25
+      '..............................',  // 6
+      '..............................',  // 7
+      '####....######################',  // 8  4-cell gap at x=4,5,6,7
+      '..............................',  // 9
+      '..............................',  // 10
+      '##################....########',  // 11 4-cell gap at x=18,19,20,21
+      '..............................',  // 12
+      '..............................',  // 13
+      '######...#####################',  // 14 3-cell gap at x=6,7,8
+      '..............................',  // 15
+      '..............................',  // 16
+      '#################...##########',  // 17 3-cell gap at x=17,18,19
+      '..............................',  // 18
+      '..............................',  // 19  G area
+    ],
+  },
 ]
 
 // ═══════════════════════════════════════════════════════════════
@@ -504,12 +536,66 @@ runTest(map4, {
   expectPath: true,
 })
 
-// ── Test 5: Performance benchmark ────────────────────────────
+// ── Test 5: Tight maze ───────────────────────────────────────
+const map5 = TEST_MAPS[4]
+loadTestMap(map5)
+
+console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+console.log(`  Map: "${map5.name}"`)
+console.log('  Corridors: 2-cell (rows 2,5), 3-cell (rows 14,17), 4-cell (rows 8,11)')
+console.log('  Tank r=1.2 → clearance=2 cells. Needs 3+ wide corridor.')
+console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+printMapWithPath(map5, null)
+console.log()
+
+runTest(map5, {
+  name: 'Marine top→bottom through ALL corridors',
+  startMapX: 5, startMapZ: 0,
+  goalMapX: 18, goalMapZ: 19,
+  unitRadius: 0.4, maxSlope: 2.5,
+  expectPath: true,
+})
+
+runTest(map5, {
+  name: 'Tank top→bottom (must avoid 2-cell gaps, use 3+ cell gaps)',
+  startMapX: 5, startMapZ: 0,
+  goalMapX: 18, goalMapZ: 19,
+  unitRadius: 1.2, maxSlope: 1.5,
+  expectPath: true,
+  expectMinWaypoints: 3,
+})
+
+// Tank through specific corridor widths
+runTest(map5, {
+  name: 'Tank through 4-cell gap (row 8, x=4-7) — should fit',
+  startMapX: 5, startMapZ: 7,
+  goalMapX: 5, goalMapZ: 9,
+  unitRadius: 1.2, maxSlope: 1.5,
+  expectPath: true,
+})
+
+runTest(map5, {
+  name: 'Tank through 3-cell gap (row 14, x=6-8) — borderline',
+  startMapX: 7, startMapZ: 13,
+  goalMapX: 7, goalMapZ: 15,
+  unitRadius: 1.2, maxSlope: 1.5,
+  expectPath: true,
+})
+
+runTest(map5, {
+  name: 'Tank full maze traversal (top row 0 → bottom row 19)',
+  startMapX: 15, startMapZ: 0,
+  goalMapX: 20, goalMapZ: 19,
+  unitRadius: 1.2, maxSlope: 1.5,
+  expectPath: true,
+  expectMinWaypoints: 3,
+})
+
+// ── Performance benchmark ────────────────────────────────────
 console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
 console.log('  Performance Benchmark')
 console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
 
-// Use the wall-with-gap map for benchmarking
 loadTestMap(map1)
 
 const BENCH_RUNS = 100
