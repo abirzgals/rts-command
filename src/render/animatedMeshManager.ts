@@ -28,8 +28,8 @@ interface AnimatedUnit {
   occlusionGroup?: THREE.Group // silhouette shown when occluded
 }
 
-// Occluded silhouette: only renders where depth test fails (behind obstacles)
-// Strong polygonOffset prevents self-z-fighting with the unit's own mesh
+// Occluded silhouette: renders where depth test fails (behind obstacles)
+// Very high polygonOffset pushes ghost well behind the unit's own depth
 const occlusionMat = new THREE.MeshBasicMaterial({
   color: 0x4499ff,
   transparent: true,
@@ -37,8 +37,8 @@ const occlusionMat = new THREE.MeshBasicMaterial({
   depthFunc: THREE.GreaterDepth,
   depthWrite: false,
   polygonOffset: true,
-  polygonOffsetFactor: 4,
-  polygonOffsetUnits: 4,
+  polygonOffsetFactor: 50,
+  polygonOffsetUnits: 50,
 })
 
 /**
