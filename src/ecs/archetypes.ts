@@ -148,7 +148,7 @@ export function spawnBuilding(
   const eid = addEntity(world)
 
   const terrainY = getTerrainHeight(x, z)
-  const buildingY = preBuilt ? terrainY + def.radius * 0.5 : terrainY + 0.1
+  const buildingY = preBuilt ? terrainY : terrainY
 
   addComponent(world, Position, eid)
   Position.x[eid] = x

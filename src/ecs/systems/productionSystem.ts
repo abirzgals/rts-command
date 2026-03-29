@@ -108,16 +108,14 @@ export function productionSystem(world: IWorld, dt: number) {
     const maxHp = Health.max[eid]
     Health.current[eid] = Math.min(maxHp, maxHp * 0.1 + maxHp * 0.9 * BuildProgress.progress[eid])
 
-    // Rise up visually
+    // Keep at ground level during construction
     const terrainY = getTerrainHeight(bx, bz)
-    const bdef = BUILDING_DEFS[UnitTypeC.id[eid]]
-    const fullHeight = bdef ? bdef.radius * 0.5 : 1.0
-    Position.y[eid] = terrainY + BuildProgress.progress[eid] * fullHeight
+    Position.y[eid] = terrainY
 
     if (BuildProgress.progress[eid] >= 1) {
       removeComponent(world, BuildProgress, eid)
       Health.current[eid] = maxHp
-      Position.y[eid] = terrainY + fullHeight
+      Position.y[eid] = terrainY
     }
   }
 }
