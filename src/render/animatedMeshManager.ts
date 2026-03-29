@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js'
 import { scene } from './engine'
+import { getTerrainHeight } from '../terrain/heightmap'
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js'
 
 const loader = new GLTFLoader()
@@ -192,11 +193,42 @@ export class AnimatedMeshManager {
     this.units.delete(eid)
   }
 
+  // Reusable vectors for terrain normal computation
+  private static _nA = new THREE.Vector3()
+  private static _nB = new THREE.Vector3()
+  private static _up = new THREE.Vector3(0, 1, 0)
+  private static _qTerrain = new THREE.Quaternion()
+
   updateTransform(eid: number, x: number, y: number, z: number, rotY: number) {
     const unit = this.units.get(eid)
     if (!unit) return
     unit.mesh.position.set(x, y, z)
-    unit.mesh.rotation.y = rotY + this.rotationOffset
+
+    // Compute terrain normal from 4 height samples
+    const S = 0.5 // sample distance
+    const hL = getTerrainHeight(x - S, z)
+    const hR = getTerrainHeight(x + S, z)
+    const hF = getTerrainHeight(x, z - S)
+    const hB = getTerrainHeight(x, z + S)
+
+    // Cross product of tangent vectors → normal
+    // tangentX = (2S, hR-hL, 0), tangentZ = (0, hB-hF, 2S)
+    const nx = -(hR - hL)  // normal X
+    const nz = -(hB - hF)  // normal Z
+    const ny = 2 * S        // normal Y
+    const len = Math.sqrt(nx * nx + ny * ny + nz * nz)
+
+    AnimatedMeshManager._nA.set(nx / len, ny / len, nz / len)
+
+    // Build quaternion: rotate from UP to terrain normal, then apply yaw
+    AnimatedMeshManager._qTerrain.setFromUnitVectors(
+      AnimatedMeshManager._up,
+      AnimatedMeshManager._nA,
+    )
+
+    // Apply yaw rotation on top
+    unit.mesh.quaternion.copy(AnimatedMeshManager._qTerrain)
+    unit.mesh.rotateY(rotY + this.rotationOffset)
   }
 
   // Reusable objects to avoid per-frame allocations
