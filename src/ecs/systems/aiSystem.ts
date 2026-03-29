@@ -81,7 +81,7 @@ export function aiSystem(world: IWorld, dt: number) {
       const cx = Position.x[commandCenter]
       const cz = Position.z[commandCenter]
       const angle = Math.random() * Math.PI * 2
-      spawnBuilding(world, BT_SUPPLY_DEPOT, FACTION_ENEMY, cx + Math.cos(angle) * 6, cz + Math.sin(angle) * 6)
+      spawnBuilding(world, BT_SUPPLY_DEPOT, FACTION_ENEMY, cx + Math.cos(angle) * 6, cz + Math.sin(angle) * 6, true)
       gameState.spend(FACTION_ENEMY, def.cost)
     }
   }
@@ -92,7 +92,7 @@ export function aiSystem(world: IWorld, dt: number) {
     if (gameState.canAfford(FACTION_ENEMY, def.cost)) {
       const cx = Position.x[commandCenter]
       const cz = Position.z[commandCenter]
-      spawnBuilding(world, BT_BARRACKS, FACTION_ENEMY, cx + 8, cz + 4)
+      spawnBuilding(world, BT_BARRACKS, FACTION_ENEMY, cx + 8, cz + 4, true)
       gameState.spend(FACTION_ENEMY, def.cost)
     }
   }
@@ -103,7 +103,7 @@ export function aiSystem(world: IWorld, dt: number) {
     if (gameState.canAfford(FACTION_ENEMY, def.cost)) {
       const cx = Position.x[commandCenter]
       const cz = Position.z[commandCenter]
-      spawnBuilding(world, BT_FACTORY, FACTION_ENEMY, cx - 8, cz + 4)
+      spawnBuilding(world, BT_FACTORY, FACTION_ENEMY, cx - 8, cz + 4, true)
       gameState.spend(FACTION_ENEMY, def.cost)
     }
   }

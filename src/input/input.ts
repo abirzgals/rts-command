@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import { defineQuery, hasComponent, addComponent, removeComponent } from 'bitecs'
 import type { IWorld } from 'bitecs'
 import {
-  Position, Faction, Selected, Selectable, MoveTarget,
+  Position, Faction, Selected, Selectable, MoveTarget, Velocity,
   AttackTarget, ResourceNode, ResourceDropoff, WorkerC, IsBuilding, UnitTypeC,
   Producer, PathFollower, BuildProgress,
 } from '../ecs/components'
@@ -29,6 +29,23 @@ let isDragging = false
 let dragStartX = 0
 let dragStartY = 0
 const DRAG_THRESHOLD = 5
+let forceAttackMode = false // when true, next click = attack anything
+
+export function setForceAttackMode(on: boolean) {
+  forceAttackMode = on
+  const canvas = document.getElementById('game-canvas')
+  if (canvas) canvas.style.cursor = on ? 'crosshair' : ''
+  // Show indicator
+  const el = document.getElementById('build-mode')!
+  if (on) {
+    el.textContent = 'Attack mode — Click target, ESC to cancel'
+    el.style.display = 'block'
+    el.style.background = 'rgba(255,50,50,0.9)'
+  } else {
+    el.style.display = 'none'
+    el.style.background = ''
+  }
+}
 
 const selectionBoxEl = document.getElementById('selection-box')!
 const buildModeEl = document.getElementById('build-mode')!
@@ -159,6 +176,10 @@ let rmbStartY = 0
 
 function onMouseDown(e: MouseEvent, world: IWorld) {
   if (e.button === 0) { // Left click
+    if (forceAttackMode) {
+      forceAttackTarget(world, e.clientX, e.clientY)
+      return
+    }
     if (gameState.buildMode !== null) {
       placeBuildingAtCursor(world)
       return
@@ -441,16 +462,92 @@ function placeBuildingAtCursor(world: IWorld) {
   removeBuildPreview()
 }
 
+function forceAttackTarget(world: IWorld, sx: number, sy: number) {
+  const hit = raycastGround(sx, sy)
+  if (!hit) { setForceAttackMode(false); return }
+
+  // Find ANY entity near click point (including own units/buildings)
+  const nearby: number[] = []
+  spatialHash.query(hit.x, hit.z, 3, nearby)
+
+  let targetEid = -1
+  let targetDist = Infinity
+
+  for (const eid of nearby) {
+    if (!hasComponent(world, Position, eid)) continue
+    const dx = Position.x[eid] - hit.x
+    const dz = Position.z[eid] - hit.z
+    const dist = Math.sqrt(dx * dx + dz * dz)
+    if (dist < targetDist && dist < 3) {
+      targetEid = eid
+      targetDist = dist
+    }
+  }
+
+  const selected = selectedQuery(world)
+  if (targetEid >= 0) {
+    // Force-attack this entity (even friendly)
+    for (const eid of selected) {
+      if (!hasComponent(world, AttackTarget, eid) && !hasComponent(world, Position, eid)) continue
+      addComponent(world, AttackTarget, eid)
+      AttackTarget.eid[eid] = targetEid
+    }
+    spawnMoveMarker(Position.x[targetEid], Position.y[targetEid], Position.z[targetEid])
+  } else {
+    // Attack-move: move to position but attack anything on the way
+    for (const eid of selected) {
+      addComponent(world, MoveTarget, eid)
+      MoveTarget.x[eid] = hit.x
+      MoveTarget.z[eid] = hit.z
+    }
+    spawnMoveMarker(hit.x, hit.y, hit.z)
+  }
+
+  setForceAttackMode(false)
+}
+
 function onKeyDown(e: KeyboardEvent, world: IWorld) {
   // F1 handled by sharedButtons.ts
 
   if (e.key === 'Escape') {
-    if (gameState.buildMode !== null) {
+    if (forceAttackMode) {
+      setForceAttackMode(false)
+    } else if (gameState.buildMode !== null) {
       gameState.buildMode = null
       buildModeEl.style.display = 'none'
       removeBuildPreview()
     } else {
       clearSelection(world)
+    }
+    return
+  }
+
+  // Attack hotkey (A)
+  if (e.key === 'a' || e.key === 'A') {
+    const selected = selectedQuery(world)
+    if (selected.length > 0) setForceAttackMode(true)
+    return
+  }
+
+  // Stop hotkey (S)
+  if (e.key === 's' || e.key === 'S') {
+    if (!e.ctrlKey) { // don't interfere with Ctrl+S
+      const selected = selectedQuery(world)
+      for (const eid of selected) {
+        if (hasComponent(world, MoveTarget, eid)) removeComponent(world, MoveTarget, eid)
+        Velocity.x[eid] = 0; Velocity.z[eid] = 0
+        if (hasComponent(world, WorkerC, eid)) WorkerC.state[eid] = 0
+      }
+    }
+    return
+  }
+
+  // Hold position hotkey (H)
+  if (e.key === 'h' || e.key === 'H') {
+    const selected = selectedQuery(world)
+    for (const eid of selected) {
+      if (hasComponent(world, MoveTarget, eid)) removeComponent(world, MoveTarget, eid)
+      Velocity.x[eid] = 0; Velocity.z[eid] = 0
     }
     return
   }

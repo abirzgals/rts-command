@@ -2,14 +2,15 @@ import { defineQuery, hasComponent } from 'bitecs'
 import type { IWorld } from 'bitecs'
 import {
   Selected, Position, Faction, Health, UnitTypeC,
-  IsBuilding, WorkerC, Producer, AttackC, MoveSpeed, Armor,
+  IsBuilding, WorkerC, Producer, AttackC, MoveSpeed, Armor, MoveTarget, Velocity,
 } from '../ecs/components'
 import {
   FACTION_PLAYER, UNIT_DEFS, BUILDING_DEFS,
   BT_COMMAND_CENTER, BT_SUPPLY_DEPOT, BT_BARRACKS, BT_FACTORY,
 } from '../game/config'
 import { gameState } from '../game/state'
-import { queueProduction } from '../input/input'
+import { queueProduction, setForceAttackMode } from '../input/input'
+import { removeComponent, addComponent } from 'bitecs'
 
 const selectedQuery = defineQuery([Selected])
 
@@ -120,6 +121,14 @@ export function updateHUD(world: IWorld, _dt: number, time: number) {
     selectedCountEl.textContent = ''
     if (selectionChanged) {
       actionButtonsEl.innerHTML = ''
+      // Show unit commands for multi-selection too
+      actionButtonsEl.appendChild(createActionButton('⚔️', 'Attack (A)', '', () => setForceAttackMode(true)))
+      actionButtonsEl.appendChild(createActionButton('⏹️', 'Stop (S)', '', () => {
+        for (const sid of selected) {
+          if (hasComponent(world, MoveTarget, sid)) removeComponent(world, MoveTarget, sid)
+          Velocity.x[sid] = 0; Velocity.z[sid] = 0
+        }
+      }))
       lastSelectedEid = -1
       lastSelectedCount = selected.length
     }
@@ -150,7 +159,36 @@ function updateActionButtons(world: IWorld, eid: number) {
         actionButtonsEl.appendChild(btn)
       }
     }
-  } else if (hasComponent(world, WorkerC, eid)) {
+  }
+
+  // ── Unit commands (for all player units) ──
+  if (!isBuilding && hasComponent(world, MoveSpeed, eid)) {
+    // Attack command (A) — force attack mode
+    actionButtonsEl.appendChild(createActionButton('⚔️', 'Attack (A)', '', () => {
+      setForceAttackMode(true)
+    }))
+
+    // Stop command (S) — halt movement and cancel orders
+    actionButtonsEl.appendChild(createActionButton('⏹️', 'Stop (S)', '', () => {
+      const sel = selectedQuery(world)
+      for (const sid of sel) {
+        if (hasComponent(world, MoveTarget, sid)) removeComponent(world, MoveTarget, sid)
+        Velocity.x[sid] = 0; Velocity.z[sid] = 0
+        if (hasComponent(world, WorkerC, sid)) WorkerC.state[sid] = 0
+      }
+    }))
+
+    // Hold Position (H) — stop and don't auto-acquire
+    actionButtonsEl.appendChild(createActionButton('🛡️', 'Hold (H)', '', () => {
+      const sel = selectedQuery(world)
+      for (const sid of sel) {
+        if (hasComponent(world, MoveTarget, sid)) removeComponent(world, MoveTarget, sid)
+        Velocity.x[sid] = 0; Velocity.z[sid] = 0
+      }
+    }))
+  }
+
+  if (hasComponent(world, WorkerC, eid)) {
     const buildOptions = [
       { type: BT_COMMAND_CENTER, icon: '🏛️', key: 'C' },
       { type: BT_SUPPLY_DEPOT, icon: '📦', key: 'V' },
