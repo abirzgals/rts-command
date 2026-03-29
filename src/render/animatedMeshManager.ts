@@ -28,23 +28,17 @@ interface AnimatedUnit {
   occlusionGroup?: THREE.Group // silhouette shown when occluded
 }
 
-// Occluded silhouette material:
-// - depthFunc GreaterDepth: only draw where something is in front
-// - stencilFunc NotEqual(1): skip pixels marked as "unit"
-// - polygonOffset pushes ghost slightly back to avoid self z-fighting
+// Occluded silhouette: only renders where depth test fails (behind obstacles)
+// Strong polygonOffset prevents self-z-fighting with the unit's own mesh
 const occlusionMat = new THREE.MeshBasicMaterial({
-  color: 0x44aaff,
+  color: 0x4499ff,
   transparent: true,
-  opacity: 0.1,
+  opacity: 0.15,
   depthFunc: THREE.GreaterDepth,
   depthWrite: false,
-  stencilWrite: false,
-  stencilFunc: THREE.NotEqualStencilFunc,
-  stencilRef: 1,
-  stencilFuncMask: 0xff,
   polygonOffset: true,
-  polygonOffsetFactor: 1,
-  polygonOffsetUnits: 1,
+  polygonOffsetFactor: 4,
+  polygonOffsetUnits: 4,
 })
 
 /**
@@ -99,21 +93,6 @@ export class AnimatedMeshManager {
       }
     })
 
-    // Mark all unit meshes in stencil buffer (ref=1)
-    // so ghost silhouettes skip pixels occupied by ANY unit
-    clone.traverse((child) => {
-      if ((child as THREE.Mesh).isMesh) {
-        const mesh = child as THREE.Mesh
-        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
-        for (const mat of mats) {
-          mat.stencilWrite = true
-          mat.stencilFunc = THREE.AlwaysStencilFunc
-          mat.stencilRef = 1
-          mat.stencilZPass = THREE.ReplaceStencilOp
-        }
-      }
-    })
-
     scene.add(clone)
 
     // Set up animation mixer
@@ -141,24 +120,33 @@ export class AnimatedMeshManager {
       }
     })
 
-    // Occlusion ghost — only for skinned meshes (infantry with skeleton)
-    // Non-skinned models (vehicles) skip ghost — stencil/depth issues
-    const occGroup = new THREE.Group()
-    let hasSkinned = false
+    // Occlusion ghost for ALL mesh types
+    // Ghost only shows when unit is behind terrain/trees/rocks (GreaterDepth)
+    // polygonOffset(4,4) prevents ghost from showing on unit's own surface
     clone.traverse((child) => {
-      if ((child as THREE.SkinnedMesh).isSkinnedMesh) {
-        hasSkinned = true
-        const skinned = child as THREE.SkinnedMesh
-        const occ = new THREE.SkinnedMesh(skinned.geometry, occlusionMat)
-        occ.skeleton = skinned.skeleton
-        occ.bindMatrix.copy(skinned.bindMatrix)
-        occ.bindMatrixInverse.copy(skinned.bindMatrixInverse)
-        occ.renderOrder = 999
-        occ.frustumCulled = false
-        occGroup.add(occ)
+      if ((child as THREE.Mesh).isMesh) {
+        const mesh = child as THREE.Mesh
+        if ((mesh as THREE.SkinnedMesh).isSkinnedMesh) {
+          const skinned = mesh as THREE.SkinnedMesh
+          const occ = new THREE.SkinnedMesh(skinned.geometry, occlusionMat)
+          occ.skeleton = skinned.skeleton
+          occ.bindMatrix.copy(skinned.bindMatrix)
+          occ.bindMatrixInverse.copy(skinned.bindMatrixInverse)
+          occ.renderOrder = 999
+          occ.frustumCulled = false
+          mesh.parent?.add(occ)
+        } else {
+          const occ = new THREE.Mesh(mesh.geometry, occlusionMat)
+          // Copy local transform so ghost matches the mesh position
+          occ.position.copy(mesh.position)
+          occ.rotation.copy(mesh.rotation)
+          occ.scale.copy(mesh.scale)
+          occ.renderOrder = 999
+          occ.frustumCulled = false
+          mesh.parent?.add(occ)
+        }
       }
     })
-    if (hasSkinned) clone.add(occGroup)
 
     this.units.set(eid, { mesh: clone, mixer, actions, currentAnim: 'Idle', turretBone, barrelBone, occlusionGroup: occGroup })
     return 0
