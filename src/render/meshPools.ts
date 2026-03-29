@@ -218,7 +218,7 @@ export function createSelectionRingMesh() {
   selectionRingMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
   selectionRingMesh.count = 0
   selectionRingMesh.frustumCulled = false
-  selectionRingMesh.renderOrder = 90 // render after terrain but before UI
+  selectionRingMesh.renderOrder = -1 // render BEFORE units so units draw on top
   scene.add(selectionRingMesh)
 }
 
