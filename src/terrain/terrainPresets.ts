@@ -70,7 +70,7 @@ function classifyTerrain() {
         Math.abs(h - heightData[i - GRID_RES]),
         Math.abs(h - heightData[i + GRID_RES]),
       )
-      if (maxSlope > 3.0 && terrainType[i] !== T_WATER) terrainType[i] = T_CLIFF
+      if (maxSlope > 0.70 && terrainType[i] !== T_WATER) terrainType[i] = T_CLIFF // tan(35°)
     }
   }
 }

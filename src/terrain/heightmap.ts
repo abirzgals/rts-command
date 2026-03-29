@@ -190,7 +190,7 @@ export function generateTerrain() {
         Math.abs(h - heightData[(gz - 1) * GRID_RES + gx]),
         Math.abs(h - heightData[(gz + 1) * GRID_RES + gx]),
       )
-      if (maxSlope > 3.0 && terrainType[i] !== T_WATER) {
+      if (maxSlope > 0.70 && terrainType[i] !== T_WATER) { // tan(35°) — matches navGrid
         terrainType[i] = T_CLIFF
       }
     }

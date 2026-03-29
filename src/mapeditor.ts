@@ -131,12 +131,11 @@ function autoTextureFromGeometry() {
       if (gz < G-1)  slope = Math.max(slope, Math.abs(h - heightData[i + G]))
 
       // Classification rules:
+      // 0.70 = tan(35°) — matches navGrid unwalkable threshold
       if (h < -1.2) {
         terrainType[i] = T_WATER
-      } else if (slope > 3.0) {
-        terrainType[i] = T_CLIFF
-      } else if (slope > 1.5) {
-        terrainType[i] = T_ROCK
+      } else if (slope > 0.70) {
+        terrainType[i] = T_CLIFF  // steep = cliff texture + unwalkable
       } else if (h > 7.0) {
         terrainType[i] = T_ROCK
       } else if (h > 4.5) {
