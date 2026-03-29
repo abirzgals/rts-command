@@ -244,14 +244,15 @@ export function movementSystem(world: IWorld, dt: number) {
       if (dist < 0.01) { finishPath(world, eid, pathId); continue }
     }
 
-    // Skip-ahead: if closer to a later waypoint, jump to it
-    if (wpIdx + 1 < path.length) {
+    // Skip-ahead: only when unit is slow/stuck (pushed by others or wall sliding)
+    const curSpd = hasComponent(world, CurrentSpeed, eid) ? CurrentSpeed.value[eid] : 0
+    const mxSpd = MoveSpeed.value[eid]
+    if (wpIdx + 1 < path.length && curSpd < mxSpd * 0.4) {
       const nextWp = path[wpIdx + 1]
       const dxN = nextWp.x - px
       const dzN = nextWp.z - pz
       const distNext = dxN * dxN + dzN * dzN
       if (distNext < dist * dist) {
-        // Closer to next waypoint — skip current
         wpIdx++
         PathFollower.waypointIndex[eid] = wpIdx
         dx = dxN; dz = dzN
