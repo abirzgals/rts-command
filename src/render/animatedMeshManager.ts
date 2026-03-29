@@ -137,31 +137,24 @@ export class AnimatedMeshManager {
       }
     })
 
-    // Create occlusion silhouette — shows ONLY when behind other objects
-    // Rendered as separate scene children (not parented to clone) to avoid self-occlusion
+    // Create occlusion silhouette — only for skinned meshes (animated units)
+    // Non-skinned models (jeep, tank) skip ghost to avoid transform issues
     const occGroup = new THREE.Group()
+    let hasSkinned = false
     clone.traverse((child) => {
-      if ((child as THREE.Mesh).isMesh) {
-        const mesh = child as THREE.Mesh
-        if ((mesh as THREE.SkinnedMesh).isSkinnedMesh) {
-          const skinned = mesh as THREE.SkinnedMesh
-          const occSkinned = new THREE.SkinnedMesh(mesh.geometry, occlusionMat)
-          occSkinned.skeleton = skinned.skeleton
-          occSkinned.bindMatrix.copy(skinned.bindMatrix)
-          occSkinned.bindMatrixInverse.copy(skinned.bindMatrixInverse)
-          occSkinned.renderOrder = 999
-          occSkinned.frustumCulled = false
-          occGroup.add(occSkinned)
-        } else {
-          const occMesh = new THREE.Mesh(mesh.geometry, occlusionMat)
-          occMesh.renderOrder = 999
-          occMesh.frustumCulled = false
-          occGroup.add(occMesh)
-        }
+      if ((child as THREE.SkinnedMesh).isSkinnedMesh) {
+        hasSkinned = true
+        const skinned = child as THREE.SkinnedMesh
+        const occSkinned = new THREE.SkinnedMesh(skinned.geometry, occlusionMat)
+        occSkinned.skeleton = skinned.skeleton
+        occSkinned.bindMatrix.copy(skinned.bindMatrix)
+        occSkinned.bindMatrixInverse.copy(skinned.bindMatrixInverse)
+        occSkinned.renderOrder = 999
+        occSkinned.frustumCulled = false
+        occGroup.add(occSkinned)
       }
     })
-    // Parent to clone so it follows position/rotation/scale
-    clone.add(occGroup)
+    if (hasSkinned) clone.add(occGroup)
 
     this.units.set(eid, { mesh: clone, mixer, actions, currentAnim: 'Idle', turretBone, barrelBone, occlusionGroup: occGroup })
     return 0
