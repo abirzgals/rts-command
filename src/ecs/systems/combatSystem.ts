@@ -177,17 +177,19 @@ function tryAttack(world: IWorld, attacker: number, target: number, dist: number
     const splash = AttackC.splash[attacker]
     const fp = getFirePoint(world, attacker)
 
+    // Read editor muzzle config
+    const key = UT_TO_KEY[utId]
+    const muzzleCfg = key ? editorConfig?.[key]?.muzzle : null
+
     if (isTank && splash > 0) {
-      // Tank: artillery arc projectile from fire point + barrel recoil
       spawnArcProjectile(world, fp.x, fp.z, target, damage, splash)
-      spawnMuzzleFlash(fp.x, fp.y, fp.z)
+      spawnMuzzleFlash(fp.x, fp.y, fp.z, muzzleCfg)
       const poolId = MeshRef.poolId[attacker]
       const animMgr = getAnimManager(poolId)
       if (animMgr) animMgr.triggerRecoil(attacker)
     } else {
-      // Marine/Jeep/other: straight bullet from fire point
       spawnProjectile(world, fp.x, fp.z, target, damage)
-      spawnMuzzleFlash(fp.x, fp.y, fp.z)
+      spawnMuzzleFlash(fp.x, fp.y, fp.z, muzzleCfg)
     }
   } else {
     // Melee: direct damage

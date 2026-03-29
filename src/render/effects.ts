@@ -77,11 +77,12 @@ interface MuzzleFlash {
 
 const muzzleFlashes: MuzzleFlash[] = []
 
-export function spawnMuzzleFlash(x: number, y: number, z: number) {
-  const light = new THREE.PointLight(0xffaa44, 8, 12)
-  light.position.set(x, y + 1.5, z)
+export function spawnMuzzleFlash(x: number, y: number, z: number, cfg?: { color?: string; intensity?: number; range?: number; duration?: number }) {
+  const color = cfg?.color ? parseInt(cfg.color.replace('#', ''), 16) : 0xffaa44
+  const light = new THREE.PointLight(color, cfg?.intensity ?? 8, cfg?.range ?? 12)
+  light.position.set(x, y, z)
   scene.add(light)
-  muzzleFlashes.push({ light, life: 0.1 })
+  muzzleFlashes.push({ light, life: cfg?.duration ?? 0.1 })
 }
 
 // ── Move target marker (green ring that fades) ─────────────
