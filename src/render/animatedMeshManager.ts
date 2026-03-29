@@ -34,7 +34,7 @@ interface AnimatedUnit {
 const occlusionMat = new THREE.MeshBasicMaterial({
   color: 0x44aaff,
   transparent: true,
-  opacity: 0.25,
+  opacity: 0.1,
   depthFunc: THREE.GreaterDepth,
   depthWrite: false,
   stencilWrite: false,
