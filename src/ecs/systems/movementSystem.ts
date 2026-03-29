@@ -368,7 +368,15 @@ export function movementSystem(world: IWorld, dt: number) {
     // ── Step 6: Terrain collision — axis-separated wall slide ─
     // unitRadius, maxSl, checkR, onBlockedTerrain computed above in step 3
 
-    const fullOk = onBlockedTerrain ? true : checkFootprint(newX, newZ, checkR, maxSl)
+    // If on blocked terrain: allow movement only if new pos has better clearance (escaping)
+    let fullOk: boolean
+    if (onBlockedTerrain) {
+      const [ogx, ogz] = worldToGrid(px, pz)
+      const [ngx, ngz] = worldToGrid(newX, newZ)
+      fullOk = getClearanceAt(ngx, ngz) >= getClearanceAt(ogx, ogz)
+    } else {
+      fullOk = checkFootprint(newX, newZ, checkR, maxSl)
+    }
     telemetry.set('moveX', moveX)
     telemetry.set('moveZ', moveZ)
     telemetry.set('fullOk', fullOk)
