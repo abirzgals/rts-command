@@ -260,6 +260,7 @@ export function movementSystem(world: IWorld, dt: number) {
     }
 
     // Yield: only near the waypoint (within 4x radius) and if colliding
+    const unitRadius = hasComponent(world, CollisionRadius, eid) ? CollisionRadius.value[eid] : 0.4
     _nearby.length = 0
     const yieldRange = unitRadius * 4
     let shouldYield = false
@@ -304,7 +305,7 @@ export function movementSystem(world: IWorld, dt: number) {
     telemetry.set('desiredYaw', desiredYaw)
 
     // Check if on blocked terrain — if so, skip turn rate and move directly
-    const unitRadius = hasComponent(world, CollisionRadius, eid) ? CollisionRadius.value[eid] : 0.4
+    // unitRadius declared above (before yield check)
     const maxSl = hasComponent(world, MaxSlope, eid) ? MaxSlope.value[eid] : 100
     const checkR = unitRadius * 0.3
     const onBlockedTerrain = !checkFootprint(px, pz, checkR, maxSl)
