@@ -11,11 +11,12 @@ import {
   BT_COMMAND_CENTER, BT_SUPPLY_DEPOT, BT_BARRACKS, BT_FACTORY,
 } from '../game/config'
 import { gameState } from '../game/state'
-import { raycastGround, camera } from '../render/engine'
+import { raycastGround, camera, scene } from '../render/engine'
 import { toggleDebug } from '../render/debugOverlay'
 import { spawnMoveMarker } from '../render/effects'
 import { spawnBuilding } from '../ecs/archetypes'
 import { spatialHash } from '../globals'
+import { getTerrainHeight } from '../terrain/heightmap'
 
 const _vec3 = new THREE.Vector3()
 
@@ -31,6 +32,62 @@ const DRAG_THRESHOLD = 5
 
 const selectionBoxEl = document.getElementById('selection-box')!
 const buildModeEl = document.getElementById('build-mode')!
+
+// ── Build preview ghost ──────────────────────────────────────
+let buildPreview: THREE.Mesh | null = null
+let buildPreviewRadius = 0
+const GRID_SNAP = 2 // snap to 2-unit grid for buildings
+
+function snapToGrid(v: number): number {
+  return Math.round(v / GRID_SNAP) * GRID_SNAP
+}
+
+function createBuildPreview(radius: number) {
+  removeBuildPreview()
+  const geo = new THREE.CylinderGeometry(radius, radius, 0.3, 24)
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0x44ff88, transparent: true, opacity: 0.35,
+    side: THREE.DoubleSide, depthWrite: false,
+  })
+  buildPreview = new THREE.Mesh(geo, mat)
+  buildPreview.renderOrder = 50
+  buildPreviewRadius = radius
+
+  // Add range ring
+  const ringGeo = new THREE.RingGeometry(radius - 0.05, radius + 0.05, 32)
+  ringGeo.rotateX(-Math.PI / 2)
+  const ringMat = new THREE.MeshBasicMaterial({
+    color: 0x44ff88, transparent: true, opacity: 0.6,
+    side: THREE.DoubleSide, depthWrite: false,
+  })
+  const ring = new THREE.Mesh(ringGeo, ringMat)
+  ring.position.y = 0.2
+  buildPreview.add(ring)
+
+  scene.add(buildPreview)
+}
+
+function removeBuildPreview() {
+  if (buildPreview) {
+    scene.remove(buildPreview)
+    buildPreview.geometry.dispose()
+    ;(buildPreview.material as THREE.Material).dispose()
+    buildPreview.children.forEach(c => {
+      const m = c as THREE.Mesh
+      m.geometry.dispose()
+      ;(m.material as THREE.Material).dispose()
+    })
+    buildPreview = null
+  }
+}
+
+function updateBuildPreview() {
+  if (!buildPreview || gameState.buildMode === null) return
+  const sx = snapToGrid(mouseWorldX)
+  const sz = snapToGrid(mouseWorldZ)
+  const y = getTerrainHeight(sx, sz)
+  buildPreview.position.set(sx, y + buildPreviewRadius * 0.5, sz)
+}
 
 // Queries
 let selectableQuery: ReturnType<typeof defineQuery>
@@ -124,6 +181,7 @@ function onMouseMove(e: MouseEvent, _world: IWorld) {
   if (hit) {
     mouseWorldX = hit.x
     mouseWorldZ = hit.z
+    updateBuildPreview()
   }
 
   // Update selection box visual
@@ -332,10 +390,13 @@ function placeBuildingAtCursor(world: IWorld) {
   if (!gameState.canAfford(FACTION_PLAYER, def.cost)) return
 
   gameState.spend(FACTION_PLAYER, def.cost)
-  spawnBuilding(world, buildingType, FACTION_PLAYER, mouseWorldX, mouseWorldZ)
+  const sx = snapToGrid(mouseWorldX)
+  const sz = snapToGrid(mouseWorldZ)
+  spawnBuilding(world, buildingType, FACTION_PLAYER, sx, sz)
 
   gameState.buildMode = null
   buildModeEl.style.display = 'none'
+  removeBuildPreview()
 }
 
 function onKeyDown(e: KeyboardEvent, world: IWorld) {
@@ -345,6 +406,7 @@ function onKeyDown(e: KeyboardEvent, world: IWorld) {
     if (gameState.buildMode !== null) {
       gameState.buildMode = null
       buildModeEl.style.display = 'none'
+      removeBuildPreview()
     } else {
       clearSelection(world)
     }
@@ -416,6 +478,7 @@ function enterBuildMode(buildingType: number) {
   gameState.buildMode = buildingType
   buildModeEl.textContent = `Building: ${def.name} — Click to place, ESC to cancel`
   buildModeEl.style.display = 'block'
+  createBuildPreview(def.radius)
 }
 
 export function queueProduction(buildingEid: number, unitType: number) {
