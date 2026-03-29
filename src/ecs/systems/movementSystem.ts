@@ -229,7 +229,6 @@ export function movementSystem(world: IWorld, dt: number) {
     if (dist < ARRIVE_THRESHOLD) {
       wpIdx++
       PathFollower.waypointIndex[eid] = wpIdx
-      // Reset stuck tracking on waypoint advance
       if (hasComponent(world, StuckState, eid)) {
         StuckState.phase[eid] = 0
         StuckState.timer[eid] = 0
@@ -238,12 +237,26 @@ export function movementSystem(world: IWorld, dt: number) {
         finishPath(world, eid, pathId)
         continue
       }
-      // Recalculate toward new waypoint
       const nwp = path[wpIdx]
       dx = nwp.x - px
       dz = nwp.z - pz
       dist = Math.sqrt(dx * dx + dz * dz)
       if (dist < 0.01) { finishPath(world, eid, pathId); continue }
+    }
+
+    // Skip-ahead: if closer to a later waypoint, jump to it
+    if (wpIdx + 1 < path.length) {
+      const nextWp = path[wpIdx + 1]
+      const dxN = nextWp.x - px
+      const dzN = nextWp.z - pz
+      const distNext = dxN * dxN + dzN * dzN
+      if (distNext < dist * dist) {
+        // Closer to next waypoint — skip current
+        wpIdx++
+        PathFollower.waypointIndex[eid] = wpIdx
+        dx = dxN; dz = dzN
+        dist = Math.sqrt(distNext)
+      }
     }
 
     // ── Step 2: Desired direction ────────────────────────────
