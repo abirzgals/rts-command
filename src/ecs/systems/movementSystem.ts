@@ -33,11 +33,9 @@ const SEPARATION_FORCE = 3.0
 const _nearby: number[] = []
 
 // Stuck escalation thresholds
-const STUCK_DIST = 0.3        // minimum movement to be "not stuck"
-const PHASE0_TIMEOUT = 1.5    // seconds before wiggle
-const PHASE1_DURATION = 0.5   // wiggle time
-const PHASE2_COOLDOWN = 2.0   // cooldown after repath before giving up
-const PHASE3_TIMEOUT = 4.0    // total stuck time before stop
+const STUCK_SPEED_THRESHOLD = 0.15 // fraction of max speed — below this = "stuck"
+const PHASE0_TIMEOUT = 2.5    // seconds before repath (give time for turning)
+const PHASE1_COOLDOWN = 3.0   // cooldown after repath before giving up
 
 // ── Queries ──────────────────────────────────────────────────
 const pathQuery = defineQuery([Position, PathFollower, MoveSpeed])
@@ -221,15 +219,13 @@ export function movementSystem(world: IWorld, dt: number) {
     const facingX = Math.sin(newYaw)
     const facingZ = Math.cos(newYaw)
 
-    // Speed reduction when turning: dot(facing, desired) — slow down for sharp turns
+    // Speed reduction when turning: slow down for sharp turns but keep minimum 20%
     const facingDot = facingX * desiredDirX + facingZ * desiredDirZ
-    const turnSpeedFactor = Math.max(0.0, facingDot)
+    const turnSpeedFactor = 0.2 + 0.8 * Math.max(0.0, facingDot)
 
     // ── Step 4: Acceleration / deceleration ──────────────────
     const maxSpeed = MoveSpeed.value[eid]
     const accel = hasComponent(world, Acceleration, eid) ? Acceleration.value[eid] : 8.0
-    const terrainIdx = worldToGrid(px, pz)
-    // terrainCost not needed as separate import — moveCost already in navGrid
     const targetSpeed = maxSpeed * turnSpeedFactor
 
     let curSpeed = hasComponent(world, CurrentSpeed, eid) ? CurrentSpeed.value[eid] : maxSpeed
@@ -295,11 +291,13 @@ export function movementSystem(world: IWorld, dt: number) {
     Velocity.z[eid] = facingZ * curSpeed
     spatialHash.update(eid, newX, newZ)
 
-    // ── Step 8: Stuck escalation ─────────────────────────────
+    // ── Step 8: Stuck detection — no teleport, just repath then give up
     if (hasComponent(world, StuckState, eid)) {
-      const movedDist = Math.sqrt((newX - px) * (newX - px) + (newZ - pz) * (newZ - pz))
+      // Check actual speed vs expected — if moving very slowly, count as stuck
+      const actualSpeed = Math.sqrt((newX - px) * (newX - px) + (newZ - pz) * (newZ - pz)) / Math.max(dt, 0.001)
+      const isStuck = actualSpeed < maxSpeed * STUCK_SPEED_THRESHOLD && curSpeed > 0.1
 
-      if (movedDist > STUCK_DIST * dt * 60) {
+      if (!isStuck) {
         // Moving fine — reset
         StuckState.phase[eid] = 0
         StuckState.timer[eid] = 0
@@ -309,29 +307,14 @@ export function movementSystem(world: IWorld, dt: number) {
         const timer = StuckState.timer[eid]
 
         if (phase === 0 && timer > PHASE0_TIMEOUT) {
-          // Phase 1: Wiggle — random perpendicular impulse
+          // Phase 1: Force repath — find a new route
           StuckState.phase[eid] = 1
-          StuckState.timer[eid] = 0
-          const perpAngle = newYaw + (Math.random() > 0.5 ? Math.PI / 2 : -Math.PI / 2)
-          const wiggleX = Math.sin(perpAngle) * 1.5
-          const wiggleZ = Math.cos(perpAngle) * 1.5
-          const wX = newX + wiggleX
-          const wZ = newZ + wiggleZ
-          if (checkFootprint(wX, wZ, checkR, maxSl)) {
-            Position.x[eid] = wX
-            Position.z[eid] = wZ
-            Position.y[eid] = getTerrainHeight(wX, wZ)
-            spatialHash.update(eid, wX, wZ)
-          }
-        } else if (phase === 1 && timer > PHASE1_DURATION) {
-          // Phase 2: Force repath
-          StuckState.phase[eid] = 2
           StuckState.timer[eid] = 0
           forceRepath(world, eid, pathId)
           continue
-        } else if (phase === 2 && timer > PHASE2_COOLDOWN) {
-          // Phase 3: Give up — stop
-          StuckState.phase[eid] = 3
+        } else if (phase === 1 && timer > PHASE1_COOLDOWN) {
+          // Phase 2: Give up — stop
+          StuckState.phase[eid] = 2
           StuckState.timer[eid] = 0
           finishPath(world, eid, pathId)
           continue
@@ -386,7 +369,7 @@ export function movementSystem(world: IWorld, dt: number) {
 
       // Acceleration
       const accel = hasComponent(world, Acceleration, eid) ? Acceleration.value[eid] : 8.0
-      const targetSpeed = maxSpeed * facingDot
+      const targetSpeed = maxSpeed * (0.2 + 0.8 * facingDot)
       let curSpeed = hasComponent(world, CurrentSpeed, eid) ? CurrentSpeed.value[eid] : maxSpeed
       if (targetSpeed > curSpeed) curSpeed = Math.min(targetSpeed, curSpeed + accel * dt)
       else curSpeed = Math.max(targetSpeed, curSpeed - accel * 2.0 * dt)

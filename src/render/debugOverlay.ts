@@ -469,8 +469,8 @@ export function updateDebugOverlay(world: IWorld) {
     const hasPath = hasComponent(world, PathFollower, eid)
     const hasMT = hasComponent(world, MoveTarget, eid)
 
-    const stuckLabels = ['normal', 'wiggle', 'repath', 'stopped']
-    const stuckColor = stuckP === 0 ? '#0f8' : stuckP === 1 ? '#ff0' : stuckP === 2 ? '#f80' : '#f00'
+    const stuckLabels = ['normal', 'repath', 'stopped']
+    const stuckColor = stuckP === 0 ? '#0f8' : stuckP === 1 ? '#f80' : '#f00'
 
     unitInfoDiv.innerHTML = `
       <b>Unit #${eid}</b><br>
