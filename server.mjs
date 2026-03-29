@@ -21,6 +21,10 @@ app.use(cors())
 app.use(express.json({ limit: '10mb' }))
 
 // ─── Serve static files (built game) ──────────────────────────────────
+// Custom textures from persistent volume take priority over built-in
+const texDir = path.join(DATA_DIR, 'textures')
+if (!fs.existsSync(texDir)) fs.mkdirSync(texDir, { recursive: true })
+app.use('/textures', express.static(texDir))  // persistent volume first
 app.use(express.static(path.join(__dirname, 'dist')))
 
 // ─── REST API ─────────────────────────────────────────────────────────
@@ -80,6 +84,26 @@ app.delete('/api/maps/:name', (req, res) => {
   const file = path.join(DATA_DIR, 'maps', req.params.name + '.json')
   if (fs.existsSync(file)) fs.unlinkSync(file)
   res.json({ ok: true })
+})
+
+// POST /api/textures/:name — upload a texture to persistent volume (base64 body)
+app.post('/api/textures/:name', (req, res) => {
+  const name = req.params.name.replace(/[^a-zA-Z0-9._-]/g, '')
+  const file = path.join(texDir, name)
+  if (req.body.data) {
+    // base64-encoded image
+    const buf = Buffer.from(req.body.data, 'base64')
+    fs.writeFileSync(file, buf)
+    res.json({ ok: true, saved: file })
+  } else {
+    res.status(400).json({ error: 'Missing data field' })
+  }
+})
+
+// GET /api/textures — list available textures
+app.get('/api/textures', (req, res) => {
+  const files = fs.readdirSync(texDir).filter(f => /\.(jpg|jpeg|png|webp)$/i.test(f))
+  res.json({ data: files })
 })
 
 // ─── SPA fallback (Express 5 syntax) ──────────────────────────────────
