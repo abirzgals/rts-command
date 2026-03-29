@@ -13,7 +13,7 @@ const _pointer = new THREE.Vector2()
 
 export function initRenderer(canvas: HTMLCanvasElement) {
   // Renderer
-  renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, stencil: true })
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
   renderer.setSize(window.innerWidth, window.innerHeight)
   renderer.shadowMap.enabled = true

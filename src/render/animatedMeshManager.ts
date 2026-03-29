@@ -27,17 +27,20 @@ interface AnimatedUnit {
   occlusionGroup?: THREE.Group // silhouette shown when occluded
 }
 
-// Shared material for occluded silhouette — renders only behind other objects
+// Occluded silhouette material:
+// - depthFunc GreaterDepth: only draw where something is in front
+// - stencilFunc NotEqual(1): skip pixels already marked as "unit"
+// This means ghosts show through trees/rocks/terrain but NOT through units
 const occlusionMat = new THREE.MeshBasicMaterial({
   color: 0x44aaff,
   transparent: true,
-  opacity: 0.2,
+  opacity: 0.25,
   depthFunc: THREE.GreaterDepth,
   depthWrite: false,
-  colorWrite: true,
-  polygonOffset: true,
-  polygonOffsetFactor: -1,
-  polygonOffsetUnits: -1,
+  stencilWrite: false,
+  stencilFunc: THREE.NotEqualStencilFunc,
+  stencilRef: 1,
+  stencilFuncMask: 0xff,
 })
 
 /**
@@ -91,6 +94,21 @@ export class AnimatedMeshManager {
         }
       })
     }
+
+    // Mark all unit meshes in stencil buffer (ref=1)
+    // so ghost silhouettes skip pixels occupied by ANY unit
+    clone.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        const mesh = child as THREE.Mesh
+        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+        for (const mat of mats) {
+          mat.stencilWrite = true
+          mat.stencilFunc = THREE.AlwaysStencilFunc
+          mat.stencilRef = 1
+          mat.stencilZPass = THREE.ReplaceStencilOp
+        }
+      }
+    })
 
     scene.add(clone)
 
