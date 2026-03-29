@@ -126,7 +126,7 @@ function buildNavGridOverlay() {
   const positions = new Float32Array(blockedCount * 6 * 3) // 2 triangles * 3 verts * 3 coords
   let vi = 0
 
-  const OFF = 0.15 // lift above terrain surface
+  const OFF = 0.5 // lift well above terrain on slopes
   for (let gz = 0; gz < GRID_RES; gz++) {
     for (let gx = 0; gx < GRID_RES; gx++) {
       if (walkable[gz * GRID_RES + gx] !== 0) continue
@@ -157,9 +157,10 @@ function buildNavGridOverlay() {
   const mat = new THREE.MeshBasicMaterial({
     color: 0xff0000,
     transparent: true,
-    opacity: 0.25,
+    opacity: 0.3,
     side: THREE.DoubleSide,
     depthWrite: false,
+    depthTest: false, // always visible, even behind terrain
   })
 
   navGridMesh = new THREE.Mesh(geo, mat)
