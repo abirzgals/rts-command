@@ -5,12 +5,10 @@ import { Position, Rotation, MeshRef, Dead, AttackTarget, Health, WorkerC, MoveT
 import { getPath } from '../../pathfinding/pathStore'
 import { getPool, getAllPools } from '../../render/meshPools'
 import { getAnimManager } from '../../render/animatedMeshManager'
-import { scene } from '../../render/engine'
-
-// Carry visual: small crystal mesh shown when worker is carrying resources
+// Carry visual: small crystal for workers carrying resources
 const carryGeo = new THREE.OctahedronGeometry(0.15, 0)
 const carryMatMineral = new THREE.MeshBasicMaterial({ color: 0x44ccff, transparent: true, opacity: 0.9 })
-const carryMeshes = new Map<number, THREE.Mesh>() // eid → carry mesh
+const carryMeshes = new Map<number, THREE.Mesh>()
 
 const renderQuery = defineQuery([Position, MeshRef])
 
@@ -71,15 +69,17 @@ export function renderSystem(world: IWorld, dt: number) {
     const carrying = WorkerC.carryAmount[eid] > 0
 
     if (carrying && !carryMeshes.has(eid)) {
-      // Create carry crystal
+      // Create carry crystal — add to unit's mesh parent (already in scene)
       const crystal = new THREE.Mesh(carryGeo, carryMatMineral)
       crystal.renderOrder = 10
-      scene.add(crystal)
+      const mgr = getAnimManager(MeshRef.poolId[eid])
+      if (mgr && mgr.has(eid)) {
+        mgr.getUnitMesh(eid)?.parent?.add(crystal)
+      }
       carryMeshes.set(eid, crystal)
     } else if (!carrying && carryMeshes.has(eid)) {
-      // Remove carry crystal
       const crystal = carryMeshes.get(eid)!
-      scene.remove(crystal)
+      crystal.parent?.remove(crystal)
       carryMeshes.delete(eid)
     }
 

@@ -334,6 +334,10 @@ export class AnimatedMeshManager {
   has(eid: number): boolean {
     return this.units.has(eid)
   }
+
+  getUnitMesh(eid: number): THREE.Object3D | null {
+    return this.units.get(eid)?.mesh ?? null
+  }
 }
 
 // ── Registry of animated managers by pool ID ─────────────────

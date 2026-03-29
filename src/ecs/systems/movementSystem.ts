@@ -20,9 +20,8 @@ import {
 } from '../components'
 import { getPath, removePath } from '../../pathfinding/pathStore'
 import { resetPathAttempt } from './pathfindingSystem'
-import { getTerrainHeight, getTerrainTypeAt, T_WATER, worldToGrid, GRID_RES } from '../../terrain/heightmap'
+import { getTerrainHeight, getTerrainTypeAt, T_WATER, worldToGrid, GRID_RES, gridToWorld } from '../../terrain/heightmap'
 import { isWorldWalkable, dynamicCost, slopeData, BUILDING_BLOCK_THRESHOLD, getClearanceAt } from '../../pathfinding/navGrid'
-import { worldToGrid as wToG, GRID_RES as GR, gridToWorld } from '../../terrain/heightmap'
 import { spatialHash } from '../../globals'
 import { telemetry } from '../../debug/movementTelemetry'
 
@@ -99,13 +98,13 @@ export function movementSystem(world: IWorld, dt: number) {
 
     if (!checkFootprint(px, pz, r * 0.3, sl)) {
       // Unit is stuck on blocked terrain with no orders — find nearest walkable
-      const [gx, gz] = wToG(px, pz)
+      const [gx, gz] = worldToGrid(px, pz)
       for (let ring = 1; ring < 10; ring++) {
         let found = false
         for (let d = -ring; d <= ring && !found; d++) {
           for (const [ox, oz] of [[d, -ring], [d, ring], [-ring, d], [ring, d]]) {
             const nx = gx + ox, nz = gz + oz
-            if (nx < 0 || nx >= GR || nz < 0 || nz >= GR) continue
+            if (nx < 0 || nx >= GRID_RES || nz < 0 || nz >= GRID_RES) continue
             const [wx, wz] = gridToWorld(nx, nz)
             if (checkFootprint(wx, wz, r * 0.3, sl)) {
               addComponent(world, MoveTarget, eid)
