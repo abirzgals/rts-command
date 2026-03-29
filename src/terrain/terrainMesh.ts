@@ -339,28 +339,23 @@ function createWater() {
         // Two layers moving in opposite directions for interference
         float v1 = voronoi(vWorld * 0.4 + vec2(time * 0.15, time * 0.1));
         float v2 = voronoi(vWorld * 0.35 - vec2(time * 0.12, time * 0.08));
-        // Sharp bright lines at cell edges (where voronoi distance is small)
-        float caustic = pow(1.0 - v1, 4.0) * 0.5 + pow(1.0 - v2, 4.0) * 0.4;
-        // Third finer layer for detail
+        // Subtle caustic lines
+        float caustic = pow(1.0 - v1, 4.0) * 0.2 + pow(1.0 - v2, 4.0) * 0.15;
         float v3 = voronoi(vWorld * 0.8 + vec2(time * 0.08, -time * 0.12));
-        caustic += pow(1.0 - v3, 5.0) * 0.2;
+        caustic += pow(1.0 - v3, 5.0) * 0.08;
 
         // === Shore waves — scale with pool size ===
-        // Small pool (vPoolSize < 0.3): tiny wave band
-        // Large pool (vPoolSize > 0.6): wide wave band
         float waveZone = mix(0.15, 0.8, smoothstep(0.1, 0.7, vPoolSize));
 
-        // Wave runs toward shore, strength proportional to wave zone
         float wavePhase = vShoreDist / max(waveZone, 0.01);
-        float wave = sin(wavePhase * 12.0 + time * 1.2) * 0.5 + 0.5;
-        // Grows approaching shore, fades at the very edge
+        float wave = sin(wavePhase * 8.0 + time * 0.8) * 0.5 + 0.5;
         float waveStrength = smoothstep(1.0, 0.2, wavePhase) * smoothstep(0.0, 0.06, vShoreDist);
-        float foamNoise = noise(vWorld * 0.5 + time * 0.1);
-        float foam = wave * waveStrength * (0.5 + 0.5 * foamNoise);
+        float foamNoise = noise(vWorld * 0.5 + time * 0.08);
+        float foam = wave * waveStrength * (0.3 + 0.4 * foamNoise);
 
         // === Final color ===
-        vec3 col = deepColor + caustic * vec3(0.25, 0.35, 0.4);
-        col = mix(col, foamColor, foam);
+        vec3 col = deepColor + caustic * vec3(0.15, 0.22, 0.28);
+        col = mix(col, foamColor, foam * 0.6);
 
         gl_FragColor = vec4(col, 0.7);
       }
