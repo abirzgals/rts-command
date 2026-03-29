@@ -236,7 +236,7 @@ export function spawnResourceNode(
 ): number {
   const eid = addEntity(world)
 
-  const resY = getTerrainHeight(x, z) + (type === 0 ? 0.8 : 0.6)
+  const resY = getTerrainHeight(x, z)
 
   addComponent(world, Position, eid)
   Position.x[eid] = x

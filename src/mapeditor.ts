@@ -324,7 +324,7 @@ function placeObject(wx: number, wz: number) {
   // Visual
   const pool = getPool(selectedObjPool)
   if (pool) {
-    const idx = pool.add(placedObjects.length + 1000, wx, y + (isResource ? 0.8 : 0), wz, rot)
+    const idx = pool.add(placedObjects.length + 1000, wx, y , wz, rot)
   }
 }
 
@@ -364,8 +364,7 @@ function rebuildObjectVisuals() {
     const obj = placedObjects[i]
     const pool = getPool(obj.poolId)
     if (pool) {
-      const y = getTerrainHeight(obj.x, obj.z) + (obj.type === 'resource' ? 0.8 : 0)
-      pool.add(i + 2000, obj.x, y, obj.z, obj.rotation)
+      const y = getTerrainHeight(obj.x, obj.z)       pool.add(i + 2000, obj.x, y, obj.z, obj.rotation)
     }
   }
 }
@@ -509,8 +508,7 @@ async function onLoad(name?: string) {
     for (const obj of placedObjects) {
       const pool = getPool(obj.poolId)
       if (pool) {
-        const y = getTerrainHeight(obj.x, obj.z) + (obj.type === 'resource' ? 0.8 : 0)
-        pool.add(Math.random() * 10000 | 0, obj.x, y, obj.z, obj.rotation)
+        const y = getTerrainHeight(obj.x, obj.z)         pool.add(Math.random() * 10000 | 0, obj.x, y, obj.z, obj.rotation)
       }
     }
     console.log(`Map "${mapName}" loaded (${objects.length} objects)`)
