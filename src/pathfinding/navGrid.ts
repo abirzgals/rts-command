@@ -13,12 +13,14 @@ export const moveCost = new Float32Array(GRID_RES * GRID_RES)
 export function initNavGrid() {
   for (let i = 0; i < GRID_RES * GRID_RES; i++) {
     const type = terrainType[i]
-    if (type === T_WATER || type === T_CLIFF) {
+    if (type === T_WATER) {
+      // Only water is truly unwalkable
       walkable[i] = 0
       moveCost[i] = 0
     } else {
       walkable[i] = 1
-      moveCost[i] = type === T_ROCK ? 1.5 : 1.0
+      // Cliffs and rocks are walkable but slower
+      moveCost[i] = type === T_CLIFF ? 2.0 : type === T_ROCK ? 1.5 : 1.0
     }
   }
 
