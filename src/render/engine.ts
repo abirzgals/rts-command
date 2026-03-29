@@ -89,8 +89,8 @@ export class RTSCamera {
   distance = 45
   minDistance = 12
   maxDistance = 110
-  // Fixed viewing angle: camera looks from south toward north, tilted down
   pitch = 0.95 // ~55° from horizontal — classic RTS angle
+  yaw = 0      // rotation around Y axis (radians, 0 = looking north)
 
   panSpeed = 40
   edgeMargin = 30
@@ -101,6 +101,7 @@ export class RTSCamera {
   private lastMouseX = 0
   private lastMouseY = 0
   private rmb = false  // right mouse button held
+  private mmb = false  // middle mouse button held (rotate)
   private dragPrevX = 0
   private dragPrevY = 0
 
@@ -109,23 +110,36 @@ export class RTSCamera {
     window.addEventListener('keyup', (e) => this.keys.delete(e.code))
     window.addEventListener('mousedown', (e) => {
       if (e.button === 2) { this.rmb = true; this.dragPrevX = e.clientX; this.dragPrevY = e.clientY }
+      if (e.button === 1) { this.mmb = true; this.dragPrevX = e.clientX; this.dragPrevY = e.clientY; e.preventDefault() }
     })
     window.addEventListener('mouseup', (e) => {
       if (e.button === 2) this.rmb = false
+      if (e.button === 1) this.mmb = false
     })
     window.addEventListener('mousemove', (e) => {
       this.lastMouseX = e.clientX
       this.lastMouseY = e.clientY
-      // Right-click drag → pan camera
+
+      // Middle-click drag → rotate camera
+      if (this.mmb) {
+        const dx = e.clientX - this.dragPrevX
+        this.dragPrevX = e.clientX
+        this.dragPrevY = e.clientY
+        this.yaw -= dx * 0.005
+      }
+
+      // Right-click drag → pan camera (rotated by yaw)
       if (this.rmb) {
         const dx = e.clientX - this.dragPrevX
         const dy = e.clientY - this.dragPrevY
         this.dragPrevX = e.clientX
         this.dragPrevY = e.clientY
-        // Scale pan speed by distance (zoom level)
         const scale = this.distance * 0.003
-        this.target.x -= dx * scale
-        this.target.z -= dy * scale
+        // Pan in screen-aligned directions, accounting for camera rotation
+        const cosY = Math.cos(this.yaw)
+        const sinY = Math.sin(this.yaw)
+        this.target.x -= (dx * cosY + dy * sinY) * scale
+        this.target.z -= (-dx * sinY + dy * cosY) * scale
       }
     })
     window.addEventListener('wheel', (e) => {
@@ -169,8 +183,11 @@ export class RTSCamera {
     // (handled by the game when mouse is at screen edges — optional future addition)
 
     const speed = this.keys.has('ShiftLeft') ? this.panSpeed * 2 : this.panSpeed
-    this.target.x += panX * speed * dt
-    this.target.z += panZ * speed * dt
+    // Rotate pan direction by camera yaw
+    const cosY = Math.cos(this.yaw)
+    const sinY = Math.sin(this.yaw)
+    this.target.x += (panX * cosY + panZ * sinY) * speed * dt
+    this.target.z += (-panX * sinY + panZ * cosY) * speed * dt
 
     // Apply touch pan
     if (touchPanDeltaX !== 0 || touchPanDeltaZ !== 0) {
@@ -188,12 +205,14 @@ export class RTSCamera {
       this.target.y = this.getTerrainHeight(this.target.x, this.target.z)
     }
 
-    // Camera sits behind (south of) and above the target — fixed angle, no yaw rotation
+    // Camera orbits around target: pitch controls elevation, yaw controls rotation
     const offY = Math.sin(this.pitch) * this.distance
-    const offZ = Math.cos(this.pitch) * this.distance // positive Z = south of target
+    const horizDist = Math.cos(this.pitch) * this.distance
+    const offX = Math.sin(this.yaw) * horizDist
+    const offZ = Math.cos(this.yaw) * horizDist
 
     camera.position.set(
-      this.target.x,
+      this.target.x + offX,
       this.target.y + offY,
       this.target.z + offZ,
     )
