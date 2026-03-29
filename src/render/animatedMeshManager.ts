@@ -246,7 +246,8 @@ export class AnimatedMeshManager {
     next.reset()
 
     // One-shot animations (Death, Punch, Shoot) don't loop
-    if (name === 'Death' || name === 'Punch' || name === 'Shoot_OneHanded' || name === 'Shoot' || name === 'PickUp') {
+    // PickUp loops when used for gathering/building
+    if (name === 'Death' || name === 'Punch' || name === 'Shoot_OneHanded' || name === 'Shoot') {
       next.setLoop(THREE.LoopOnce, 1)
       next.clampWhenFinished = true
     } else {

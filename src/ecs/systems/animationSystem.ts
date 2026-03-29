@@ -39,7 +39,10 @@ export function animationSystem(world: IWorld, _dt: number) {
 
       if (state === 2) {
         anim = 'PickUp'
-      } else if (isMoving) {
+      } else if (state === 5) {
+        anim = 'PickUp' // building animation
+      } else if (state === 1 || state === 3 || state === 4 || isMoving) {
+        // States 1,3,4 = moving (to resource, returning, to build site)
         anim = carrying ? 'Run_Carry' : 'Run'
       } else {
         anim = 'Idle'
