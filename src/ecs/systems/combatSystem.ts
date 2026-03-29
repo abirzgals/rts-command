@@ -6,14 +6,14 @@ import {
 } from '../components'
 import { spawnProjectile, spawnArcProjectile } from '../archetypes'
 import { UnitTypeC } from '../components'
-import { UT_TANK, UT_JEEP } from '../../game/config'
+import { UT_TANK, UT_JEEP, UT_ROCKET } from '../../game/config'
 import { spawnMuzzleFlash } from '../../render/effects'
 import { spatialHash } from '../../globals'
 import { editorConfig } from '../../render/meshPools'
 import { getAnimManager } from '../../render/animatedMeshManager'
 import { MeshRef } from '../components'
 
-const UT_TO_KEY: Record<number, string> = { 0: 'worker', 1: 'marine', 2: 'tank', 3: 'jeep' }
+const UT_TO_KEY: Record<number, string> = { 0: 'worker', 1: 'marine', 2: 'tank', 3: 'jeep', 4: 'rocket' }
 
 const combatQuery = defineQuery([Position, AttackC, Faction])
 const _nearby: number[] = []
@@ -145,7 +145,8 @@ function tryAttack(world: IWorld, attacker: number, target: number, dist: number
   if (range > 2) {
     const px = Position.x[attacker]
     const pz = Position.z[attacker]
-    const isTank = hasComponent(world, UnitTypeC, attacker) && UnitTypeC.id[attacker] === UT_TANK
+    const utId = hasComponent(world, UnitTypeC, attacker) ? UnitTypeC.id[attacker] : -1
+    const isTank = utId === UT_TANK || utId === UT_ROCKET
     const splash = AttackC.splash[attacker]
     const fp = getFirePoint(world, attacker)
 

@@ -157,7 +157,7 @@ function updateActionButtons(world: IWorld, eid: number) {
         const udef = UNIT_DEFS[unitType]
         if (!udef) continue
         const btn = createActionButton(
-          unitType === 0 ? '👷' : unitType === 1 ? '🔫' : unitType === 3 ? '🚙' : '🚀',
+          unitType === 0 ? '👷' : unitType === 1 ? '🔫' : unitType === 3 ? '🚙' : unitType === 4 ? '🚀' : '🛡️',
           `${udef.name} (Q)`,
           `${udef.cost.minerals}m ${udef.cost.gas > 0 ? udef.cost.gas + 'g' : ''}`,
           () => queueProduction(eid, unitType),

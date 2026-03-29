@@ -19,7 +19,7 @@ import { blockCells } from '../pathfinding/navGrid'
 import { createResourceEffect } from '../render/effects'
 
 // Map unit meshPool IDs → editor config keys
-const UNIT_POOL_TO_KEY: Record<number, string> = { 0: 'worker', 1: 'marine', 2: 'tank', 3: 'jeep' }
+const UNIT_POOL_TO_KEY: Record<number, string> = { 0: 'worker', 1: 'marine', 2: 'tank', 3: 'jeep', 4: 'rocket' }
 
 /** Read a stat from editorConfig (if available), falling back to UnitDef value */
 function cfgStat(def: UnitDef, key: string): number {

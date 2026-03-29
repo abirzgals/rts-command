@@ -262,13 +262,16 @@ export async function createMeshPools() {
   tankMgr.alignToTerrain = true
   const jeepMgr = new AnimatedMeshManager('/models/jeep.glb', cfg('jeep', 1.0), rot('jeep', 0))
   jeepMgr.alignToTerrain = true
+  const rocketMgr = new AnimatedMeshManager('/models/rocket-tank.glb', cfg('rocket', 0.8), rot('rocket', Math.PI))
+  rocketMgr.alignToTerrain = true
 
-  await Promise.all([workerMgr.load(), marineMgr.load(), tankMgr.load(), jeepMgr.load()])
+  await Promise.all([workerMgr.load(), marineMgr.load(), tankMgr.load(), jeepMgr.load(), rocketMgr.load()])
 
   registerAnimManager(0, workerMgr)
   registerAnimManager(1, marineMgr)
   registerAnimManager(2, tankMgr)
   registerAnimManager(3, jeepMgr)
+  registerAnimManager(4, rocketMgr)
 
   // Load static .glb models in parallel for buildings/resources/obstacles
   const models = await loadModels([
