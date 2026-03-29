@@ -22,7 +22,7 @@ import { getPath, removePath } from '../../pathfinding/pathStore'
 import { resetPathAttempt } from './pathfindingSystem'
 import { getTerrainHeight, getTerrainTypeAt, T_WATER, worldToGrid, GRID_RES } from '../../terrain/heightmap'
 import { isWorldWalkable, dynamicCost, slopeData, BUILDING_BLOCK_THRESHOLD, getClearanceAt } from '../../pathfinding/navGrid'
-import { worldToGrid as wToG, GRID_RES as GR } from '../../terrain/heightmap'
+import { worldToGrid as wToG, GRID_RES as GR, gridToWorld } from '../../terrain/heightmap'
 import { spatialHash } from '../../globals'
 import { telemetry } from '../../debug/movementTelemetry'
 
@@ -83,8 +83,45 @@ function checkFootprint(x: number, z: number, radius: number, maxSl: number): bo
 // ── Main movement system ─────────────────────────────────────
 export function movementSystem(world: IWorld, dt: number) {
 
-  // ── 1. Unit separation: push overlapping units apart ───────
+  // ── 0. Auto-escape: if unit is on blocked terrain with no orders, push out ──
   const allUnits = unitQuery(world)
+  for (const eid of allUnits) {
+    if (hasComponent(world, IsBuilding, eid)) continue
+    if (hasComponent(world, Dead, eid)) continue
+    if (hasComponent(world, Projectile, eid)) continue
+    if (hasComponent(world, MoveTarget, eid)) continue
+    if (hasComponent(world, PathFollower, eid)) continue
+
+    const px = Position.x[eid]
+    const pz = Position.z[eid]
+    const r = hasComponent(world, CollisionRadius, eid) ? CollisionRadius.value[eid] : 0.4
+    const sl = hasComponent(world, MaxSlope, eid) ? MaxSlope.value[eid] : 100
+
+    if (!checkFootprint(px, pz, r * 0.6, sl)) {
+      // Unit is stuck on blocked terrain with no orders — find nearest walkable
+      const [gx, gz] = wToG(px, pz)
+      for (let ring = 1; ring < 10; ring++) {
+        let found = false
+        for (let d = -ring; d <= ring && !found; d++) {
+          for (const [ox, oz] of [[d, -ring], [d, ring], [-ring, d], [ring, d]]) {
+            const nx = gx + ox, nz = gz + oz
+            if (nx < 0 || nx >= GR || nz < 0 || nz >= GR) continue
+            const [wx, wz] = gridToWorld(nx, nz)
+            if (checkFootprint(wx, wz, r * 0.6, sl)) {
+              addComponent(world, MoveTarget, eid)
+              MoveTarget.x[eid] = wx
+              MoveTarget.z[eid] = wz
+              found = true
+              break
+            }
+          }
+        }
+        if (found) break
+      }
+    }
+  }
+
+  // ── 1. Unit separation: push overlapping units apart ───────
   for (const eid of allUnits) {
     if (hasComponent(world, IsBuilding, eid)) continue
     if (hasComponent(world, Dead, eid)) continue
