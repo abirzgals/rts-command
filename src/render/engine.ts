@@ -120,12 +120,14 @@ export class RTSCamera {
       this.lastMouseX = e.clientX
       this.lastMouseY = e.clientY
 
-      // Middle-click drag → rotate camera
+      // Middle-click drag → rotate (X) + pitch (Y)
       if (this.mmb) {
         const dx = e.clientX - this.dragPrevX
+        const dy = e.clientY - this.dragPrevY
         this.dragPrevX = e.clientX
         this.dragPrevY = e.clientY
         this.yaw -= dx * 0.005
+        this.pitch = Math.max(0.3, Math.min(1.5, this.pitch + dy * 0.005))
       }
 
       // Right-click drag → pan camera (rotated by yaw)
