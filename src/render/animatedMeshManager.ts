@@ -139,36 +139,24 @@ export class AnimatedMeshManager {
       }
     })
 
-    // Create occlusion silhouette for all mesh types
+    // Occlusion ghost — only for skinned meshes (infantry with skeleton)
+    // Non-skinned models (vehicles) skip ghost — stencil/depth issues
     const occGroup = new THREE.Group()
+    let hasSkinned = false
     clone.traverse((child) => {
-      if ((child as THREE.Mesh).isMesh) {
-        const mesh = child as THREE.Mesh
-        if ((mesh as THREE.SkinnedMesh).isSkinnedMesh) {
-          const skinned = mesh as THREE.SkinnedMesh
-          const occ = new THREE.SkinnedMesh(skinned.geometry, occlusionMat)
-          occ.skeleton = skinned.skeleton
-          occ.bindMatrix.copy(skinned.bindMatrix)
-          occ.bindMatrixInverse.copy(skinned.bindMatrixInverse)
-          occ.renderOrder = 999
-          occ.frustumCulled = false
-          occGroup.add(occ)
-        } else {
-          // Non-skinned: parent the ghost to the SAME parent as the original
-          // so it inherits the correct local transform
-          const occ = new THREE.Mesh(mesh.geometry, occlusionMat)
-          occ.position.copy(mesh.position)
-          occ.rotation.copy(mesh.rotation)
-          occ.scale.copy(mesh.scale)
-          occ.renderOrder = 999
-          occ.frustumCulled = false
-          // Add to the same parent so transforms match
-          if (mesh.parent) mesh.parent.add(occ)
-          else occGroup.add(occ)
-        }
+      if ((child as THREE.SkinnedMesh).isSkinnedMesh) {
+        hasSkinned = true
+        const skinned = child as THREE.SkinnedMesh
+        const occ = new THREE.SkinnedMesh(skinned.geometry, occlusionMat)
+        occ.skeleton = skinned.skeleton
+        occ.bindMatrix.copy(skinned.bindMatrix)
+        occ.bindMatrixInverse.copy(skinned.bindMatrixInverse)
+        occ.renderOrder = 999
+        occ.frustumCulled = false
+        occGroup.add(occ)
       }
     })
-    clone.add(occGroup)
+    if (hasSkinned) clone.add(occGroup)
 
     this.units.set(eid, { mesh: clone, mixer, actions, currentAnim: 'Idle', turretBone, barrelBone, occlusionGroup: occGroup })
     return 0
