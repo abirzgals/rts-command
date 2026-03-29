@@ -9,8 +9,19 @@ import { scene } from '../render/engine'
 export let terrainMesh: THREE.Mesh
 export let waterMesh: THREE.Mesh
 
+// Track custom texture URLs — survives mesh rebuilds
+const textureOverrides: Record<string, string> = {}
+
+/** Get the URL for a terrain texture slot (custom or default) */
+function getTextureUrl(slot: string): string {
+  return textureOverrides[slot] || `/textures/${slot}.jpg`
+}
+
 /** Replace a terrain texture at runtime (slot: 'grass'|'dirt'|'rock'|'cliff') */
 export function replaceTerrainTexture(slot: string, url: string) {
+  // Save override so it persists through mesh rebuilds
+  textureOverrides[slot] = url
+
   if (!terrainMesh) return
   const mat = terrainMesh.material as THREE.ShaderMaterial
   const uniformName = 'tex' + slot.charAt(0).toUpperCase() + slot.slice(1)
@@ -21,7 +32,6 @@ export function replaceTerrainTexture(slot: string, url: string) {
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping
   tex.minFilter = THREE.LinearMipmapLinearFilter
   tex.colorSpace = THREE.SRGBColorSpace
-  // Dispose old texture
   if (uniform.value) uniform.value.dispose()
   uniform.value = tex
 }
@@ -45,10 +55,10 @@ export function createTerrainMesh(): THREE.Mesh {
     return t
   }
 
-  const texGrass = loadTex('/textures/grass.jpg')
-  const texDirt  = loadTex('/textures/dirt.jpg')
-  const texRock  = loadTex('/textures/rock.jpg')
-  const texCliff = loadTex('/textures/cliff.jpg')
+  const texGrass = loadTex(getTextureUrl('grass'))
+  const texDirt  = loadTex(getTextureUrl('dirt'))
+  const texRock  = loadTex(getTextureUrl('rock'))
+  const texCliff = loadTex(getTextureUrl('cliff'))
   // Geometry with per-vertex splat weights (no texture UV issues)
   const geo = new THREE.PlaneGeometry(MAP_SIZE, MAP_SIZE, GRID_RES - 1, GRID_RES - 1)
   geo.rotateX(-Math.PI / 2)
