@@ -17,8 +17,12 @@
     "collisionRadius": 0.4,
     "firePoint": {
       "x": 0,
-      "y": 1.2,
-      "z": 0.5
+      "y": 0.3,
+      "z": 0.05,
+      "boneName": "FistR",
+      "normalX": 0.278511966650414,
+      "normalY": 0.08918326358784918,
+      "normalZ": 0.9562831327218624
     },
     "muzzle": {
       "color": "#ffaa44",
@@ -71,11 +75,11 @@
     "cooldown": 0.8,
     "splash": 0,
     "selectionRadius": 0.4,
-    "collisionRadius": 0.4,
+    "collisionRadius": 0.7,
     "firePoint": {
-      "x": 0.00424235371917614,
-      "y": 0.3353649793783039,
-      "z": 0.08541069368868115,
+      "x": 0,
+      "y": 0.35,
+      "z": 0.1,
       "boneName": "FistR",
       "normalX": 0.27851122043333854,
       "normalY": -0.20598559410906087,
@@ -134,9 +138,9 @@
     "selectionRadius": 1.2,
     "collisionRadius": 1.2,
     "firePoint": {
-      "x": -0.0024900318242595536,
-      "y": 3.0550001859664917,
-      "z": 0.020923990147011077,
+      "x": 0,
+      "y": 3.05,
+      "z": 0,
       "boneName": "Barrel_1",
       "normalX": -0.0000026535897958491372,
       "normalY": 3.4228548557072734e-8,

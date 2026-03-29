@@ -84,6 +84,32 @@ export function spawnMuzzleFlash(x: number, y: number, z: number) {
   muzzleFlashes.push({ light, life: 0.1 })
 }
 
+// ── Move target marker (green ring that fades) ─────────────
+
+interface TargetMarker {
+  ring: THREE.Mesh
+  life: number
+}
+
+const targetMarkers: TargetMarker[] = []
+
+export function spawnMoveMarker(x: number, y: number, z: number) {
+  const geo = new THREE.RingGeometry(0.3, 0.6, 24)
+  geo.rotateX(-Math.PI / 2)
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0x44ff66,
+    transparent: true,
+    opacity: 0.8,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  })
+  const ring = new THREE.Mesh(geo, mat)
+  ring.position.set(x, y + 0.15, z)
+  ring.renderOrder = 50
+  scene.add(ring)
+  targetMarkers.push({ ring, life: 2.0 })
+}
+
 // ── Tank death explosion + debris ───────────────────────────
 interface Debris {
   mesh: THREE.Mesh
@@ -259,5 +285,22 @@ export function updateEffects(dt: number) {
       }
       mat.opacity = remaining
     }
+  }
+
+  // Target markers (move command indicators)
+  for (let i = targetMarkers.length - 1; i >= 0; i--) {
+    const m = targetMarkers[i]
+    m.life -= dt
+    if (m.life <= 0) {
+      scene.remove(m.ring)
+      m.ring.geometry.dispose()
+      ;(m.ring.material as THREE.Material).dispose()
+      targetMarkers.splice(i, 1)
+      continue
+    }
+    // Shrink and fade
+    const t = m.life / 2.0
+    ;(m.ring.material as THREE.MeshBasicMaterial).opacity = t * 0.8
+    m.ring.scale.setScalar(0.5 + t * 0.5)
   }
 }

@@ -13,6 +13,7 @@ import {
 import { gameState } from '../game/state'
 import { raycastGround, camera } from '../render/engine'
 import { toggleDebug } from '../render/debugOverlay'
+import { spawnMoveMarker } from '../render/effects'
 import { spawnBuilding } from '../ecs/archetypes'
 import { spatialHash } from '../globals'
 
@@ -226,6 +227,9 @@ function handleRightClick(world: IWorld, sx: number, sy: number) {
 
   const selected = selectedQuery(world)
   if (selected.length === 0) return
+
+  // Show target marker
+  spawnMoveMarker(hit.x, hit.y, hit.z)
 
   // Check if right-clicked on an enemy or resource
   const nearby: number[] = []

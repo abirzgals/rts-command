@@ -44,6 +44,7 @@ import { animationSystem } from './ecs/systems/animationSystem'
 import { updateAllAnimations } from './render/animatedMeshManager'
 import { updateEffects } from './render/effects'
 import { initHPBars, updateHPBars } from './render/hpBars'
+import { spawnMoveMarker } from './render/effects'
 import { initDebugOverlay, updateDebugOverlay } from './render/debugOverlay'
 import { initSharedButtons } from './ui/sharedButtons'
 
@@ -599,6 +600,9 @@ function onCanvasClick(e: MouseEvent) {
 function onRightClick(e: MouseEvent) {
   const pos = raycastCanvasToGround(e.clientX, e.clientY)
   if (!pos) return
+
+  // Show target marker
+  spawnMoveMarker(pos.x, pos.y, pos.z)
 
   // Find enemy near click point
   const nearby: number[] = []
