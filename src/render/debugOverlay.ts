@@ -57,16 +57,22 @@ let unitInfoDiv: HTMLDivElement | null = null
 
 export function isDebugEnabled() { return enabled }
 
+/** Force rebuild nav grid overlay (call after terrain changes) */
+export function invalidateDebugOverlay() {
+  if (navGridMesh) { scene.remove(navGridMesh); navGridMesh.geometry.dispose(); (navGridMesh.material as THREE.Material).dispose(); navGridMesh = null }
+  if (enabled) buildNavGridOverlay()
+}
+
 export function toggleDebug() {
   enabled = !enabled
   if (pathLines) pathLines.visible = enabled
   if (stateSprites) stateSprites.visible = enabled
   if (colliderLines) colliderLines.visible = enabled
 
-  // Build nav grid overlay on first enable
-  if (enabled && !navGridBuilt) {
+  // Build/rebuild nav grid overlay
+  if (enabled) {
+    if (navGridMesh) { scene.remove(navGridMesh); navGridMesh.geometry.dispose(); (navGridMesh.material as THREE.Material).dispose(); navGridMesh = null }
     buildNavGridOverlay()
-    navGridBuilt = true
   }
   if (navGridMesh) navGridMesh.visible = enabled
   if (!enabled && unitInfoDiv) unitInfoDiv.style.display = 'none'

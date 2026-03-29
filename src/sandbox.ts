@@ -48,7 +48,7 @@ import { updateAllAnimations } from './render/animatedMeshManager'
 import { updateEffects } from './render/effects'
 import { initHPBars, updateHPBars } from './render/hpBars'
 import { spawnMoveMarker } from './render/effects'
-import { initDebugOverlay, updateDebugOverlay } from './render/debugOverlay'
+import { initDebugOverlay, updateDebugOverlay, invalidateDebugOverlay } from './render/debugOverlay'
 import { initSharedButtons } from './ui/sharedButtons'
 
 // ── ECS Components (for selection / deletion) ───────────────────────────────
@@ -305,6 +305,7 @@ function regenerateMap() {
   // 5. Reinit navigation grid + sector graph
   initNavGrid()
   buildSectorGraph()
+  invalidateDebugOverlay()
 }
 
 function loadMazeTest() {
@@ -337,6 +338,7 @@ function loadMazeTest() {
   // 5. Rebuild nav + sectors
   initNavGrid()
   buildSectorGraph()
+  invalidateDebugOverlay()
 
   // 6. Spawn units
   const TYPE_MAP = { worker: UT_WORKER, marine: UT_MARINE, tank: UT_TANK } as const

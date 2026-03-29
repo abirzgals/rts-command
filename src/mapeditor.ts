@@ -13,6 +13,7 @@ import { applyPreset, type PresetName } from './terrain/terrainPresets'
 import { applyBrush, type BrushTool, type BrushSettings } from './terrain/terrainEditor'
 import { serializeCurrentMap, loadMapIntoTerrain, fetchMapList, fetchMap, saveMap, deleteMap, type MapObject, type SpawnPoints } from './terrain/mapData'
 import { initSharedButtons } from './ui/sharedButtons'
+import { invalidateDebugOverlay } from './render/debugOverlay'
 
 // ── State ────────────────────────────────────────────────────
 
@@ -111,6 +112,7 @@ function rebuildTerrain() {
   setGroundPlane(tmesh)
   initNavGrid()
   buildSectorGraph()
+  invalidateDebugOverlay()
 }
 
 // ── Spawn markers ────────────────────────────────────────────
