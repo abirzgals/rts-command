@@ -303,4 +303,149 @@ export function updateEffects(dt: number) {
     ;(m.ring.material as THREE.MeshBasicMaterial).opacity = t * 0.8
     m.ring.scale.setScalar(0.5 + t * 0.5)
   }
+
+  // ── Resource effects (crystals + gas) ─────────────────────
+  updateResourceEffects(dt)
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Resource node ambient effects
+// ═══════════════════════════════════════════════════════════════
+
+interface ResourceFX {
+  light: THREE.PointLight
+  particles: THREE.Points
+  positions: Float32Array
+  velocities: Float32Array // vy per particle
+  lives: Float32Array
+  maxLife: Float32Array
+  count: number
+  type: number // 0=mineral, 1=gas
+  baseX: number
+  baseY: number
+  baseZ: number
+}
+
+const resourceEffects: ResourceFX[] = []
+
+const MINERAL_PARTICLE_COUNT = 20
+const GAS_PARTICLE_COUNT = 15
+
+/** Create ambient effects for a resource node */
+export function createResourceEffect(x: number, y: number, z: number, type: number) {
+  const isMinerals = type === 0
+
+  // Point light: cyan glow for minerals, green for gas
+  const light = new THREE.PointLight(
+    isMinerals ? 0x44ccff : 0x44ff66,
+    isMinerals ? 3 : 2,
+    isMinerals ? 8 : 6,
+  )
+  light.position.set(x, y + 1.0, z)
+  scene.add(light)
+
+  // Sparkle/steam particles
+  const count = isMinerals ? MINERAL_PARTICLE_COUNT : GAS_PARTICLE_COUNT
+  const positions = new Float32Array(count * 3)
+  const velocities = new Float32Array(count)
+  const lives = new Float32Array(count)
+  const maxLife = new Float32Array(count)
+
+  // Initialize particles at random positions around the resource
+  for (let i = 0; i < count; i++) {
+    resetParticle(i, positions, velocities, lives, maxLife, x, y, z, isMinerals)
+  }
+
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+
+  const mat = new THREE.PointsMaterial({
+    size: isMinerals ? 0.15 : 0.25,
+    color: isMinerals ? 0x88eeff : 0x88ff88,
+    transparent: true,
+    opacity: 0.8,
+    depthWrite: false,
+    sizeAttenuation: true,
+    blending: THREE.AdditiveBlending,
+  })
+
+  const particles = new THREE.Points(geo, mat)
+  particles.frustumCulled = false
+  scene.add(particles)
+
+  resourceEffects.push({
+    light, particles, positions, velocities, lives, maxLife,
+    count, type, baseX: x, baseY: y, baseZ: z,
+  })
+}
+
+function resetParticle(
+  i: number, pos: Float32Array, vel: Float32Array,
+  lives: Float32Array, maxL: Float32Array,
+  bx: number, by: number, bz: number,
+  isMinerals: boolean,
+) {
+  const i3 = i * 3
+  if (isMinerals) {
+    // Sparkles: float up from crystal tips
+    pos[i3] = bx + (Math.random() - 0.5) * 1.2
+    pos[i3 + 1] = by + Math.random() * 0.8
+    pos[i3 + 2] = bz + (Math.random() - 0.5) * 1.2
+    vel[i] = 0.3 + Math.random() * 0.6 // upward speed
+    maxL[i] = 1.0 + Math.random() * 2.0
+  } else {
+    // Gas steam: rise from vent
+    pos[i3] = bx + (Math.random() - 0.5) * 0.5
+    pos[i3 + 1] = by + 0.5 + Math.random() * 0.3
+    pos[i3 + 2] = bz + (Math.random() - 0.5) * 0.5
+    vel[i] = 0.5 + Math.random() * 1.0
+    maxL[i] = 1.5 + Math.random() * 2.0
+  }
+  lives[i] = Math.random() * maxL[i] // stagger starts
+}
+
+function updateResourceEffects(dt: number) {
+  for (const fx of resourceEffects) {
+    const isMinerals = fx.type === 0
+
+    // Animate light intensity (pulsing glow)
+    const pulse = Math.sin(performance.now() * 0.002 + fx.baseX) * 0.3 + 0.7
+    fx.light.intensity = (isMinerals ? 3 : 2) * pulse
+
+    // Update particles
+    const pos = fx.positions
+    for (let i = 0; i < fx.count; i++) {
+      fx.lives[i] += dt
+      const i3 = i * 3
+
+      if (fx.lives[i] >= fx.maxLife[i]) {
+        // Respawn
+        resetParticle(i, pos, fx.velocities, fx.lives, fx.maxLife, fx.baseX, fx.baseY, fx.baseZ, isMinerals)
+        fx.lives[i] = 0
+        continue
+      }
+
+      const t = fx.lives[i] / fx.maxLife[i]
+
+      // Move upward
+      pos[i3 + 1] += fx.velocities[i] * dt
+
+      if (isMinerals) {
+        // Sparkles drift slightly sideways + twinkle
+        pos[i3] += Math.sin(fx.lives[i] * 3 + i) * 0.1 * dt
+        pos[i3 + 2] += Math.cos(fx.lives[i] * 2.5 + i * 0.7) * 0.1 * dt
+      } else {
+        // Gas spreads out as it rises
+        pos[i3] += (Math.random() - 0.5) * 0.3 * dt
+        pos[i3 + 2] += (Math.random() - 0.5) * 0.3 * dt
+      }
+    }
+
+    // Update geometry
+    ;(fx.particles.geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true
+
+    // Fade material based on average particle life
+    const mat = fx.particles.material as THREE.PointsMaterial
+    mat.opacity = isMinerals ? 0.7 + pulse * 0.3 : 0.4 + pulse * 0.2
+  }
 }

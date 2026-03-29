@@ -16,6 +16,7 @@ import { getAnimManager } from '../render/animatedMeshManager'
 import { spatialHash } from '../globals'
 import { getTerrainHeight } from '../terrain/heightmap'
 import { blockCells } from '../pathfinding/navGrid'
+import { createResourceEffect } from '../render/effects'
 
 // Map unit meshPool IDs → editor config keys
 const UNIT_POOL_TO_KEY: Record<number, string> = { 0: 'worker', 1: 'marine', 2: 'tank' }
@@ -263,6 +264,9 @@ export function spawnResourceNode(
     const idx = pool.add(eid, x, resY, z, Math.random() * Math.PI * 2)
     MeshRef.instanceIdx[eid] = idx
   }
+
+  // Ambient glow + sparkle/steam particles
+  createResourceEffect(x, resY, z, type)
 
   spatialHash.insert(eid, x, z)
 

@@ -294,8 +294,9 @@ export async function createMeshPools() {
 
   // ── Resource pools (IDs 20-21) ───────────────
   const mineralMat = new THREE.MeshPhongMaterial({
-    color: 0x4fc3f7, emissive: 0x1a5070, emissiveIntensity: 0.4,
-    shininess: 80, flatShading: true,
+    color: 0x66d9ff, emissive: 0x2288cc, emissiveIntensity: 0.6,
+    shininess: 120, flatShading: true,
+    transparent: true, opacity: 0.75,
   })
   registerPool(20, new MeshPool(geo('gold', createMineralGeometry), mat('gold', mineralMat), MAX_RESOURCES, SHADOWS))
 
