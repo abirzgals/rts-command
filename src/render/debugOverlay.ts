@@ -94,7 +94,7 @@ export function toggleDebug() {
       <small>Select unit: shows speed/turn/slope info</small>
     `
     Object.assign(legend.style, {
-      position: 'absolute', top: '44px', left: '8px',
+      position: 'absolute', top: '44px', right: '8px',
       background: 'rgba(0,0,0,0.75)', color: '#ddd',
       padding: '8px 12px', borderRadius: '6px',
       fontSize: '12px', lineHeight: '1.6', zIndex: '30',
@@ -372,7 +372,7 @@ export function updateDebugOverlay(world: IWorld) {
       unitInfoDiv = document.createElement('div')
       unitInfoDiv.id = 'debug-unit-info'
       Object.assign(unitInfoDiv.style, {
-        position: 'absolute', top: '44px', right: '8px',
+        position: 'absolute', top: '240px', right: '8px',
         background: 'rgba(0,0,0,0.8)', color: '#ddd',
         padding: '8px 12px', borderRadius: '6px',
         fontSize: '12px', lineHeight: '1.5', zIndex: '30',
