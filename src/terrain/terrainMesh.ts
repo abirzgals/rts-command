@@ -285,14 +285,16 @@ function createWater() {
         // Discard land vertices
         if (vIsWater < 0.5) discard;
 
-        // Shore foam: vShoreDist is 0.0 at nearest shore, 1.0 = far from shore
-        // Foam band: full strength at dist < 0.3, fading to 0 at 0.7
-        float shore = 1.0 - smoothstep(0.1, 0.7, vShoreDist);
-
-        // Animated foam at shore — strong and visible
-        float foamWave = sin(vShoreDist * 40.0 - time * 3.0) * 0.5 + 0.5;
+        // Wave runs FROM deep water TOWARD shore and fades at the edge
+        // vShoreDist: 0 = at shore, 1 = deep water
+        // Wave moves in -vShoreDist direction (toward shore = decreasing dist)
+        float wave = sin(vShoreDist * 50.0 + time * 2.5) * 0.5 + 0.5;
+        // Wave starts faint in deep water, gets stronger approaching shore
+        float waveStrength = smoothstep(0.8, 0.1, vShoreDist);
+        // But fades out right at the shore edge (last 10%)
+        waveStrength *= smoothstep(0.0, 0.08, vShoreDist);
         float foamNoise = noise(vWorld * 0.4 + time * 0.1);
-        float foam = shore * max(foamWave, 0.3) * (0.6 + 0.4 * foamNoise);
+        float foam = wave * waveStrength * (0.6 + 0.4 * foamNoise);
 
         // Caustics
         float c1 = noise(vWorld * 0.2 + vec2(time * 0.08));
