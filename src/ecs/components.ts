@@ -94,6 +94,7 @@ export const Producer = defineComponent({
   duration: Types.f32,
   rallyX: Types.f32,
   rallyZ: Types.f32,
+  rallyTargetEid: Types.ui32, // 0 = ground, >0 = resource node entity
 })
 
 export const SupplyProvider = defineComponent({

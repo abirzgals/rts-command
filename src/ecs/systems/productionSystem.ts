@@ -1,7 +1,7 @@
-import { defineQuery, hasComponent, removeComponent } from 'bitecs'
+import { defineQuery, hasComponent, removeComponent, addComponent } from 'bitecs'
 import type { IWorld } from 'bitecs'
-import { Producer, Position, Faction, IsBuilding, BuildProgress, Health, UnitTypeC, WorkerC, Dead } from '../components'
-import { UNIT_DEFS, BUILDING_DEFS } from '../../game/config'
+import { Producer, Position, Faction, IsBuilding, BuildProgress, Health, UnitTypeC, WorkerC, Dead, MoveTarget, ResourceNode } from '../components'
+import { UNIT_DEFS, BUILDING_DEFS, UT_WORKER } from '../../game/config'
 import { getTerrainHeight } from '../../terrain/heightmap'
 import { gameState } from '../../game/state'
 import { spawnUnit } from '../archetypes'
@@ -30,8 +30,24 @@ export function productionSystem(world: IWorld, dt: number) {
       const faction = Faction.id[eid]
       const rallyX = Producer.rallyX[eid]
       const rallyZ = Producer.rallyZ[eid]
+      const rallyTarget = Producer.rallyTargetEid[eid]
 
-      spawnUnit(world, unitType, faction, rallyX, rallyZ)
+      // Spawn near building, not at rally point
+      const spawnX = Position.x[eid] + 3
+      const spawnZ = Position.z[eid] + 3
+      const newEid = spawnUnit(world, unitType, faction, spawnX, spawnZ)
+
+      // Send to rally point
+      addComponent(world, MoveTarget, newEid)
+      MoveTarget.x[newEid] = rallyX
+      MoveTarget.z[newEid] = rallyZ
+
+      // If worker + rally on resource → auto-gather
+      if (unitType === UT_WORKER && rallyTarget > 0 &&
+          hasComponent(world, ResourceNode, rallyTarget) && !hasComponent(world, Dead, rallyTarget)) {
+        WorkerC.state[newEid] = 1 // movingToResource
+        WorkerC.targetNode[newEid] = rallyTarget
+      }
 
       // Check queue for next item
       const queue = gameState.getQueue(eid)
