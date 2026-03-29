@@ -115,6 +115,42 @@ function rebuildTerrain() {
   invalidateDebugOverlay()
 }
 
+/** Auto-texture: classify terrain type from height + slope */
+function autoTextureFromGeometry() {
+  const G = GRID_RES
+  for (let gz = 0; gz < G; gz++) {
+    for (let gx = 0; gx < G; gx++) {
+      const i = gz * G + gx
+      const h = heightData[i]
+
+      // Compute slope (max height diff to cardinal neighbors)
+      let slope = 0
+      if (gx > 0)   slope = Math.max(slope, Math.abs(h - heightData[i - 1]))
+      if (gx < G-1)  slope = Math.max(slope, Math.abs(h - heightData[i + 1]))
+      if (gz > 0)   slope = Math.max(slope, Math.abs(h - heightData[i - G]))
+      if (gz < G-1)  slope = Math.max(slope, Math.abs(h - heightData[i + G]))
+
+      // Classification rules:
+      if (h < -1.2) {
+        terrainType[i] = T_WATER
+      } else if (slope > 3.0) {
+        terrainType[i] = T_CLIFF
+      } else if (slope > 1.5) {
+        terrainType[i] = T_ROCK
+      } else if (h > 7.0) {
+        terrainType[i] = T_ROCK
+      } else if (h > 4.5) {
+        terrainType[i] = T_DARK_GRASS
+      } else if (h > 2.0) {
+        terrainType[i] = T_DIRT
+      } else {
+        terrainType[i] = T_GRASS
+      }
+    }
+  }
+  rebuildTerrain()
+}
+
 // ── Spawn markers ────────────────────────────────────────────
 
 function createSpawnMarkers() {
@@ -417,6 +453,9 @@ function wireUI() {
     if (mirrorMode === 'none') { alert('Select a symmetry mode first'); return }
     mirrorTerrainNow()
   })
+
+  // Auto-texture button
+  document.getElementById('btn-auto-texture')!.addEventListener('click', autoTextureFromGeometry)
 
   // Paint type buttons
   for (const btn of document.querySelectorAll<HTMLElement>('[data-paint]')) {
