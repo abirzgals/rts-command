@@ -163,6 +163,7 @@ export function createTerrainMesh(): THREE.Mesh {
   })
 
   terrainMesh = new THREE.Mesh(geo, mat)
+  terrainMesh.castShadow = true
   terrainMesh.receiveShadow = true
   scene.add(terrainMesh)
 
@@ -330,20 +331,42 @@ function createWater() {
         float v3 = voronoi(vWorld * 0.8 + vec2(time * 0.08, -time * 0.12));
         caustic += pow(1.0 - v3, 5.0) * 0.08;
 
-        // === Shore waves — scale with pool size ===
+        // === Shore foam — sharp near coast, blurry far away ===
         float waveZone = mix(0.15, 0.8, smoothstep(0.1, 0.7, vPoolSize));
-
         float wavePhase = vShoreDist / max(waveZone, 0.01);
-        float wave = sin(wavePhase * 8.0 + time * 0.8) * 0.5 + 0.5;
-        float waveStrength = smoothstep(1.0, 0.2, wavePhase) * smoothstep(0.0, 0.06, vShoreDist);
-        float foamNoise = noise(vWorld * 0.5 + time * 0.08);
-        float foam = wave * waveStrength * (0.3 + 0.4 * foamNoise);
+
+        // Shore proximity: 1.0 at coast, 0.0 far away
+        float shoreProx = smoothstep(0.6, 0.0, wavePhase) * smoothstep(0.0, 0.03, vShoreDist);
+
+        // Animated wave crest — sharper when close to shore
+        float waveLine = sin(wavePhase * 12.0 + time * 1.2) * 0.5 + 0.5;
+        // Close to shore: sharp (pow 6), far from shore: soft (pow 1.5)
+        float sharpness = mix(1.5, 6.0, smoothstep(0.3, 0.0, vShoreDist));
+        waveLine = pow(waveLine, sharpness);
+
+        // Foam texture: bubbly detail visible near shore, blurred far
+        float detailScale = mix(2.0, 10.0, smoothstep(0.4, 0.0, vShoreDist));
+        float foam1 = noise(vWorld * detailScale + time * 0.12);
+        float foam2 = noise(vWorld * (detailScale * 0.6) - time * 0.08);
+        // Sharp threshold near shore, soft blend far
+        float threshold = mix(0.2, 0.45, smoothstep(0.3, 0.0, vShoreDist));
+        float foamTex = smoothstep(threshold, threshold + 0.15, foam1)
+                       * smoothstep(threshold, threshold + 0.2, foam2);
+
+        // Combine wave + texture
+        float foam = waveLine * shoreProx * mix(0.3, 0.9, foamTex);
+
+        // Hard foam edge right at coastline (always sharp)
+        float edgeFoam = smoothstep(0.06, 0.0, vShoreDist) * 0.8;
+        foam = max(foam, edgeFoam);
 
         // === Final color ===
         vec3 col = deepColor + caustic * vec3(0.15, 0.22, 0.28);
-        col = mix(col, foamColor, foam * 0.6);
+        col = mix(col, foamColor, foam);
 
-        gl_FragColor = vec4(col, 0.7);
+        // Transparency: clear in deep water, opaque at shore foam
+        float alpha = mix(0.45, 0.85, smoothstep(0.5, 0.0, vShoreDist));
+        gl_FragColor = vec4(col, alpha);
       }
     `,
     transparent: true, depthWrite: false, side: THREE.DoubleSide,
