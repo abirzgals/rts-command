@@ -30,8 +30,8 @@ interface AnimatedUnit {
 
 // Occluded silhouette material:
 // - depthFunc GreaterDepth: only draw where something is in front
-// - stencilFunc NotEqual(1): skip pixels already marked as "unit"
-// This means ghosts show through trees/rocks/terrain but NOT through units
+// - stencilFunc NotEqual(1): skip pixels marked as "unit"
+// - polygonOffset pushes ghost slightly back to avoid self z-fighting
 const occlusionMat = new THREE.MeshBasicMaterial({
   color: 0x44aaff,
   transparent: true,
@@ -42,6 +42,9 @@ const occlusionMat = new THREE.MeshBasicMaterial({
   stencilFunc: THREE.NotEqualStencilFunc,
   stencilRef: 1,
   stencilFuncMask: 0xff,
+  polygonOffset: true,
+  polygonOffsetFactor: 1,
+  polygonOffsetUnits: 1,
 })
 
 /**
