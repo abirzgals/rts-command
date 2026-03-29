@@ -260,11 +260,12 @@ export function movementSystem(world: IWorld, dt: number) {
       }
     }
 
-    // Yield: if another unit is closer to the same waypoint, wait
-    const unitRadius = hasComponent(world, CollisionRadius, eid) ? CollisionRadius.value[eid] : 0.4
+    // Yield: only near the waypoint (within 4x radius) and if colliding
     _nearby.length = 0
-    spatialHash.query(px, pz, unitRadius * 3, _nearby)
+    const yieldRange = unitRadius * 4
     let shouldYield = false
+    if (dist < yieldRange) {  // only check when close to waypoint
+    spatialHash.query(px, pz, unitRadius * 3, _nearby)
     for (const other of _nearby) {
       if (other === eid) continue
       if (hasComponent(world, Dead, other)) continue
@@ -285,6 +286,7 @@ export function movementSystem(world: IWorld, dt: number) {
         break
       }
     }
+    } // end yield-range check
     if (shouldYield) {
       // Wait: don't move this frame, let the closer unit pass
       Velocity.x[eid] = 0; Velocity.z[eid] = 0
