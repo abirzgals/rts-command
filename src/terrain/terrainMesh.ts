@@ -285,13 +285,14 @@ function createWater() {
         // Discard land vertices
         if (vIsWater < 0.5) discard;
 
-        // Shore foam: only within ~3 cells of land (vShoreDist 0 to 0.6)
-        float shore = 1.0 - smoothstep(0.0, 0.5, vShoreDist);
+        // Shore foam: vShoreDist is 0.0 at nearest shore, 1.0 = far from shore
+        // Foam band: full strength at dist < 0.3, fading to 0 at 0.7
+        float shore = 1.0 - smoothstep(0.1, 0.7, vShoreDist);
 
-        // Animated foam at shore
-        float foamWave = sin(shore * 12.0 - time * 2.0) * 0.5 + 0.5;
-        float foamNoise = noise(vWorld * 0.5 + time * 0.12);
-        float foam = shore * (0.4 + 0.6 * foamWave) * (0.5 + 0.5 * foamNoise);
+        // Animated foam at shore — strong and visible
+        float foamWave = sin(vShoreDist * 40.0 - time * 3.0) * 0.5 + 0.5;
+        float foamNoise = noise(vWorld * 0.4 + time * 0.1);
+        float foam = shore * max(foamWave, 0.3) * (0.6 + 0.4 * foamNoise);
 
         // Caustics
         float c1 = noise(vWorld * 0.2 + vec2(time * 0.08));
@@ -299,7 +300,7 @@ function createWater() {
         float caustic = pow(c1 * c2, 1.5) * 0.2;
 
         vec3 col = deepColor + caustic * vec3(0.15, 0.2, 0.25);
-        col = mix(col, foamColor, foam * 0.8);
+        col = mix(col, foamColor, foam);
 
         gl_FragColor = vec4(col, 0.7);
       }
