@@ -28,6 +28,10 @@ let spawnMarkers: THREE.Mesh[] = []
 let selectedObjPool = 20 // minerals by default
 let selectedSpawn: 'player' | 'enemy' = 'player'
 
+// Mirror modes: paint/place on one half, auto-mirror to the other
+type MirrorMode = 'none' | 'lr' | 'tb' | 'diag'
+let mirrorMode: MirrorMode = 'none'
+
 let isPainting = false
 let lastTime = 0
 
@@ -154,22 +158,73 @@ function raycastGround(clientX: number, clientY: number): THREE.Vector3 | null {
   return target
 }
 
+// ── Mirror helpers ───────────────────────────────────────────
+
+/** Get mirrored world coordinates based on current mirror mode */
+function getMirrorPoints(wx: number, wz: number): [number, number][] {
+  const points: [number, number][] = [[wx, wz]]
+  if (mirrorMode === 'lr') points.push([-wx, wz])     // flip X
+  if (mirrorMode === 'tb') points.push([wx, -wz])      // flip Z
+  if (mirrorMode === 'diag') points.push([-wx, -wz])   // flip both (180° rotation)
+  return points
+}
+
+/** Mirror entire terrain: copy one half onto the other */
+function mirrorTerrainNow() {
+  const H = GRID_RES, MID = H / 2
+  for (let gz = 0; gz < H; gz++) {
+    for (let gx = 0; gx < H; gx++) {
+      let sgx = gx, sgz = gz // source grid coords
+      if (mirrorMode === 'lr' && gx >= MID) sgx = H - 1 - gx
+      else if (mirrorMode === 'tb' && gz >= MID) sgz = H - 1 - gz
+      else if (mirrorMode === 'diag' && (gx + gz >= H - 1)) { sgx = H - 1 - gx; sgz = H - 1 - gz }
+      else continue // this cell IS the source — skip
+
+      const si = sgz * H + sgx
+      const di = gz * H + gx
+      heightData[di] = heightData[si]
+      terrainType[di] = terrainType[si]
+    }
+  }
+  // Also mirror objects
+  const mirrored: MapObject[] = []
+  for (const obj of placedObjects) {
+    const pts = getMirrorPoints(obj.x, obj.z)
+    if (pts.length > 1) {
+      mirrored.push({ ...obj, x: pts[1][0], z: pts[1][1], rotation: obj.rotation + Math.PI })
+    }
+  }
+  placedObjects.push(...mirrored)
+
+  // Auto-set spawns symmetrically
+  if (mirrorMode !== 'none') {
+    const sp = spawnPoints.player
+    const mp = getMirrorPoints(sp.x, sp.z)
+    if (mp.length > 1) {
+      spawnPoints.enemy = { x: mp[1][0], z: mp[1][1] }
+      updateSpawnMarkerPos(spawnMarkers[1], spawnPoints.enemy)
+    }
+  }
+
+  rebuildTerrain()
+}
+
 // ── Mouse handling ───────────────────────────────────────────
 
 function onMouseDown(e: MouseEvent) {
-  if (e.button === 2) return // RMB = camera pan
+  if (e.button === 2) return
   if (e.button !== 0) return
 
   const pos = raycastGround(e.clientX, e.clientY)
   if (!pos) return
 
   if (currentTool === 'objects') {
-    placeObject(pos.x, pos.z)
+    for (const [mx, mz] of getMirrorPoints(pos.x, pos.z)) placeObject(mx, mz)
   } else if (currentTool === 'spawns') {
     placeSpawn(pos.x, pos.z)
   } else {
     isPainting = true
-    applyBrush(pos.x, pos.z, brushSettings, 0.05)
+    for (const [mx, mz] of getMirrorPoints(pos.x, pos.z)) applyBrush(mx, mz, brushSettings, 0.05)
   }
 }
 
@@ -177,17 +232,15 @@ function onMouseMove(e: MouseEvent) {
   const pos = raycastGround(e.clientX, e.clientY)
   if (!pos) return
 
-  // Status bar
   const [gx, gz] = worldToGrid(pos.x, pos.z)
   const i = gz * GRID_RES + gx
   elStatusPos.textContent = `Pos: ${pos.x.toFixed(0)}, ${pos.z.toFixed(0)}`
   elStatusHeight.textContent = `H: ${heightData[i]?.toFixed(1) ?? '-'}`
   elStatusType.textContent = `Type: ${TERRAIN_TYPES[terrainType[i]] ?? '-'}`
 
-  // Brush cursor
   if (currentTool !== 'objects' && currentTool !== 'spawns') {
     elBrushCursor.style.display = 'block'
-    const r = brushSettings.radius * 8 // approximate screen size
+    const r = brushSettings.radius * 8
     elBrushCursor.style.width = r * 2 + 'px'
     elBrushCursor.style.height = r * 2 + 'px'
     elBrushCursor.style.left = e.clientX + 'px'
@@ -196,9 +249,9 @@ function onMouseMove(e: MouseEvent) {
     elBrushCursor.style.display = 'none'
   }
 
-  // Continuous painting
+  // Continuous painting — mirrored
   if (isPainting && currentTool !== 'objects' && currentTool !== 'spawns') {
-    applyBrush(pos.x, pos.z, brushSettings, 0.016)
+    for (const [mx, mz] of getMirrorPoints(pos.x, pos.z)) applyBrush(mx, mz, brushSettings, 0.016)
   }
 }
 
@@ -236,9 +289,25 @@ function placeSpawn(wx: number, wz: number) {
   if (selectedSpawn === 'player') {
     spawnPoints.player = { x: wx, z: wz }
     updateSpawnMarkerPos(spawnMarkers[0], spawnPoints.player)
+    // Auto-mirror enemy spawn
+    if (mirrorMode !== 'none') {
+      const mp = getMirrorPoints(wx, wz)
+      if (mp.length > 1) {
+        spawnPoints.enemy = { x: mp[1][0], z: mp[1][1] }
+        updateSpawnMarkerPos(spawnMarkers[1], spawnPoints.enemy)
+      }
+    }
   } else {
     spawnPoints.enemy = { x: wx, z: wz }
     updateSpawnMarkerPos(spawnMarkers[1], spawnPoints.enemy)
+    // Auto-mirror player spawn
+    if (mirrorMode !== 'none') {
+      const mp = getMirrorPoints(wx, wz)
+      if (mp.length > 1) {
+        spawnPoints.player = { x: mp[1][0], z: mp[1][1] }
+        updateSpawnMarkerPos(spawnMarkers[0], spawnPoints.player)
+      }
+    }
   }
 }
 
@@ -333,6 +402,19 @@ function wireUI() {
       document.getElementById('panel-spawns')!.style.display = tool === 'spawns' ? '' : 'none'
     })
   }
+
+  // Mirror buttons
+  for (const btn of document.querySelectorAll<HTMLElement>('[data-mirror]')) {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('[data-mirror]').forEach(b => b.classList.remove('active'))
+      btn.classList.add('active')
+      mirrorMode = btn.dataset.mirror as MirrorMode
+    })
+  }
+  document.getElementById('btn-mirror-now')!.addEventListener('click', () => {
+    if (mirrorMode === 'none') { alert('Select a symmetry mode first'); return }
+    mirrorTerrainNow()
+  })
 
   // Paint type buttons
   for (const btn of document.querySelectorAll<HTMLElement>('[data-paint]')) {
