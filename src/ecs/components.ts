@@ -152,6 +152,12 @@ export const CollisionRadius = defineComponent({
   value: Types.f32,
 })
 
+// When set, unit moves to MoveTarget but stops to fight enemies in range
+export const AttackMove = defineComponent({
+  destX: Types.f32, // remember original destination
+  destZ: Types.f32,
+})
+
 // ── SupCom-style movement physics ───────────────────────────
 export const TurnRate = defineComponent({
   value: Types.f32, // radians/sec — how fast unit rotates

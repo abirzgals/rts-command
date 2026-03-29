@@ -2,8 +2,9 @@ import { defineQuery, hasComponent, addComponent, removeComponent } from 'bitecs
 import type { IWorld } from 'bitecs'
 import {
   Position, Rotation, Faction, Health, AttackC, AttackTarget, MoveTarget,
-  Dead, IsBuilding, MoveSpeed, Armor,
+  Dead, IsBuilding, MoveSpeed, Armor, PathFollower, Velocity, AttackMove,
 } from '../components'
+import { removePath } from '../../pathfinding/pathStore'
 import { spawnProjectile, spawnArcProjectile } from '../archetypes'
 import { UnitTypeC } from '../components'
 import { UT_TANK, UT_JEEP, UT_ROCKET } from '../../game/config'
@@ -39,6 +40,13 @@ export function combatSystem(world: IWorld, dt: number) {
       // Check target still alive
       if (hasComponent(world, Dead, targetEid) || !hasComponent(world, Health, targetEid)) {
         removeComponent(world, AttackTarget, eid)
+        // If attack-move, resume moving to original destination
+        if (hasComponent(world, AttackMove, eid)) {
+          addComponent(world, MoveTarget, eid)
+          MoveTarget.x[eid] = AttackMove.destX[eid]
+          MoveTarget.z[eid] = AttackMove.destZ[eid]
+          removeComponent(world, AttackMove, eid)
+        }
         continue
       }
 
@@ -49,9 +57,15 @@ export function combatSystem(world: IWorld, dt: number) {
       const dist = Math.sqrt(dx * dx + dz * dz)
 
       if (dist <= range) {
-        // In range — face target and attack
-        if (hasComponent(world, MoveTarget, eid) && !hasComponent(world, IsBuilding, eid)) {
-          removeComponent(world, MoveTarget, eid)
+        // In range — stop and attack
+        if (!hasComponent(world, IsBuilding, eid)) {
+          if (hasComponent(world, MoveTarget, eid)) removeComponent(world, MoveTarget, eid)
+          if (hasComponent(world, PathFollower, eid)) {
+            removePath(PathFollower.pathId[eid])
+            removeComponent(world, PathFollower, eid)
+          }
+          Velocity.x[eid] = 0
+          Velocity.z[eid] = 0
         }
         // Turn to face the target
         if (hasComponent(world, Rotation, eid) && dist > 0.1) {
@@ -95,9 +109,22 @@ export function combatSystem(world: IWorld, dt: number) {
       addComponent(world, AttackTarget, eid)
       AttackTarget.eid[eid] = bestTarget
 
-      // Stop moving to engage — attack-move behavior
-      if (hasComponent(world, MoveTarget, eid) && !hasComponent(world, IsBuilding, eid)) {
-        removeComponent(world, MoveTarget, eid)
+      // Stop moving to engage
+      if (!hasComponent(world, IsBuilding, eid)) {
+        // Save destination for resuming after kill (attack-move)
+        if (hasComponent(world, MoveTarget, eid) && !hasComponent(world, AttackMove, eid)) {
+          addComponent(world, AttackMove, eid)
+          AttackMove.destX[eid] = MoveTarget.x[eid]
+          AttackMove.destZ[eid] = MoveTarget.z[eid]
+        }
+        // Stop movement + clear path
+        if (hasComponent(world, MoveTarget, eid)) removeComponent(world, MoveTarget, eid)
+        if (hasComponent(world, PathFollower, eid)) {
+          removePath(PathFollower.pathId[eid])
+          removeComponent(world, PathFollower, eid)
+        }
+        Velocity.x[eid] = 0
+        Velocity.z[eid] = 0
       }
 
       // Face target
