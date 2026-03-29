@@ -25,21 +25,7 @@ interface AnimatedUnit {
   turretBone?: THREE.Bone
   barrelBone?: THREE.Bone
   recoil?: RecoilState
-  occlusionGroup?: THREE.Group // silhouette shown when occluded
 }
-
-// Occluded silhouette: renders where depth test fails (behind obstacles)
-// Very high polygonOffset pushes ghost well behind the unit's own depth
-const occlusionMat = new THREE.MeshBasicMaterial({
-  color: 0x4499ff,
-  transparent: true,
-  opacity: 0.15,
-  depthFunc: THREE.GreaterDepth,
-  depthWrite: false,
-  polygonOffset: true,
-  polygonOffsetFactor: 50,
-  polygonOffsetUnits: 50,
-})
 
 /**
  * Manages individual SkinnedMesh clones for animated units.
@@ -120,35 +106,7 @@ export class AnimatedMeshManager {
       }
     })
 
-    // Occlusion ghost for ALL mesh types
-    // Ghost only shows when unit is behind terrain/trees/rocks (GreaterDepth)
-    // polygonOffset(4,4) prevents ghost from showing on unit's own surface
-    clone.traverse((child) => {
-      if ((child as THREE.Mesh).isMesh) {
-        const mesh = child as THREE.Mesh
-        if ((mesh as THREE.SkinnedMesh).isSkinnedMesh) {
-          const skinned = mesh as THREE.SkinnedMesh
-          const occ = new THREE.SkinnedMesh(skinned.geometry, occlusionMat)
-          occ.skeleton = skinned.skeleton
-          occ.bindMatrix.copy(skinned.bindMatrix)
-          occ.bindMatrixInverse.copy(skinned.bindMatrixInverse)
-          occ.renderOrder = 999
-          occ.frustumCulled = false
-          mesh.parent?.add(occ)
-        } else {
-          const occ = new THREE.Mesh(mesh.geometry, occlusionMat)
-          // Copy local transform so ghost matches the mesh position
-          occ.position.copy(mesh.position)
-          occ.rotation.copy(mesh.rotation)
-          occ.scale.copy(mesh.scale)
-          occ.renderOrder = 999
-          occ.frustumCulled = false
-          mesh.parent?.add(occ)
-        }
-      }
-    })
-
-    this.units.set(eid, { mesh: clone, mixer, actions, currentAnim: 'Idle', turretBone, barrelBone, occlusionGroup: occGroup })
+    this.units.set(eid, { mesh: clone, mixer, actions, currentAnim: 'Idle', turretBone, barrelBone })
     return 0
   }
 
