@@ -113,7 +113,7 @@ function reclassifyRegion(x1: number, z1: number, x2: number, z2: number) {
     for (let gx = minX; gx <= maxX; gx++) {
       const i = gz * GRID_RES + gx
       const h = heightData[i]
-      if (h < -1.0) terrainType[i] = T_WATER
+      if (h < -1.2) terrainType[i] = T_WATER
       else if (h < 2.0) terrainType[i] = T_GRASS
       else if (h < 4.5) terrainType[i] = T_DIRT
       else if (h < 7.0) terrainType[i] = T_DARK_GRASS
