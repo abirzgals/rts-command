@@ -76,26 +76,25 @@ export class AnimatedMeshManager {
     clone.position.set(x, y, z)
     clone.rotation.y = rotY + this.rotationOffset
 
-    // Apply faction color tint
-    if (color) {
-      clone.traverse((child) => {
-        if ((child as THREE.Mesh).isMesh) {
-          const mesh = child as THREE.Mesh
-          const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
-          for (let i = 0; i < mats.length; i++) {
-            const orig = mats[i] as THREE.MeshStandardMaterial
-            const mat = orig.clone()
-            // Tint by multiplying with faction color
-            mat.color.lerp(color, 0.35)
-            mat.emissive.copy(color).multiplyScalar(0.08)
-            mats[i] = mat
+    // Apply faction color — subtle emissive glow only, keep original textures
+    clone.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        const mesh = child as THREE.Mesh
+        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+        for (let i = 0; i < mats.length; i++) {
+          const orig = mats[i] as THREE.MeshStandardMaterial
+          const mat = orig.clone()
+          if (color) {
+            // Don't touch base color — only add subtle emissive tint
+            mat.emissive.copy(color).multiplyScalar(0.12)
           }
-          mesh.material = mats.length === 1 ? mats[0] : mats
-          mesh.castShadow = true
-          mesh.receiveShadow = true
+          mats[i] = mat
         }
-      })
-    }
+        mesh.material = mats.length === 1 ? mats[0] : mats
+        mesh.castShadow = true
+        mesh.receiveShadow = true
+      }
+    })
 
     // Mark all unit meshes in stencil buffer (ref=1)
     // so ghost silhouettes skip pixels occupied by ANY unit
