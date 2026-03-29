@@ -97,6 +97,9 @@ export function initInput(world: IWorld) {
   }
 }
 
+let rmbStartX = 0
+let rmbStartY = 0
+
 function onMouseDown(e: MouseEvent, world: IWorld) {
   if (e.button === 0) { // Left click
     if (gameState.buildMode !== null) {
@@ -106,6 +109,10 @@ function onMouseDown(e: MouseEvent, world: IWorld) {
     isDragging = true
     dragStartX = e.clientX
     dragStartY = e.clientY
+  }
+  if (e.button === 2) { // Track right-button start for pan detection
+    rmbStartX = e.clientX
+    rmbStartY = e.clientY
   }
 }
 
@@ -152,8 +159,12 @@ function onMouseUp(e: MouseEvent, world: IWorld) {
     }
   }
 
-  if (e.button === 2) { // Right click
-    handleRightClick(world, e.clientX, e.clientY)
+  if (e.button === 2) { // Right click — only if not a camera pan drag
+    const rmbDx = Math.abs(e.clientX - rmbStartX)
+    const rmbDy = Math.abs(e.clientY - rmbStartY)
+    if (rmbDx < DRAG_THRESHOLD && rmbDy < DRAG_THRESHOLD) {
+      handleRightClick(world, e.clientX, e.clientY)
+    }
   }
 }
 

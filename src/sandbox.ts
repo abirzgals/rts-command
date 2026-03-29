@@ -564,9 +564,11 @@ function onMouseUp(e: MouseEvent) {
   // Box select — find all entities within the screen-space rectangle
   selBox.style.display = 'none'
 
-  // Clear previous selection
-  if (selectedEntity !== null && hasComponent(world, Selected, selectedEntity)) {
-    removeComponent(world, Selected, selectedEntity)
+  // Clear ALL previous selection
+  const allEnts: number[] = []
+  spatialHash.query(0, 0, 9999, allEnts)
+  for (const e of allEnts) {
+    if (hasComponent(world, Selected, e)) removeComponent(world, Selected, e)
   }
   selectedEntity = null
 
@@ -622,9 +624,11 @@ function onCanvasClick(e: MouseEvent) {
     return
   }
 
-  // Clear previous selection
-  if (selectedEntity !== null && hasComponent(world, Selected, selectedEntity)) {
-    removeComponent(world, Selected, selectedEntity)
+  // Clear ALL previous selection
+  const allE: number[] = []
+  spatialHash.query(0, 0, 9999, allE)
+  for (const e2 of allE) {
+    if (hasComponent(world, Selected, e2)) removeComponent(world, Selected, e2)
   }
   selectedEntity = null
 

@@ -7,8 +7,8 @@ import {
   CurrentSpeed, MoveSpeed, StuckState, TurnRate,
 } from '../ecs/components'
 import { getPath } from '../pathfinding/pathStore'
-import { getTerrainHeight, GRID_RES, gridToWorld, CELL_SIZE, worldToGrid } from '../terrain/heightmap'
-import { walkable, dynamicCost, getClearanceAt, slopeData } from '../pathfinding/navGrid'
+import { getTerrainHeight, GRID_RES, gridToWorld, CELL_SIZE } from '../terrain/heightmap'
+import { walkable, dynamicCost } from '../pathfinding/navGrid'
 import { scene } from './engine'
 import { FACTION_PLAYER } from '../game/config'
 
@@ -19,9 +19,7 @@ let navGridMesh: THREE.Mesh | null = null
 let navGridBuilt = false
 let enabled = false
 
-// Clearance overlay for selected unit
-let clearanceMesh: THREE.Mesh | null = null
-let lastClearanceEid = -1
+// Clearance overlay removed — was too noisy
 
 const MAX_PATH_POINTS = 8000
 const pathPositions = new Float32Array(MAX_PATH_POINTS * 3)
@@ -71,10 +69,6 @@ export function toggleDebug() {
     navGridBuilt = true
   }
   if (navGridMesh) navGridMesh.visible = enabled
-  if (!enabled && clearanceMesh) {
-    scene.remove(clearanceMesh); clearanceMesh.geometry.dispose(); (clearanceMesh.material as THREE.Material).dispose()
-    clearanceMesh = null; lastClearanceEid = -1
-  }
   if (!enabled && unitInfoDiv) unitInfoDiv.style.display = 'none'
 
   // Show/hide legend
@@ -363,89 +357,17 @@ export function updateDebugOverlay(world: IWorld) {
   colliderGeometry.attributes.position.needsUpdate = true
   colliderGeometry.attributes.color.needsUpdate = true
 
-  // ── Clearance overlay for selected unit ──────────
-  // Find single selected unit
+  // ── Unit info panel (single selected unit, debug mode only) ──
   let selectedEid = -1
   for (const eid of entities) {
     if (hasComponent(world, Dead, eid)) continue
     if (hasComponent(world, Selected, eid)) {
-      if (selectedEid >= 0) { selectedEid = -1; break } // multiple selected — skip
+      if (selectedEid >= 0) { selectedEid = -1; break } // multiple — skip
       selectedEid = eid
     }
   }
 
   if (selectedEid >= 0 && hasComponent(world, CollisionRadius, selectedEid)) {
-    const unitRadius = CollisionRadius.value[selectedEid]
-    const clearance = Math.ceil(unitRadius / CELL_SIZE)
-    const ux = Position.x[selectedEid]
-    const uz = Position.z[selectedEid]
-    const [ugx, ugz] = worldToGrid(ux, uz)
-
-    // Only rebuild if unit changed
-    if (selectedEid !== lastClearanceEid) {
-      lastClearanceEid = selectedEid
-      if (clearanceMesh) { scene.remove(clearanceMesh); clearanceMesh.geometry.dispose(); (clearanceMesh.material as THREE.Material).dispose(); clearanceMesh = null }
-
-      // Show cells in a radius around the unit — green=passable, red=blocked
-      const VIEW_R = 20  // cells around unit to visualize
-      const totalCells = (VIEW_R * 2 + 1) * (VIEW_R * 2 + 1)
-      const positions = new Float32Array(totalCells * 6 * 3)
-      const colors = new Float32Array(totalCells * 6 * 3)
-      let vi = 0, ci = 0
-
-      for (let dz = -VIEW_R; dz <= VIEW_R; dz++) {
-        for (let dx = -VIEW_R; dx <= VIEW_R; dx++) {
-          const gx = ugx + dx
-          const gz = ugz + dz
-          if (gx < 0 || gx >= GRID_RES || gz < 0 || gz >= GRID_RES) continue
-
-          // Check clearance using distance-transform clearance map
-          const clr = getClearanceAt(gx, gz)
-          const passable = clr >= (clearance > 0 ? clearance : 1)
-          // Also check slope steepness
-          const slope = slopeData[gz * GRID_RES + gx]
-          const isSteep = slope > 1.5 // show slopes that would block tanks
-
-          const [wx, wz] = gridToWorld(gx, gz)
-          const y = getTerrainHeight(wx, wz) + 0.15
-          const half = 0.42
-
-          let r: number, g: number, b: number
-          if (!passable) {
-            r = 0.8; g = 0.1; b = 0.1 // red = blocked
-          } else if (isSteep) {
-            r = 0.8; g = 0.8; b = 0.0 // yellow = steep slope
-          } else {
-            r = 0.1; g = 0.7; b = 0.1 // green = passable
-          }
-
-          // Two triangles
-          positions[vi++] = wx - half; positions[vi++] = y; positions[vi++] = wz - half
-          positions[vi++] = wx + half; positions[vi++] = y; positions[vi++] = wz - half
-          positions[vi++] = wx + half; positions[vi++] = y; positions[vi++] = wz + half
-          positions[vi++] = wx - half; positions[vi++] = y; positions[vi++] = wz - half
-          positions[vi++] = wx + half; positions[vi++] = y; positions[vi++] = wz + half
-          positions[vi++] = wx - half; positions[vi++] = y; positions[vi++] = wz + half
-
-          for (let t = 0; t < 6; t++) {
-            colors[ci++] = r; colors[ci++] = g; colors[ci++] = b
-          }
-        }
-      }
-
-      const geo = new THREE.BufferGeometry()
-      geo.setAttribute('position', new THREE.BufferAttribute(positions.slice(0, vi), 3))
-      geo.setAttribute('color', new THREE.BufferAttribute(colors.slice(0, ci), 3))
-
-      clearanceMesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
-        vertexColors: true, transparent: true, opacity: 0.3,
-        side: THREE.DoubleSide, depthWrite: false,
-      }))
-      clearanceMesh.frustumCulled = false
-      clearanceMesh.renderOrder = 97
-      scene.add(clearanceMesh)
-    }
-    // Show unit info panel
     if (!unitInfoDiv) {
       unitInfoDiv = document.createElement('div')
       unitInfoDiv.id = 'debug-unit-info'
@@ -482,14 +404,6 @@ export function updateDebugOverlay(world: IWorld) {
     `
     unitInfoDiv.style.display = 'block'
   } else {
-    // No single selection — remove clearance overlay
-    if (clearanceMesh) {
-      scene.remove(clearanceMesh)
-      clearanceMesh.geometry.dispose()
-      ;(clearanceMesh.material as THREE.Material).dispose()
-      clearanceMesh = null
-    }
-    lastClearanceEid = -1
     if (unitInfoDiv) unitInfoDiv.style.display = 'none'
   }
 }
