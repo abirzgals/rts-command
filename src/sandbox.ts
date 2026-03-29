@@ -20,10 +20,12 @@ import {
   FACTION_PLAYER, FACTION_ENEMY,
   RES_MINERALS,
   MAP_SIZE, UNIT_DEFS, BUILDING_DEFS,
+  UT_WORKER, UT_MARINE, UT_TANK,
 } from './game/config'
 
 // ── Terrain ─────────────────────────────────────────────────────────────────
 import { generateTerrain, getTerrainHeight, reseedTerrain } from './terrain/heightmap'
+import { generateMazeTerrain, getMazeSpawns, getMazeGoal } from './terrain/mazeTerrain'
 import { createTerrainMesh, terrainMesh, waterMesh, updateWater } from './terrain/terrainMesh'
 
 // ── Pathfinding ─────────────────────────────────────────────────────────────
@@ -79,6 +81,7 @@ const canvas = document.getElementById('sandbox-canvas') as HTMLCanvasElement
 const btnPause = document.getElementById('btn-pause') as HTMLButtonElement
 const btnReset = document.getElementById('btn-reset') as HTMLButtonElement
 const btnRegen = document.getElementById('btn-regen') as HTMLButtonElement
+const btnMaze = document.getElementById('btn-maze') as HTMLButtonElement
 const elFPS = document.getElementById('fps') as HTMLSpanElement
 const elEntityCount = document.getElementById('entity-count') as HTMLSpanElement
 const elSelectedInfo = document.getElementById('selected-info') as HTMLSpanElement
@@ -230,6 +233,9 @@ function wireControls() {
 
   // Regenerate Map
   btnRegen.addEventListener('click', regenerateMap)
+
+  // Maze Test
+  btnMaze.addEventListener('click', loadMazeTest)
 }
 
 function resetAll() {
@@ -298,6 +304,63 @@ function regenerateMap() {
   // 5. Reinit navigation grid + sector graph
   initNavGrid()
   buildSectorGraph()
+}
+
+function loadMazeTest() {
+  // 1. Reset everything
+  resetAll()
+
+  // 2. Remove terrain meshes
+  const toRemove: THREE.Object3D[] = []
+  scene.traverse((obj) => {
+    if ((obj as THREE.Mesh).isMesh) {
+      const mesh = obj as THREE.Mesh
+      if (mesh === terrainMesh || mesh === waterMesh) toRemove.push(mesh)
+    }
+  })
+  for (const obj of toRemove) {
+    scene.remove(obj)
+    const m = obj as THREE.Mesh
+    m.geometry.dispose()
+    if (Array.isArray(m.material)) m.material.forEach(mat => mat.dispose())
+    else (m.material as THREE.Material).dispose()
+  }
+
+  // 3. Generate maze terrain (overwrites heightData/terrainType)
+  generateMazeTerrain()
+
+  // 4. Recreate terrain mesh
+  const newMesh = createTerrainMesh()
+  setGroundPlane(newMesh)
+
+  // 5. Rebuild nav + sectors
+  initNavGrid()
+  buildSectorGraph()
+
+  // 6. Spawn units
+  const TYPE_MAP = { worker: UT_WORKER, marine: UT_MARINE, tank: UT_TANK } as const
+  const spawns = getMazeSpawns()
+  const playerUnits: number[] = []
+
+  for (const s of spawns) {
+    const eid = spawnUnit(world, TYPE_MAP[s.type], s.faction, s.x, s.z)
+    entityCount++
+    if (s.faction === FACTION_PLAYER) playerUnits.push(eid)
+  }
+
+  // 7. Send all player units to the maze goal
+  const [goalX, goalZ] = getMazeGoal()
+  for (const eid of playerUnits) {
+    addComponent(world, MoveTarget, eid)
+    MoveTarget.x[eid] = goalX
+    MoveTarget.z[eid] = goalZ
+  }
+
+  // 8. Move camera to maze start area, unpause
+  rtsCamera.target.set(-20, getTerrainHeight(-20, -50), -50)
+  paused = false
+  btnPause.textContent = 'Pause'
+  btnPause.classList.add('primary')
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
