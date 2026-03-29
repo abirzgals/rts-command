@@ -131,6 +131,11 @@ export function movementSystem(world: IWorld, dt: number) {
     const myRadius = CollisionRadius.value[eid]
     const maxSl = hasComponent(world, MaxSlope, eid) ? MaxSlope.value[eid] : 100
 
+    // Idle units: very gentle separation (settle in place, don't bounce)
+    // Moving units: normal separation
+    const isIdle = !hasComponent(world, MoveTarget, eid) && !hasComponent(world, PathFollower, eid)
+    const sepForce = isIdle ? 0.5 : SEPARATION_FORCE
+
     _nearby.length = 0
     spatialHash.query(px, pz, SEPARATION_RADIUS + myRadius, _nearby)
 
@@ -152,12 +157,12 @@ export function movementSystem(world: IWorld, dt: number) {
         const overlap = minDist - dist
         const nx = dx / dist
         const nz = dz / dist
-        sepX += nx * overlap * SEPARATION_FORCE
-        sepZ += nz * overlap * SEPARATION_FORCE
+        sepX += nx * overlap * sepForce
+        sepZ += nz * overlap * sepForce
       } else if (dist < 0.01) {
         const angle = Math.random() * Math.PI * 2
-        sepX += Math.cos(angle) * SEPARATION_FORCE * 0.5
-        sepZ += Math.sin(angle) * SEPARATION_FORCE * 0.5
+        sepX += Math.cos(angle) * sepForce * 0.3
+        sepZ += Math.sin(angle) * sepForce * 0.3
       }
     }
 
