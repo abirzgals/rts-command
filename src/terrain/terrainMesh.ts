@@ -187,14 +187,18 @@ export function createTerrainMesh(): THREE.Mesh {
 // ── Water ───────────────────────────────────────────────────
 
 function createWater() {
-  // Create a heightmap texture so the water shader knows where shore is
-  const hmData = new Uint8Array(GRID_RES * GRID_RES)
+  // Encode terrain height into RGBA texture (R channel, 0-255)
   const waterLevel = -1.2
+  const hmData = new Uint8Array(GRID_RES * GRID_RES * 4)
   for (let i = 0; i < GRID_RES * GRID_RES; i++) {
-    // 0 = deep water, 255 = high land. Normalize to 0-255
-    hmData[i] = Math.max(0, Math.min(255, Math.round((heightData[i] - waterLevel) * 10 + 128)))
+    // 0 = far below water, 128 = at water level, 255 = high above water
+    const v = Math.max(0, Math.min(255, Math.round((heightData[i] - waterLevel) * 8 + 128)))
+    hmData[i * 4] = v
+    hmData[i * 4 + 1] = v
+    hmData[i * 4 + 2] = v
+    hmData[i * 4 + 3] = 255
   }
-  const hmTex = new THREE.DataTexture(hmData, GRID_RES, GRID_RES, THREE.RedFormat)
+  const hmTex = new THREE.DataTexture(hmData, GRID_RES, GRID_RES, THREE.RGBAFormat)
   hmTex.needsUpdate = true
   hmTex.minFilter = THREE.LinearFilter
   hmTex.magFilter = THREE.LinearFilter
@@ -211,19 +215,20 @@ function createWater() {
     uniforms: {
       time: waterUniforms.time,
       heightMap: { value: hmTex },
-      deepColor:  { value: new THREE.Color(0.08, 0.22, 0.42) },
-      shallowColor: { value: new THREE.Color(0.18, 0.45, 0.55) },
-      foamColor:  { value: new THREE.Color(0.82, 0.90, 0.95) },
+      deepColor:  { value: new THREE.Color(0.10, 0.25, 0.45) },
+      shallowColor: { value: new THREE.Color(0.20, 0.50, 0.60) },
+      foamColor:  { value: new THREE.Color(0.85, 0.92, 0.97) },
     },
     vertexShader: `
       uniform float time;
       varying vec2 vUv;
-      varying vec2 vWorldXZ;
+      varying vec2 vWorld;
       void main() {
         vUv = uv;
         vec4 wp = modelMatrix * vec4(position, 1.0);
-        vWorldXZ = wp.xz;
-        wp.y += sin(wp.x * 0.5 + time * 0.8) * 0.04 + sin(wp.z * 0.4 + time * 0.6) * 0.03;
+        vWorld = wp.xz;
+        // Very subtle ripple
+        wp.y += sin(wp.x * 0.4 + time * 0.7) * 0.03 + sin(wp.z * 0.3 + time * 0.5) * 0.02;
         gl_Position = projectionMatrix * viewMatrix * wp;
       }
     `,
@@ -232,7 +237,7 @@ function createWater() {
       uniform sampler2D heightMap;
       uniform vec3 deepColor, shallowColor, foamColor;
       varying vec2 vUv;
-      varying vec2 vWorldXZ;
+      varying vec2 vWorld;
 
       float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
       float noise(vec2 p) {
@@ -243,30 +248,30 @@ function createWater() {
       }
 
       void main() {
-        // Sample terrain height at this water position
-        float h = texture2D(heightMap, vUv).r;
-        // Shore factor: 0.5 = water level, >0.5 = above water (shore)
-        // h near 0.5 = at waterline = maximum shore foam
-        float shoreProximity = 1.0 - smoothstep(0.0, 0.15, abs(h - 0.5));
+        float h = texture2D(heightMap, vUv).r; // 0-1, 0.5 = water level
 
-        // Animated foam rings at shore
-        float foamWave = sin(shoreProximity * 20.0 - time * 3.0) * 0.5 + 0.5;
-        float foamNoise = noise(vWorldXZ * 0.5 + time * 0.2);
-        float foam = shoreProximity * (0.4 + 0.6 * foamNoise * foamWave);
+        // Land check: if terrain is above water, make fully transparent
+        if (h > 0.55) discard;
+
+        // Shore proximity: strongest at waterline (h ≈ 0.5)
+        float shore = smoothstep(0.35, 0.50, h); // 0=deep, 1=at shoreline
+
+        // Animated shore foam
+        float foamWave = sin(shore * 25.0 - time * 2.5) * 0.5 + 0.5;
+        float foamNoise = noise(vWorld * 0.4 + time * 0.15);
+        float foam = shore * shore * (0.5 + 0.5 * foamWave * foamNoise);
 
         // Caustics
-        float c1 = noise(vWorldXZ * 0.3 + vec2(time * 0.15));
-        float c2 = noise(vWorldXZ * 0.5 - vec2(time * 0.1, time * 0.2));
-        float caustic = pow(c1 * c2, 1.5) * 0.35;
+        float c1 = noise(vWorld * 0.25 + vec2(time * 0.12));
+        float c2 = noise(vWorld * 0.4 - vec2(time * 0.08, time * 0.15));
+        float caustic = pow(c1 * c2, 1.5) * 0.3;
 
-        // Depth: below 0.5 = underwater = deep
-        float depth = smoothstep(0.3, 0.5, h);
-        vec3 col = mix(deepColor, shallowColor, depth + caustic);
-        col = mix(col, foamColor, foam * 0.7);
+        // Color blend: deep blue → shallow teal → white foam
+        vec3 col = mix(deepColor, shallowColor, shore + caustic * 0.5);
+        col = mix(col, foamColor, foam);
 
-        float alpha = mix(0.75, 0.4, depth * 0.5);
-        // Hide water over land (h > 0.55)
-        alpha *= 1.0 - smoothstep(0.52, 0.58, h);
+        // Opacity: deep water opaque, near shore slightly less
+        float alpha = 0.7 - shore * 0.15 + caustic * 0.1;
 
         gl_FragColor = vec4(col, alpha);
       }
