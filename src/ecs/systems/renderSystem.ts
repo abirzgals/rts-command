@@ -1,7 +1,8 @@
 import * as THREE from 'three'
 import { defineQuery, hasComponent } from 'bitecs'
 import type { IWorld } from 'bitecs'
-import { Position, Rotation, MeshRef, Dead, AttackTarget, Health, WorkerC } from '../components'
+import { Position, Rotation, MeshRef, Dead, AttackTarget, Health, WorkerC, MoveTarget, PathFollower, Velocity } from '../components'
+import { getPath } from '../../pathfinding/pathStore'
 import { getPool, getAllPools } from '../../render/meshPools'
 import { getAnimManager } from '../../render/animatedMeshManager'
 import { scene } from '../../render/engine'
@@ -30,14 +31,26 @@ export function renderSystem(world: IWorld, dt: number) {
     if (animMgr && animMgr.has(eid)) {
       animMgr.updateTransform(eid, x, y, z, rotY)
 
-      // Turret aiming: rotate turret/barrel toward attack target
-      if (animMgr.hasTurret(eid) && hasComponent(world, AttackTarget, eid)) {
-        const targetEid = AttackTarget.eid[eid]
-        if (hasComponent(world, Position, targetEid) && !hasComponent(world, Dead, targetEid)) {
-          const tx = Position.x[targetEid]
-          const ty = Position.y[targetEid]
-          const tz = Position.z[targetEid]
-          animMgr.updateTurretAim(eid, tx, ty, tz, dt)
+      // Turret aiming
+      if (animMgr.hasTurret(eid)) {
+        if (hasComponent(world, AttackTarget, eid)) {
+          // Priority 1: aim at attack target
+          const targetEid = AttackTarget.eid[eid]
+          if (hasComponent(world, Position, targetEid) && !hasComponent(world, Dead, targetEid)) {
+            animMgr.updateTurretAim(eid, Position.x[targetEid], Position.y[targetEid], Position.z[targetEid], dt)
+          }
+        } else if (hasComponent(world, MoveTarget, eid)) {
+          // Priority 2: aim at move destination
+          const my = y + 1.0
+          animMgr.updateTurretAim(eid, MoveTarget.x[eid], my, MoveTarget.z[eid], dt * 2) // faster rotation
+        } else if (hasComponent(world, PathFollower, eid)) {
+          // Priority 3: aim at next waypoint
+          const path = getPath(PathFollower.pathId[eid])
+          const wpIdx = PathFollower.waypointIndex[eid]
+          if (path && wpIdx < path.length) {
+            const wp = path[wpIdx]
+            animMgr.updateTurretAim(eid, wp.x, y + 1.0, wp.z, dt * 2)
+          }
         }
       }
 
