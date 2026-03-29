@@ -68,7 +68,7 @@ class BinaryHeap {
 
 // ── A* constants ─────────────────────────────────────────────
 const SQRT2 = Math.SQRT2
-const MAX_EXPANSIONS = 30000
+const MAX_EXPANSIONS = 50000
 
 // 8-direction neighbors: dx, dz, cost multiplier
 const DIRS: [number, number, number][] = [

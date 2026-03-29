@@ -54,11 +54,20 @@ export function pathfindingSystem(world: IWorld, dt: number) {
     const maxSlope = hasComponent(world, MaxSlope, eid) ? MaxSlope.value[eid] : 100.0
 
     // Hierarchical A* with unit-specific clearance and slope
-    const waypoints = findPathHierarchical(sx, sz, gx, gz, unitRadius, maxSlope, isWorker)
+    let waypoints = findPathHierarchical(sx, sz, gx, gz, unitRadius, maxSlope, isWorker)
     computed++
 
+    // Fallback: if path fails with clearance, try without (unit will squeeze through)
+    if ((!waypoints || waypoints.length === 0) && unitRadius > 0.5) {
+      waypoints = findPathHierarchical(sx, sz, gx, gz, 0, maxSlope, isWorker)
+    }
+    // Fallback 2: try without slope restriction
+    if ((!waypoints || waypoints.length === 0) && maxSlope < 50) {
+      waypoints = findPathHierarchical(sx, sz, gx, gz, 0, 100, isWorker)
+    }
+
     if (!waypoints || waypoints.length === 0) {
-      pathCooldown[eid] = 1.0 // retry after 1 second
+      pathCooldown[eid] = 2.0 // retry after 2 seconds
       continue
     }
 
