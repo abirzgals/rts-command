@@ -37,12 +37,13 @@ export function animationSystem(world: IWorld, _dt: number) {
       const state = WorkerC.state[eid]
       const carrying = WorkerC.carryAmount[eid] > 0
 
-      if (state === 2) {
+      if (hasComponent(world, AttackTarget, eid) && !isMoving) {
+        anim = 'Punch' // worker melee attack
+      } else if (state === 2) {
         anim = 'PickUp'
       } else if (state === 5) {
         anim = 'PickUp' // building animation
       } else if (state === 1 || state === 3 || state === 4 || isMoving) {
-        // States 1,3,4 = moving (to resource, returning, to build site)
         anim = carrying ? 'Run_Carry' : 'Run'
       } else {
         anim = 'Idle'

@@ -397,11 +397,17 @@ async function loadModel(modelKey: string) {
   const def = MODEL_MAP.get(modelKey)
   if (!def) return
 
-  // Save current model's effects and events before switching
-  // (skip on first load to avoid overwriting data just loaded from server)
+  // Save current model's effects, events AND stats before switching
   if (currentModel && currentKey) {
     savedEffects.set(currentKey, JSON.parse(JSON.stringify(effects)))
     savedEvents.set(currentKey, [...animEvents])
+    // Write current stats back to ALL_MODELS entry so they persist in save
+    const prevModel = MODEL_MAP.get(currentKey)
+    if (prevModel) {
+      for (const k of ['hp', 'speed', 'armor', 'damage', 'range', 'cooldown', 'splash', 'selectionRadius', 'collisionRadius', 'turnRate', 'acceleration', 'maxSlope', 'scale', 'rotationOffset'] as const) {
+        if ((config as any)[k] !== undefined) (prevModel as any)[k] = (config as any)[k]
+      }
+    }
   }
 
   currentKey = modelKey

@@ -1,8 +1,9 @@
-import { defineQuery, hasComponent, addComponent } from 'bitecs'
+import { defineQuery, hasComponent, addComponent, removeComponent } from 'bitecs'
 import type { IWorld } from 'bitecs'
 import {
   Position, Faction, IsBuilding, Producer, WorkerC,
   MoveTarget, AttackTarget, Health, Dead, UnitTypeC,
+  PathFollower, StuckState, Velocity,
 } from '../components'
 import {
   FACTION_ENEMY, FACTION_PLAYER, UT_WORKER, UT_MARINE, UT_TANK,
@@ -133,6 +134,25 @@ export function aiSystem(world: IWorld, dt: number) {
   if (workerCount > 0) {
     res.minerals += workerCount * 2 // per AI tick
     res.gas += Math.floor(workerCount * 0.5)
+  }
+
+  // ── Unstuck AI units: if stuck (phase >= 2), give new random move ──
+  for (const eid of units) {
+    if (Faction.id[eid] !== FACTION_ENEMY) continue
+    if (hasComponent(world, Dead, eid)) continue
+    if (hasComponent(world, IsBuilding, eid)) continue
+    if (!hasComponent(world, StuckState, eid)) continue
+
+    if (StuckState.phase[eid] >= 2) {
+      // Unit gave up pathfinding — send to random nearby walkable point
+      const rx = Position.x[eid] + (Math.random() - 0.5) * 20
+      const rz = Position.z[eid] + (Math.random() - 0.5) * 20
+      StuckState.phase[eid] = 0
+      StuckState.timer[eid] = 0
+      addComponent(world, MoveTarget, eid)
+      MoveTarget.x[eid] = rx
+      MoveTarget.z[eid] = rz
+    }
   }
 }
 
