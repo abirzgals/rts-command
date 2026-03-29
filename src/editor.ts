@@ -65,7 +65,7 @@ const ALL_MODELS: ModelConfig[] = [
   { key: 'rocket', name: 'Rocket Tank', category: 'units', modelUrl: '/models/rocket-tank.glb', scale: 0.8, rotationOffset: Math.PI, icon: '\u{1F680}',
     hp: 120, speed: 1.8, armor: 2, damage: 45, range: 12, cooldown: 3.5, splash: 2.5, selectionRadius: 1.0, collisionRadius: 1.0,
     turnRate: 1.2, acceleration: 2.5, maxSlope: 1.3 },
-  { key: 'trooper', name: 'Trooper', category: 'units', modelUrl: '/models/star-trooper.glb', scale: 1.0, rotationOffset: 0, icon: '\u{1F52B}',
+  { key: 'trooper', name: 'Trooper', category: 'units', modelUrl: '/models/star-trooper.glb', scale: 1.0, rotationOffset: Math.PI, icon: '\u{1F52B}',
     hp: 70, speed: 2.8, armor: 1, damage: 14, range: 7, cooldown: 0.6, splash: 0, selectionRadius: 0.4, collisionRadius: 0.4,
     turnRate: 4.5, acceleration: 6.5, maxSlope: 2.0 },
   // ── Buildings ──

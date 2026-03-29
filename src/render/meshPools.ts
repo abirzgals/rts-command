@@ -264,7 +264,7 @@ export async function createMeshPools() {
   jeepMgr.alignToTerrain = true
   const rocketMgr = new AnimatedMeshManager('/models/rocket-tank.glb', cfg('rocket', 0.8), rot('rocket', Math.PI))
   rocketMgr.alignToTerrain = true
-  const trooperMgr = new AnimatedMeshManager('/models/star-trooper.glb', cfg('trooper', 1.0), rot('trooper', 0))
+  const trooperMgr = new AnimatedMeshManager('/models/star-trooper.glb', cfg('trooper', 1.0), rot('trooper', Math.PI))
 
   await Promise.all([workerMgr.load(), marineMgr.load(), tankMgr.load(), jeepMgr.load(), rocketMgr.load(), trooperMgr.load()])
 
