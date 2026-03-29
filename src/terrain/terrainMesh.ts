@@ -14,55 +14,7 @@ export function updateWater(dt: number) {
   if (waterUniforms) waterUniforms.time.value += dt
 }
 
-// ── Splat map from terrain types ────────────────────────────
-
-function generateSplatMap(): THREE.DataTexture {
-  const raw = new Float32Array(GRID_RES * GRID_RES * 4)
-  for (let gz = 0; gz < GRID_RES; gz++) {
-    for (let gx = 0; gx < GRID_RES; gx++) {
-      const i = (gz * GRID_RES + gx) * 4
-      const tt = terrainType[gz * GRID_RES + gx]
-      raw[i]     = (tt === T_GRASS || tt === T_DARK_GRASS) ? 1 : 0
-      raw[i + 1] = (tt === T_DIRT || tt === T_WATER) ? 1 : 0
-      raw[i + 2] = (tt === T_ROCK) ? 1 : 0
-      raw[i + 3] = (tt === T_CLIFF) ? 1 : 0
-    }
-  }
-  // 2-pass blur
-  const tmp = new Float32Array(raw.length)
-  for (let pass = 0; pass < 2; pass++) {
-    const src = pass === 0 ? raw : tmp
-    const dst = pass === 0 ? tmp : raw
-    for (let gz = 0; gz < GRID_RES; gz++) {
-      for (let gx = 0; gx < GRID_RES; gx++) {
-        let r = 0, g = 0, b = 0, a = 0, w = 0
-        for (let dz = -1; dz <= 1; dz++) {
-          for (let dx = -1; dx <= 1; dx++) {
-            const nx = Math.max(0, Math.min(GRID_RES - 1, gx + dx))
-            const nz = Math.max(0, Math.min(GRID_RES - 1, gz + dz))
-            const ni = (nz * GRID_RES + nx) * 4
-            const wt = (dx === 0 && dz === 0) ? 4 : (dx === 0 || dz === 0) ? 2 : 1
-            r += src[ni] * wt; g += src[ni+1] * wt; b += src[ni+2] * wt; a += src[ni+3] * wt; w += wt
-          }
-        }
-        const di = (gz * GRID_RES + gx) * 4
-        dst[di] = r/w; dst[di+1] = g/w; dst[di+2] = b/w; dst[di+3] = a/w
-      }
-    }
-  }
-  const data = new Uint8Array(GRID_RES * GRID_RES * 4)
-  for (let i = 0; i < GRID_RES * GRID_RES; i++) {
-    const si = i * 4
-    const sum = raw[si] + raw[si+1] + raw[si+2] + raw[si+3]
-    const inv = sum > 0.001 ? 255 / sum : 0
-    data[si] = raw[si]*inv; data[si+1] = raw[si+1]*inv; data[si+2] = raw[si+2]*inv; data[si+3] = raw[si+3]*inv
-  }
-  const tex = new THREE.DataTexture(data, GRID_RES, GRID_RES, THREE.RGBAFormat)
-  tex.needsUpdate = true
-  tex.minFilter = THREE.LinearFilter
-  tex.magFilter = THREE.LinearFilter
-  return tex
-}
+// Splat weights computed per-vertex in createTerrainMesh (no texture needed)
 
 // ── Main ────────────────────────────────────────────────────
 
@@ -80,19 +32,55 @@ export function createTerrainMesh(): THREE.Mesh {
   const texDirt  = loadTex('/textures/dirt.jpg')
   const texRock  = loadTex('/textures/rock.jpg')
   const texCliff = loadTex('/textures/cliff.jpg')
-  const splatMap = generateSplatMap()
-
-  // Geometry
+  // Geometry with per-vertex splat weights (no texture UV issues)
   const geo = new THREE.PlaneGeometry(MAP_SIZE, MAP_SIZE, GRID_RES - 1, GRID_RES - 1)
   geo.rotateX(-Math.PI / 2)
   const pos = geo.attributes.position
+
+  // Blur terrain types for smooth biome transitions (5x5 kernel)
+  const blurred = new Float32Array(GRID_RES * GRID_RES * 4)
+  for (let gz = 0; gz < GRID_RES; gz++) {
+    for (let gx = 0; gx < GRID_RES; gx++) {
+      let r = 0, g = 0, b = 0, a = 0, w = 0
+      for (let dz = -2; dz <= 2; dz++) {
+        for (let dx = -2; dx <= 2; dx++) {
+          const nx = Math.max(0, Math.min(GRID_RES - 1, gx + dx))
+          const nz = Math.max(0, Math.min(GRID_RES - 1, gz + dz))
+          const tt = terrainType[nz * GRID_RES + nx]
+          const wt = (dx === 0 && dz === 0) ? 4 : (Math.abs(dx) + Math.abs(dz) === 1) ? 2 : 1
+          r += ((tt === T_GRASS || tt === T_DARK_GRASS) ? 1 : 0) * wt
+          g += ((tt === T_DIRT) ? 1 : 0) * wt
+          b += ((tt === T_ROCK || tt === T_WATER) ? 1 : 0) * wt
+          a += ((tt === T_CLIFF) ? 1 : 0) * wt
+          w += wt
+        }
+      }
+      const di = (gz * GRID_RES + gx) * 4
+      blurred[di] = r/w; blurred[di+1] = g/w; blurred[di+2] = b/w; blurred[di+3] = a/w
+    }
+  }
+
+  // Encode splat weights directly as vertex attribute
+  const splatWeights = new Float32Array(pos.count * 4)
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i), z = pos.getZ(i)
     const gx = Math.round((x + MAP_SIZE/2) / (MAP_SIZE/(GRID_RES-1)))
     const gz = Math.round((z + MAP_SIZE/2) / (MAP_SIZE/(GRID_RES-1)))
-    pos.setY(i, heightData[Math.max(0,Math.min(GRID_RES-1,gz)) * GRID_RES + Math.max(0,Math.min(GRID_RES-1,gx))])
+    const cgx = Math.max(0, Math.min(GRID_RES-1, gx))
+    const cgz = Math.max(0, Math.min(GRID_RES-1, gz))
+
+    pos.setY(i, heightData[cgz * GRID_RES + cgx])
+
+    const si = (cgz * GRID_RES + cgx) * 4
+    const sum = blurred[si] + blurred[si+1] + blurred[si+2] + blurred[si+3]
+    const inv = sum > 0.001 ? 1/sum : 0
+    splatWeights[i*4]   = blurred[si] * inv
+    splatWeights[i*4+1] = blurred[si+1] * inv
+    splatWeights[i*4+2] = blurred[si+2] * inv
+    splatWeights[i*4+3] = blurred[si+3] * inv
   }
   pos.needsUpdate = true
+  geo.setAttribute('aSplat', new THREE.BufferAttribute(splatWeights, 4))
   geo.computeVertexNormals()
 
   // Get sun direction
@@ -103,11 +91,9 @@ export function createTerrainMesh(): THREE.Mesh {
     }
   })
 
-  // Full custom ShaderMaterial with manual shadow sampling
   const customUniforms = THREE.UniformsUtils.merge([
     THREE.UniformsLib.lights,
     {
-      splatMap: { value: splatMap },
       texGrass: { value: texGrass },
       texDirt:  { value: texDirt },
       texRock:  { value: texRock },
@@ -120,7 +106,8 @@ export function createTerrainMesh(): THREE.Mesh {
     uniforms: customUniforms,
     lights: true,
     vertexShader: /* glsl */ `
-      varying vec2 vSplatUV;
+      attribute vec4 aSplat;
+      varying vec4 vSplat;
       varying vec2 vTileUV;
       varying vec3 vNorm;
       varying float vHeight;
@@ -129,7 +116,7 @@ export function createTerrainMesh(): THREE.Mesh {
       #include <shadowmap_pars_vertex>
 
       void main() {
-        vSplatUV = uv;
+        vSplat = aSplat;
         vec4 worldPosition = modelMatrix * vec4(position, 1.0);
         vTileUV = worldPosition.xz * 0.1;
         vHeight = worldPosition.y;
@@ -137,16 +124,16 @@ export function createTerrainMesh(): THREE.Mesh {
 
         gl_Position = projectionMatrix * viewMatrix * worldPosition;
 
-        // Variables required by shadowmap_vertex include
         vec3 transformedNormal = vNorm;
         #include <shadowmap_vertex>
       }
     `,
     fragmentShader: /* glsl */ `
-      uniform sampler2D splatMap, texGrass, texDirt, texRock, texCliff;
+      uniform sampler2D texGrass, texDirt, texRock, texCliff;
       uniform vec3 sunDir;
 
-      varying vec2 vSplatUV, vTileUV;
+      varying vec4 vSplat;
+      varying vec2 vTileUV;
       varying vec3 vNorm;
       varying float vHeight;
 
@@ -157,12 +144,11 @@ export function createTerrainMesh(): THREE.Mesh {
       #include <shadowmask_pars_fragment>
 
       void main() {
-        vec4 sp = texture2D(splatMap, vSplatUV);
         vec3 tg = texture2D(texGrass, vTileUV).rgb;
         vec3 td = texture2D(texDirt,  vTileUV).rgb;
         vec3 tr = texture2D(texRock,  vTileUV * 0.7).rgb;
         vec3 tc = texture2D(texCliff, vTileUV * 0.5).rgb;
-        vec3 albedo = tg * sp.r + td * sp.g + tr * sp.b + tc * sp.a;
+        vec3 albedo = tg * vSplat.r + td * vSplat.g + tr * vSplat.b + tc * vSplat.a;
 
         float ndl = max(dot(normalize(vNorm), sunDir), 0.0);
         float hf = 0.9 + clamp(vHeight * 0.015, 0.0, 0.2);
