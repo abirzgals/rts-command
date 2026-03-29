@@ -169,9 +169,11 @@ export function generateTerrain() {
   }
 
   // ── Pass 5: Classify terrain types ──
+  // Water mesh is at Y=-1.2. Only cells clearly underwater should be T_WATER.
+  // Cells between -1.2 and 0 are shoreline — walkable but low.
   for (let i = 0; i < GRID_RES * GRID_RES; i++) {
     const h = heightData[i]
-    if (h < -0.5) terrainType[i] = T_WATER
+    if (h < -1.0) terrainType[i] = T_WATER
     else if (h < 2.0) terrainType[i] = T_GRASS
     else if (h < 4.5) terrainType[i] = T_DIRT
     else if (h < 7.0) terrainType[i] = T_DARK_GRASS

@@ -53,7 +53,7 @@ function fbm(x: number, y: number, oct: number, lac: number, gain: number): numb
 function classifyTerrain() {
   for (let i = 0; i < TOTAL; i++) {
     const h = heightData[i]
-    if (h < -0.5) terrainType[i] = T_WATER
+    if (h < -1.0) terrainType[i] = T_WATER
     else if (h < 2.0) terrainType[i] = T_GRASS
     else if (h < 4.5) terrainType[i] = T_DIRT
     else if (h < 7.0) terrainType[i] = T_DARK_GRASS

@@ -47,8 +47,8 @@ export function applyBrush(wx: number, wz: number, settings: BrushSettings, dt: 
           if (weight > 0.3) { // threshold to avoid painting too far
             terrainType[i] = settings.terrainType
             // Adjust height for water painting
-            if (settings.terrainType === T_WATER && heightData[i] > -0.5) {
-              heightData[i] = -1.5
+            if (settings.terrainType === T_WATER && heightData[i] > -1.0) {
+              heightData[i] = -2.0
             }
             dirty = true
           }
@@ -113,7 +113,7 @@ function reclassifyRegion(x1: number, z1: number, x2: number, z2: number) {
     for (let gx = minX; gx <= maxX; gx++) {
       const i = gz * GRID_RES + gx
       const h = heightData[i]
-      if (h < -0.5) terrainType[i] = T_WATER
+      if (h < -1.0) terrainType[i] = T_WATER
       else if (h < 2.0) terrainType[i] = T_GRASS
       else if (h < 4.5) terrainType[i] = T_DIRT
       else if (h < 7.0) terrainType[i] = T_DARK_GRASS
