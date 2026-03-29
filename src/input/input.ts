@@ -399,15 +399,27 @@ function handleRightClick(world: IWorld, sx: number, sy: number) {
   }
   if (isBuildSite) return
 
-  // Offset positions for formation
-  const count = selected.length
-  const cols = Math.ceil(Math.sqrt(count))
-  const spacing = 1.5
+  // Sort units by distance to target (closest first → less crossing)
+  const movableUnits = selected.filter(eid =>
+    Faction.id[eid] === FACTION_PLAYER && !hasComponent(world, IsBuilding, eid)
+  )
+  movableUnits.sort((a, b) => {
+    const da = (Position.x[a] - hit.x) ** 2 + (Position.z[a] - hit.z) ** 2
+    const db = (Position.x[b] - hit.x) ** 2 + (Position.z[b] - hit.z) ** 2
+    return da - db
+  })
 
-  for (let i = 0; i < selected.length; i++) {
-    const eid = selected[i]
-    if (Faction.id[eid] !== FACTION_PLAYER) continue
-    if (hasComponent(world, IsBuilding, eid)) continue
+  // Formation spacing based on largest unit radius
+  let maxR = 0.5
+  for (const eid of movableUnits) {
+    if (hasComponent(world, CollisionRadius, eid)) maxR = Math.max(maxR, CollisionRadius.value[eid])
+  }
+  const count = movableUnits.length
+  const cols = Math.ceil(Math.sqrt(count))
+  const spacing = maxR * 2.5
+
+  for (let i = 0; i < movableUnits.length; i++) {
+    const eid = movableUnits[i]
 
     // Remove existing commands
     if (hasComponent(world, AttackTarget, eid)) {
