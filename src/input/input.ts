@@ -128,9 +128,8 @@ const TOUCH_TAP_TIME = 300 // ms
 const LONG_PRESS_TIME = 400 // ms — hold this long to start box select
 
 /** Exported so camera can be panned from touch handler */
-export let touchPanDeltaX = 0
-export let touchPanDeltaZ = 0
-export function consumeTouchPan() { touchPanDeltaX = 0; touchPanDeltaZ = 0 }
+// touchPan moved to globals.ts to break circular import with engine.ts
+import { setTouchPan } from '../globals'
 
 export function initInput(world: IWorld) {
   selectableQuery = defineQuery([Selectable, Position, Faction])
@@ -836,8 +835,7 @@ function onTouchMove(e: TouchEvent, _world: IWorld) {
   if (e.touches.length === 1 && isTouchPanning) {
     const t = e.touches[0]
     const scale = 0.15
-    touchPanDeltaX = -(t.clientX - touchStartScreenX) * scale
-    touchPanDeltaZ = -(t.clientY - touchStartScreenY) * scale
+    setTouchPan(-(t.clientX - touchStartScreenX) * scale, -(t.clientY - touchStartScreenY) * scale)
     touchStartScreenX = t.clientX
     touchStartScreenY = t.clientY
   }
@@ -883,8 +881,7 @@ function onTouchEnd(e: TouchEvent, world: IWorld) {
     handleBoxSelect(world, dragStartX, dragStartY, sx, sy)
     isTouchBoxSelecting = false
     isTouchPanning = false
-    touchPanDeltaX = 0
-    touchPanDeltaZ = 0
+    setTouchPan(0, 0)
     return
   }
 
@@ -911,6 +908,5 @@ function onTouchEnd(e: TouchEvent, world: IWorld) {
 
   isTouchPanning = false
   isTouchBoxSelecting = false
-  touchPanDeltaX = 0
-  touchPanDeltaZ = 0
+  setTouchPan(0, 0)
 }

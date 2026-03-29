@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { MAP_SIZE } from '../game/config'
-import { touchPanDeltaX, touchPanDeltaZ, consumeTouchPan } from '../input/input'
+import { touchPanDeltaX, touchPanDeltaZ, consumeTouchPan } from '../globals'
 
 // ── Shared renderer state ────────────────────────────────────
 export let renderer: THREE.WebGLRenderer
