@@ -11,7 +11,7 @@ COPY package*.json ./
 RUN npm ci --omit=dev
 COPY server.mjs ./
 COPY --from=build /app/dist ./dist
-RUN mkdir -p data
+VOLUME /app/data
 EXPOSE 80
 ENV PORT=80
 CMD ["node", "server.mjs"]
