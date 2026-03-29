@@ -187,22 +187,51 @@ export function createTerrainMesh(): THREE.Mesh {
 // ── Water ───────────────────────────────────────────────────
 
 function createWater() {
-  // Encode terrain height into RGBA texture (R channel, 0-255)
-  const waterLevel = -1.2
-  const hmData = new Uint8Array(GRID_RES * GRID_RES * 4)
-  for (let i = 0; i < GRID_RES * GRID_RES; i++) {
-    // 0 = far below water, 128 = at water level, 255 = high above water
-    const v = Math.max(0, Math.min(255, Math.round((heightData[i] - waterLevel) * 8 + 128)))
-    hmData[i * 4] = v
-    hmData[i * 4 + 1] = v
-    hmData[i * 4 + 2] = v
-    hmData[i * 4 + 3] = 255
-  }
-  const hmTex = new THREE.DataTexture(hmData, GRID_RES, GRID_RES, THREE.RGBAFormat)
-  hmTex.needsUpdate = true
-  hmTex.minFilter = THREE.LinearFilter
-  hmTex.magFilter = THREE.LinearFilter
+  // Create a shore mask texture: 1.0 = water, 0.0 = land
+  // With gradient at edges for smooth shore transitions
+  const maskData = new Uint8Array(GRID_RES * GRID_RES * 4)
+  const isWater = new Uint8Array(GRID_RES * GRID_RES)
 
+  // First pass: mark water cells
+  for (let i = 0; i < GRID_RES * GRID_RES; i++) {
+    isWater[i] = terrainType[i] === T_WATER ? 1 : 0
+  }
+
+  // Second pass: compute distance to nearest land (in cells, max 10)
+  for (let gz = 0; gz < GRID_RES; gz++) {
+    for (let gx = 0; gx < GRID_RES; gx++) {
+      const idx = gz * GRID_RES + gx
+      if (!isWater[idx]) {
+        // Land: 0
+        maskData[idx * 4] = 0
+      } else {
+        // Water: find distance to nearest land cell
+        let minDist = 10
+        for (let dz = -10; dz <= 10; dz++) {
+          for (let dx = -10; dx <= 10; dx++) {
+            const nx = gx + dx, nz = gz + dz
+            if (nx < 0 || nx >= GRID_RES || nz < 0 || nz >= GRID_RES) continue
+            if (!isWater[nz * GRID_RES + nx]) {
+              const d = Math.sqrt(dx * dx + dz * dz)
+              if (d < minDist) minDist = d
+            }
+          }
+        }
+        // 0 = at shore, 255 = deep (10+ cells from land)
+        maskData[idx * 4] = Math.min(255, Math.round(minDist * 25.5))
+      }
+      maskData[idx * 4 + 1] = maskData[idx * 4]
+      maskData[idx * 4 + 2] = maskData[idx * 4]
+      maskData[idx * 4 + 3] = 255
+    }
+  }
+
+  const maskTex = new THREE.DataTexture(maskData, GRID_RES, GRID_RES, THREE.RGBAFormat)
+  maskTex.needsUpdate = true
+  maskTex.minFilter = THREE.LinearFilter
+  maskTex.magFilter = THREE.LinearFilter
+
+  const waterLevel = -1.2
   const g = new THREE.PlaneGeometry(MAP_SIZE, MAP_SIZE, 64, 64)
   g.rotateX(-Math.PI / 2)
   const pos = g.attributes.position
@@ -214,10 +243,10 @@ function createWater() {
   const m = new THREE.ShaderMaterial({
     uniforms: {
       time: waterUniforms.time,
-      heightMap: { value: hmTex },
-      deepColor:  { value: new THREE.Color(0.10, 0.25, 0.45) },
-      shallowColor: { value: new THREE.Color(0.20, 0.50, 0.60) },
-      foamColor:  { value: new THREE.Color(0.85, 0.92, 0.97) },
+      shoreMask: { value: maskTex },
+      deepColor:  { value: new THREE.Color(0.08, 0.22, 0.40) },
+      shallowColor: { value: new THREE.Color(0.18, 0.48, 0.58) },
+      foamColor:  { value: new THREE.Color(0.85, 0.92, 0.96) },
     },
     vertexShader: `
       uniform float time;
@@ -227,14 +256,13 @@ function createWater() {
         vUv = uv;
         vec4 wp = modelMatrix * vec4(position, 1.0);
         vWorld = wp.xz;
-        // Very subtle ripple
         wp.y += sin(wp.x * 0.4 + time * 0.7) * 0.03 + sin(wp.z * 0.3 + time * 0.5) * 0.02;
         gl_Position = projectionMatrix * viewMatrix * wp;
       }
     `,
     fragmentShader: `
       uniform float time;
-      uniform sampler2D heightMap;
+      uniform sampler2D shoreMask;
       uniform vec3 deepColor, shallowColor, foamColor;
       varying vec2 vUv;
       varying vec2 vWorld;
@@ -248,30 +276,32 @@ function createWater() {
       }
 
       void main() {
-        float h = texture2D(heightMap, vUv).r; // 0-1, 0.5 = water level
+        float dist = texture2D(shoreMask, vUv).r; // 0=land, small=shore, 1=deep
 
-        // Land check: if terrain is above water, make fully transparent
-        if (h > 0.55) discard;
+        // Discard land pixels
+        if (dist < 0.01) discard;
 
-        // Shore proximity: strongest at waterline (h ≈ 0.5)
-        float shore = smoothstep(0.35, 0.50, h); // 0=deep, 1=at shoreline
+        // Shore proximity (0 = deep, 1 = right at shore)
+        float shore = 1.0 - smoothstep(0.0, 0.25, dist);
 
-        // Animated shore foam
-        float foamWave = sin(shore * 25.0 - time * 2.5) * 0.5 + 0.5;
-        float foamNoise = noise(vWorld * 0.4 + time * 0.15);
-        float foam = shore * shore * (0.5 + 0.5 * foamWave * foamNoise);
+        // Animated foam at shoreline
+        float foamWave = sin(shore * 30.0 - time * 3.0) * 0.5 + 0.5;
+        float foamNoise = noise(vWorld * 0.3 + time * 0.12);
+        float foam = shore * (0.3 + 0.7 * foamWave * foamNoise);
 
-        // Caustics
-        float c1 = noise(vWorld * 0.25 + vec2(time * 0.12));
-        float c2 = noise(vWorld * 0.4 - vec2(time * 0.08, time * 0.15));
-        float caustic = pow(c1 * c2, 1.5) * 0.3;
+        // Caustics on water surface
+        float c1 = noise(vWorld * 0.2 + vec2(time * 0.1));
+        float c2 = noise(vWorld * 0.35 - vec2(time * 0.08, time * 0.12));
+        float caustic = pow(c1 * c2, 1.5) * 0.25;
 
-        // Color blend: deep blue → shallow teal → white foam
-        vec3 col = mix(deepColor, shallowColor, shore + caustic * 0.5);
-        col = mix(col, foamColor, foam);
+        // Color: deep → shallow → foam
+        float depth = smoothstep(0.0, 0.5, dist);
+        vec3 col = mix(shallowColor, deepColor, depth);
+        col += caustic * 0.3;
+        col = mix(col, foamColor, foam * 0.7);
 
-        // Opacity: deep water opaque, near shore slightly less
-        float alpha = 0.7 - shore * 0.15 + caustic * 0.1;
+        // Opacity
+        float alpha = 0.65 + depth * 0.1;
 
         gl_FragColor = vec4(col, alpha);
       }
