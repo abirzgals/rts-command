@@ -54,6 +54,7 @@ export class AnimatedMeshManager {
   private scale: number
   private url: string
   private rotationOffset: number
+  alignToTerrain = false  // vehicles: true, infantry: false
 
   constructor(url: string, scale: number, rotationOffset = 0) {
     this.url = url
@@ -204,31 +205,27 @@ export class AnimatedMeshManager {
     if (!unit) return
     unit.mesh.position.set(x, y, z)
 
-    // Compute terrain normal from 4 height samples
-    const S = 0.5 // sample distance
-    const hL = getTerrainHeight(x - S, z)
-    const hR = getTerrainHeight(x + S, z)
-    const hF = getTerrainHeight(x, z - S)
-    const hB = getTerrainHeight(x, z + S)
+    if (this.alignToTerrain) {
+      // Vehicles: tilt to match terrain slope
+      const S = 0.5
+      const hL = getTerrainHeight(x - S, z)
+      const hR = getTerrainHeight(x + S, z)
+      const hF = getTerrainHeight(x, z - S)
+      const hB = getTerrainHeight(x, z + S)
 
-    // Cross product of tangent vectors → normal
-    // tangentX = (2S, hR-hL, 0), tangentZ = (0, hB-hF, 2S)
-    const nx = -(hR - hL)  // normal X
-    const nz = -(hB - hF)  // normal Z
-    const ny = 2 * S        // normal Y
-    const len = Math.sqrt(nx * nx + ny * ny + nz * nz)
+      const nx = -(hR - hL)
+      const nz = -(hB - hF)
+      const ny = 2 * S
+      const len = Math.sqrt(nx * nx + ny * ny + nz * nz)
 
-    AnimatedMeshManager._nA.set(nx / len, ny / len, nz / len)
-
-    // Build quaternion: rotate from UP to terrain normal, then apply yaw
-    AnimatedMeshManager._qTerrain.setFromUnitVectors(
-      AnimatedMeshManager._up,
-      AnimatedMeshManager._nA,
-    )
-
-    // Apply yaw rotation on top
-    unit.mesh.quaternion.copy(AnimatedMeshManager._qTerrain)
-    unit.mesh.rotateY(rotY + this.rotationOffset)
+      AnimatedMeshManager._nA.set(nx / len, ny / len, nz / len)
+      AnimatedMeshManager._qTerrain.setFromUnitVectors(AnimatedMeshManager._up, AnimatedMeshManager._nA)
+      unit.mesh.quaternion.copy(AnimatedMeshManager._qTerrain)
+      unit.mesh.rotateY(rotY + this.rotationOffset)
+    } else {
+      // Infantry: stay upright
+      unit.mesh.rotation.set(0, rotY + this.rotationOffset, 0)
+    }
   }
 
   // Reusable objects to avoid per-frame allocations
