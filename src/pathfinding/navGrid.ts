@@ -22,6 +22,9 @@ let clearanceDirty = true
 
 // ── Initialize nav grid from terrain ─────────────────────────
 export function initNavGrid() {
+  // 35° slope threshold: tan(35°) ≈ 0.70 height delta per cell
+  const SLOPE_BLOCK = 0.70
+
   for (let i = 0; i < TOTAL; i++) {
     const type = terrainType[i]
     if (type === T_WATER) {
@@ -33,7 +36,16 @@ export function initNavGrid() {
     }
   }
 
-  // Buffer zone around cliffs — increase friction
+  // Build slope map, then block cells steeper than 35°
+  buildSlopeMap()
+  for (let i = 0; i < TOTAL; i++) {
+    if (walkable[i] === 1 && slopeData[i] > SLOPE_BLOCK) {
+      walkable[i] = 0
+      moveCost[i] = 0
+    }
+  }
+
+  // Buffer zone around cliffs/steep — increase friction on neighbors
   const tempWalkable = new Uint8Array(walkable)
   for (let gz = 1; gz < GRID_RES - 1; gz++) {
     for (let gx = 1; gx < GRID_RES - 1; gx++) {
@@ -42,16 +54,13 @@ export function initNavGrid() {
       for (let dz = -1; dz <= 1; dz++) {
         for (let dx = -1; dx <= 1; dx++) {
           const ni = (gz + dz) * GRID_RES + (gx + dx)
-          if (terrainType[ni] === T_CLIFF) {
+          if (tempWalkable[ni] === 0 && terrainType[ni] !== T_WATER) {
             moveCost[i] = Math.max(moveCost[i], 2.0)
           }
         }
       }
     }
   }
-
-  // Build slope map from heightmap
-  buildSlopeMap()
 
   // Build initial clearance map
   rebuildClearance()
