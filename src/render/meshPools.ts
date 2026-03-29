@@ -211,14 +211,14 @@ export function createSelectionRingMesh() {
     transparent: true,
     opacity: 0.45,
     side: THREE.DoubleSide,
-    depthWrite: false,  // don't write to depth buffer (ring is flat decal)
-    depthTest: true,    // DO read depth buffer so units occlude the far side
+    depthWrite: false,
+    depthTest: false, // always visible — not hidden by terrain/rocks
   })
   selectionRingMesh = new THREE.InstancedMesh(geo, mat, MAX_SELECTION_RINGS)
   selectionRingMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
   selectionRingMesh.count = 0
   selectionRingMesh.frustumCulled = false
-  selectionRingMesh.renderOrder = -1 // render BEFORE units so depth test works
+  selectionRingMesh.renderOrder = 90 // render after terrain but before UI
   scene.add(selectionRingMesh)
 }
 
