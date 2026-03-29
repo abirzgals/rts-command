@@ -2,7 +2,7 @@ import { defineQuery, hasComponent, addComponent, removeComponent } from 'bitecs
 import type { IWorld } from 'bitecs'
 import {
   Position, Faction, WorkerC, ResourceNode, MoveTarget,
-  MoveSpeed, ResourceDropoff, Dead, PathFollower,
+  MoveSpeed, ResourceDropoff, Dead, PathFollower, BuildProgress, IsBuilding,
 } from '../components'
 import { gameState } from '../../game/state'
 import { spatialHash } from '../../globals'
@@ -48,6 +48,14 @@ export function resourceSystem(world: IWorld, dt: number) {
 
       case 3: // returning with cargo
         returnCargo(world, eid)
+        break
+
+      case 4: // moving to construction site
+        moveToBuild(world, eid)
+        break
+
+      case 5: // actively building
+        activelyBuild(world, eid)
         break
     }
   }
@@ -224,4 +232,63 @@ function findDropoff(world: IWorld, eid: number) {
   }
 
   WorkerC.returnTarget[eid] = nearest
+}
+
+// ── Worker state 4: moving to construction site ──────────────
+
+const BUILD_RANGE = 3.5
+
+function moveToBuild(world: IWorld, eid: number) {
+  const target = WorkerC.buildTarget[eid]
+
+  // Check if building still exists and is under construction
+  if (!isValidEntity(target) || hasComponent(world, Dead, target) || !hasComponent(world, BuildProgress, target)) {
+    WorkerC.state[eid] = 0 // building finished or destroyed → idle
+    WorkerC.buildTarget[eid] = NONE
+    return
+  }
+
+  // Check distance to building
+  const dx = Position.x[target] - Position.x[eid]
+  const dz = Position.z[target] - Position.z[eid]
+  const dist = Math.sqrt(dx * dx + dz * dz)
+
+  if (dist < BUILD_RANGE) {
+    // Arrived — start building
+    WorkerC.state[eid] = 5
+    // Stop moving
+    if (hasComponent(world, MoveTarget, eid)) removeComponent(world, MoveTarget, eid)
+    clearPath(world, eid)
+  } else if (!hasComponent(world, MoveTarget, eid) && !hasComponent(world, PathFollower, eid)) {
+    // Lost path — re-issue move command
+    addComponent(world, MoveTarget, eid)
+    MoveTarget.x[eid] = Position.x[target]
+    MoveTarget.z[eid] = Position.z[target]
+  }
+}
+
+// ── Worker state 5: actively building ────────────────────────
+
+function activelyBuild(world: IWorld, eid: number) {
+  const target = WorkerC.buildTarget[eid]
+
+  // Check if building still needs construction
+  if (!isValidEntity(target) || hasComponent(world, Dead, target) || !hasComponent(world, BuildProgress, target)) {
+    WorkerC.state[eid] = 0 // done or destroyed → idle
+    WorkerC.buildTarget[eid] = NONE
+    return
+  }
+
+  // Check distance — if pushed away, go back
+  const dx = Position.x[target] - Position.x[eid]
+  const dz = Position.z[target] - Position.z[eid]
+  if (dx * dx + dz * dz > BUILD_RANGE * BUILD_RANGE * 1.5) {
+    WorkerC.state[eid] = 4 // too far — walk back
+    addComponent(world, MoveTarget, eid)
+    MoveTarget.x[eid] = Position.x[target]
+    MoveTarget.z[eid] = Position.z[target]
+    return
+  }
+
+  // Face the building (rotation handled by movement system)
 }

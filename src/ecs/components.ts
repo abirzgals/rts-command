@@ -65,12 +65,13 @@ export const ResourceNode = defineComponent({
 })
 
 export const WorkerC = defineComponent({
-  state: Types.ui8,      // 0=idle, 1=movingToRes, 2=gathering, 3=returning
+  state: Types.ui8,      // 0=idle, 1=movingToRes, 2=gathering, 3=returning, 4=movingToBuild, 5=building
   targetNode: Types.ui32, // entity ID of resource node
   carryAmount: Types.f32,
   carryType: Types.ui8,
   gatherTimer: Types.f32,
   returnTarget: Types.ui32, // entity ID of command center
+  buildTarget: Types.ui32,  // entity ID of building under construction
 })
 
 export const ResourceDropoff = defineComponent() // tag
@@ -81,6 +82,9 @@ export const IsBuilding = defineComponent() // tag
 export const BuildProgress = defineComponent({
   progress: Types.f32, // 0..1
   duration: Types.f32, // total build time
+  costMinerals: Types.f32, // total mineral cost (for gradual spending)
+  costGas: Types.f32,      // total gas cost
+  spent: Types.f32,        // fraction of cost already spent (0..1)
 })
 
 export const Producer = defineComponent({

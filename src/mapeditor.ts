@@ -364,7 +364,8 @@ function rebuildObjectVisuals() {
     const obj = placedObjects[i]
     const pool = getPool(obj.poolId)
     if (pool) {
-      const y = getTerrainHeight(obj.x, obj.z)       pool.add(i + 2000, obj.x, y, obj.z, obj.rotation)
+      const y = getTerrainHeight(obj.x, obj.z)
+      pool.add(i + 2000, obj.x, y, obj.z, obj.rotation)
     }
   }
 }
@@ -508,7 +509,8 @@ async function onLoad(name?: string) {
     for (const obj of placedObjects) {
       const pool = getPool(obj.poolId)
       if (pool) {
-        const y = getTerrainHeight(obj.x, obj.z)         pool.add(Math.random() * 10000 | 0, obj.x, y, obj.z, obj.rotation)
+        const y = getTerrainHeight(obj.x, obj.z)
+        pool.add(Math.random() * 10000 | 0, obj.x, y, obj.z, obj.rotation)
       }
     }
     console.log(`Map "${mapName}" loaded (${objects.length} objects)`)

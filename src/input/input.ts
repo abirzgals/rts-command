@@ -4,7 +4,7 @@ import type { IWorld } from 'bitecs'
 import {
   Position, Faction, Selected, Selectable, MoveTarget,
   AttackTarget, ResourceNode, ResourceDropoff, WorkerC, IsBuilding, UnitTypeC,
-  Producer, PathFollower,
+  Producer, PathFollower, BuildProgress,
 } from '../ecs/components'
 import {
   FACTION_PLAYER, BUILDING_DEFS, UNIT_DEFS,
@@ -320,6 +320,28 @@ function handleRightClick(world: IWorld, sx: number, sy: number) {
     }
   }
 
+  // Check if right-clicked on a building under construction → assign workers to build
+  let isBuildSite = false
+  for (const eid of nearby) {
+    if (!hasComponent(world, BuildProgress, eid)) continue
+    if (!hasComponent(world, Faction, eid) || Faction.id[eid] !== FACTION_PLAYER) continue
+    const dx = Position.x[eid] - hit.x
+    const dz = Position.z[eid] - hit.z
+    if (dx * dx + dz * dz < 9) { // within 3 units
+      isBuildSite = true
+      for (const wid of selected) {
+        if (!hasComponent(world, WorkerC, wid)) continue
+        WorkerC.state[wid] = 4 // movingToBuild
+        WorkerC.buildTarget[wid] = eid
+        addComponent(world, MoveTarget, wid)
+        MoveTarget.x[wid] = Position.x[eid]
+        MoveTarget.z[wid] = Position.z[eid]
+      }
+      break
+    }
+  }
+  if (isBuildSite) return
+
   // Offset positions for formation
   const count = selected.length
   const cols = Math.ceil(Math.sqrt(count))
@@ -389,10 +411,30 @@ function placeBuildingAtCursor(world: IWorld) {
 
   if (!gameState.canAfford(FACTION_PLAYER, def.cost)) return
 
-  gameState.spend(FACTION_PLAYER, def.cost)
+  // Don't spend cost now — it's deducted gradually during construction
   const sx = snapToGrid(mouseWorldX)
   const sz = snapToGrid(mouseWorldZ)
-  spawnBuilding(world, buildingType, FACTION_PLAYER, sx, sz)
+  const buildingEid = spawnBuilding(world, buildingType, FACTION_PLAYER, sx, sz)
+
+  // Store total cost in BuildProgress for gradual spending
+  if (hasComponent(world, BuildProgress, buildingEid)) {
+    BuildProgress.costMinerals[buildingEid] = def.cost.minerals
+    BuildProgress.costGas[buildingEid] = def.cost.gas
+    BuildProgress.spent[buildingEid] = 0
+  }
+
+  // Send selected workers to build it
+  const selected = selectedQuery(world)
+  for (const eid of selected) {
+    if (!hasComponent(world, WorkerC, eid)) continue
+    if (Faction.id[eid] !== FACTION_PLAYER) continue
+    WorkerC.state[eid] = 4 // movingToBuild
+    WorkerC.buildTarget[eid] = buildingEid
+    addComponent(world, MoveTarget, eid)
+    MoveTarget.x[eid] = sx
+    MoveTarget.z[eid] = sz
+    break // one worker per building placement
+  }
 
   gameState.buildMode = null
   buildModeEl.style.display = 'none'
