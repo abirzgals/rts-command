@@ -7,7 +7,7 @@ import {
 import { getAnimManager } from '../../render/animatedMeshManager'
 import { editorConfig } from '../../render/meshPools'
 
-const POOL_TO_KEY: Record<number, string> = { 0: 'worker', 1: 'marine', 2: 'tank', 3: 'jeep', 4: 'rocket' }
+const POOL_TO_KEY: Record<number, string> = { 0: 'worker', 1: 'marine', 2: 'tank', 3: 'jeep', 4: 'rocket', 5: 'trooper' }
 
 const animQuery = defineQuery([Position, MeshRef])
 

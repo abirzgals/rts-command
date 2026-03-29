@@ -13,7 +13,7 @@ import { editorConfig } from '../../render/meshPools'
 import { getAnimManager } from '../../render/animatedMeshManager'
 import { MeshRef } from '../components'
 
-const UT_TO_KEY: Record<number, string> = { 0: 'worker', 1: 'marine', 2: 'tank', 3: 'jeep', 4: 'rocket' }
+const UT_TO_KEY: Record<number, string> = { 0: 'worker', 1: 'marine', 2: 'tank', 3: 'jeep', 4: 'rocket', 5: 'trooper' }
 
 const combatQuery = defineQuery([Position, AttackC, Faction])
 const _nearby: number[] = []

@@ -12,6 +12,7 @@ export const UT_MARINE = 1
 export const UT_TANK = 2
 export const UT_JEEP = 3
 export const UT_ROCKET = 4
+export const UT_TROOPER = 5
 
 // ── Building type IDs (offset by 100 to distinguish) ────────
 export const BT_COMMAND_CENTER = 100
@@ -83,6 +84,14 @@ export const UNIT_DEFS: Record<number, UnitDef> = {
     meshPool: 3,
     turnRate: 3.0, acceleration: 6.0, maxSlope: 1.8,
   },
+  [UT_TROOPER]: {
+    name: 'Trooper',
+    hp: 70, speed: 2.8, armor: 1, radius: 0.4, supply: 2,
+    attack: { damage: 14, range: 7, cooldown: 0.6 },
+    cost: { minerals: 75, gas: 25 }, buildTime: 20,
+    meshPool: 5,
+    turnRate: 4.5, acceleration: 6.5, maxSlope: 2.0,
+  },
   [UT_ROCKET]: {
     name: 'Rocket Tank',
     hp: 120, speed: 1.8, armor: 2, radius: 1.0, supply: 4,
@@ -111,7 +120,7 @@ export const BUILDING_DEFS: Record<number, BuildingDef> = {
   [BT_BARRACKS]: {
     name: 'Barracks',
     hp: 800, armor: 1, radius: 1.5,
-    canProduce: [UT_MARINE],
+    canProduce: [UT_MARINE, UT_TROOPER],
     cost: { minerals: 150, gas: 0 }, buildTime: 40,
     meshPool: 12,
   },
