@@ -195,21 +195,52 @@ function createWater() {
     isWaterCell[i] = terrainType[i] === T_WATER ? 1 : 0
   }
 
-  // Distance to shore per cell (search radius 5 cells)
+  // Distance to shore per cell (search radius 8 cells)
   const shoreDist = new Float32Array(GRID_RES * GRID_RES)
   for (let gz = 0; gz < GRID_RES; gz++) {
     for (let gx = 0; gx < GRID_RES; gx++) {
       const idx = gz * GRID_RES + gx
       if (!isWaterCell[idx]) { shoreDist[idx] = -1; continue }
       let minD = 99
-      for (let dz = -5; dz <= 5; dz++) {
-        for (let dx = -5; dx <= 5; dx++) {
+      for (let dz = -8; dz <= 8; dz++) {
+        for (let dx = -8; dx <= 8; dx++) {
           const nx = gx + dx, nz = gz + dz
           if (nx < 0 || nx >= GRID_RES || nz < 0 || nz >= GRID_RES) { minD = Math.min(minD, Math.sqrt(dx*dx+dz*dz)); continue }
           if (!isWaterCell[nz * GRID_RES + nx]) minD = Math.min(minD, Math.sqrt(dx*dx+dz*dz))
         }
       }
       shoreDist[idx] = minD
+    }
+  }
+
+  // Flood-fill to find max depth per water body (= pool size)
+  const poolMaxDist = new Float32Array(GRID_RES * GRID_RES)
+  const visited = new Uint8Array(GRID_RES * GRID_RES)
+  for (let gz = 0; gz < GRID_RES; gz++) {
+    for (let gx = 0; gx < GRID_RES; gx++) {
+      const idx = gz * GRID_RES + gx
+      if (!isWaterCell[idx] || visited[idx]) continue
+      // BFS to find all cells of this water body + max shore dist
+      const queue: number[] = [idx]
+      const body: number[] = []
+      visited[idx] = 1
+      let maxD = 0
+      while (queue.length > 0) {
+        const ci = queue.pop()!
+        body.push(ci)
+        if (shoreDist[ci] > maxD) maxD = shoreDist[ci]
+        const cx = ci % GRID_RES, cz = (ci / GRID_RES) | 0
+        for (const [dx, dz] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+          const nx = cx + dx, nz = cz + dz
+          if (nx < 0 || nx >= GRID_RES || nz < 0 || nz >= GRID_RES) continue
+          const ni = nz * GRID_RES + nx
+          if (!isWaterCell[ni] || visited[ni]) continue
+          visited[ni] = 1
+          queue.push(ni)
+        }
+      }
+      // Set max depth for all cells in this body
+      for (const ci of body) poolMaxDist[ci] = maxD
     }
   }
 
@@ -230,14 +261,13 @@ function createWater() {
     const idx = cgz * GRID_RES + cgx
 
     const d = shoreDist[idx]
-    // R = shore distance (0-1 mapped from 0-5 cells), -1 for land
-    // G = is water flag
+    // R = shore distance normalized, G = is water, B = pool max depth normalized
     if (d < 0) {
-      colors[i * 3] = 0; colors[i * 3 + 1] = 0; colors[i * 3 + 2] = 0 // land
+      colors[i * 3] = 0; colors[i * 3 + 1] = 0; colors[i * 3 + 2] = 0
     } else {
-      colors[i * 3] = Math.min(1, d / 5) // shore distance normalized
-      colors[i * 3 + 1] = 1              // is water
-      colors[i * 3 + 2] = 0
+      colors[i * 3] = Math.min(1, d / 8)                    // shore distance
+      colors[i * 3 + 1] = 1                                  // is water
+      colors[i * 3 + 2] = Math.min(1, poolMaxDist[idx] / 8) // pool size
     }
   }
   pos.needsUpdate = true
@@ -256,10 +286,12 @@ function createWater() {
       attribute vec3 color;
       varying float vShoreDist;
       varying float vIsWater;
+      varying float vPoolSize;
       varying vec2 vWorld;
       void main() {
         vShoreDist = color.r;
         vIsWater = color.g;
+        vPoolSize = color.b;
         vec4 wp = modelMatrix * vec4(position, 1.0);
         vWorld = wp.xz;
         wp.y += sin(wp.x * 0.4 + time * 0.7) * 0.03 + sin(wp.z * 0.3 + time * 0.5) * 0.02;
@@ -271,9 +303,14 @@ function createWater() {
       uniform vec3 deepColor, foamColor;
       varying float vShoreDist;
       varying float vIsWater;
+      varying float vPoolSize;
       varying vec2 vWorld;
 
+      // Hash and value noise
       float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
+      vec2 hash2(vec2 p) {
+        return fract(sin(vec2(dot(p,vec2(127.1,311.7)), dot(p,vec2(269.5,183.3)))) * 43758.5453);
+      }
       float noise(vec2 p) {
         vec2 i = floor(p), f = fract(p);
         f = f * f * (3.0 - 2.0 * f);
@@ -281,27 +318,48 @@ function createWater() {
                    mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), f.x), f.y);
       }
 
+      // Voronoi for caustic light lines
+      float voronoi(vec2 p) {
+        vec2 i = floor(p), f = fract(p);
+        float minD = 1.0;
+        for (int y = -1; y <= 1; y++) {
+          for (int x = -1; x <= 1; x++) {
+            vec2 n = vec2(float(x), float(y));
+            vec2 r = n + hash2(i + n) - f;
+            minD = min(minD, dot(r, r));
+          }
+        }
+        return sqrt(minD);
+      }
+
       void main() {
-        // Discard land vertices
         if (vIsWater < 0.5) discard;
 
-        // Wave runs FROM deep water TOWARD shore and fades at the edge
-        // vShoreDist: 0 = at shore, 1 = deep water
-        // Wave moves in -vShoreDist direction (toward shore = decreasing dist)
-        float wave = sin(vShoreDist * 50.0 + time * 2.5) * 0.5 + 0.5;
-        // Wave starts faint in deep water, gets stronger approaching shore
-        float waveStrength = smoothstep(0.8, 0.1, vShoreDist);
-        // But fades out right at the shore edge (last 10%)
-        waveStrength *= smoothstep(0.0, 0.08, vShoreDist);
-        float foamNoise = noise(vWorld * 0.4 + time * 0.1);
-        float foam = wave * waveStrength * (0.6 + 0.4 * foamNoise);
+        // === Voronoi caustic pattern (sharp light lines) ===
+        // Two layers moving in opposite directions for interference
+        float v1 = voronoi(vWorld * 0.4 + vec2(time * 0.15, time * 0.1));
+        float v2 = voronoi(vWorld * 0.35 - vec2(time * 0.12, time * 0.08));
+        // Sharp bright lines at cell edges (where voronoi distance is small)
+        float caustic = pow(1.0 - v1, 4.0) * 0.5 + pow(1.0 - v2, 4.0) * 0.4;
+        // Third finer layer for detail
+        float v3 = voronoi(vWorld * 0.8 + vec2(time * 0.08, -time * 0.12));
+        caustic += pow(1.0 - v3, 5.0) * 0.2;
 
-        // Caustics
-        float c1 = noise(vWorld * 0.2 + vec2(time * 0.08));
-        float c2 = noise(vWorld * 0.35 - vec2(time * 0.06, time * 0.1));
-        float caustic = pow(c1 * c2, 1.5) * 0.2;
+        // === Shore waves — scale with pool size ===
+        // Small pool (vPoolSize < 0.3): tiny wave band
+        // Large pool (vPoolSize > 0.6): wide wave band
+        float waveZone = mix(0.15, 0.8, smoothstep(0.1, 0.7, vPoolSize));
 
-        vec3 col = deepColor + caustic * vec3(0.15, 0.2, 0.25);
+        // Wave runs toward shore, strength proportional to wave zone
+        float wavePhase = vShoreDist / max(waveZone, 0.01);
+        float wave = sin(wavePhase * 12.0 + time * 1.2) * 0.5 + 0.5;
+        // Grows approaching shore, fades at the very edge
+        float waveStrength = smoothstep(1.0, 0.2, wavePhase) * smoothstep(0.0, 0.06, vShoreDist);
+        float foamNoise = noise(vWorld * 0.5 + time * 0.1);
+        float foam = wave * waveStrength * (0.5 + 0.5 * foamNoise);
+
+        // === Final color ===
+        vec3 col = deepColor + caustic * vec3(0.25, 0.35, 0.4);
         col = mix(col, foamColor, foam);
 
         gl_FragColor = vec4(col, 0.7);
