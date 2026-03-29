@@ -6,7 +6,7 @@ import {
 } from '../components'
 import { spawnProjectile, spawnArcProjectile } from '../archetypes'
 import { UnitTypeC } from '../components'
-import { UT_TANK } from '../../game/config'
+import { UT_TANK, UT_JEEP } from '../../game/config'
 import { spawnMuzzleFlash } from '../../render/effects'
 import { spatialHash } from '../../globals'
 import { editorConfig } from '../../render/meshPools'
@@ -150,15 +150,15 @@ function tryAttack(world: IWorld, attacker: number, target: number, dist: number
     const fp = getFirePoint(world, attacker)
 
     if (isTank && splash > 0) {
-      // Tank: artillery arc projectile with splash + barrel recoil
-      spawnArcProjectile(world, px, pz, target, damage, splash)
+      // Tank: artillery arc projectile from fire point + barrel recoil
+      spawnArcProjectile(world, fp.x, fp.z, target, damage, splash)
       spawnMuzzleFlash(fp.x, fp.y, fp.z)
       const poolId = MeshRef.poolId[attacker]
       const animMgr = getAnimManager(poolId)
       if (animMgr) animMgr.triggerRecoil(attacker)
     } else {
-      // Marine: straight bullet
-      spawnProjectile(world, px, pz, target, damage)
+      // Marine/Jeep/other: straight bullet from fire point
+      spawnProjectile(world, fp.x, fp.z, target, damage)
       spawnMuzzleFlash(fp.x, fp.y, fp.z)
     }
   } else {
