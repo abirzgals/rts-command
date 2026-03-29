@@ -259,6 +259,9 @@ function onMouseDown(e: MouseEvent) {
     for (const [mx, mz] of getMirrorPoints(pos.x, pos.z)) placeObject(mx, mz)
   } else if (currentTool === 'spawns') {
     placeSpawn(pos.x, pos.z)
+  } else if (currentTool === 'delete') {
+    isPainting = true
+    deleteObjectAt(pos.x, pos.z)
   } else {
     isPainting = true
     for (const [mx, mz] of getMirrorPoints(pos.x, pos.z)) applyBrush(mx, mz, brushSettings, 0.05)
@@ -275,7 +278,7 @@ function onMouseMove(e: MouseEvent) {
   elStatusHeight.textContent = `H: ${heightData[i]?.toFixed(1) ?? '-'}`
   elStatusType.textContent = `Type: ${TERRAIN_TYPES[terrainType[i]] ?? '-'}`
 
-  if (currentTool !== 'objects' && currentTool !== 'spawns') {
+  if (currentTool !== 'objects' && currentTool !== 'spawns' && currentTool !== 'delete') {
     elBrushCursor.style.display = 'block'
     const r = brushSettings.radius * 8
     elBrushCursor.style.width = r * 2 + 'px'
@@ -286,8 +289,11 @@ function onMouseMove(e: MouseEvent) {
     elBrushCursor.style.display = 'none'
   }
 
-  // Continuous painting — mirrored
-  if (isPainting && currentTool !== 'objects' && currentTool !== 'spawns') {
+  // Continuous painting/deleting — mirrored
+  if (isPainting && currentTool === 'delete') {
+    deleteObjectAt(pos.x, pos.z)
+  }
+  if (isPainting && !['objects', 'spawns', 'delete'].includes(currentTool)) {
     for (const [mx, mz] of getMirrorPoints(pos.x, pos.z)) applyBrush(mx, mz, brushSettings, 0.016)
   }
 }
@@ -321,6 +327,130 @@ function placeObject(wx: number, wz: number) {
     const idx = pool.add(placedObjects.length + 1000, wx, y + (isResource ? 0.8 : 0), wz, rot)
   }
 }
+
+// ── Delete object at position ────────────────────────────────
+
+function deleteObjectAt(wx: number, wz: number) {
+  const RADIUS = 2.0
+  let bestIdx = -1
+  let bestDist = RADIUS
+
+  for (let i = 0; i < placedObjects.length; i++) {
+    const obj = placedObjects[i]
+    const dx = obj.x - wx
+    const dz = obj.z - wz
+    const dist = Math.sqrt(dx * dx + dz * dz)
+    if (dist < bestDist) {
+      bestDist = dist
+      bestIdx = i
+    }
+  }
+
+  if (bestIdx >= 0) {
+    placedObjects.splice(bestIdx, 1)
+    // Rebuild all object visuals (simplest approach)
+    rebuildObjectVisuals()
+  }
+}
+
+function rebuildObjectVisuals() {
+  // Clear all mesh pools used for objects (20-25)
+  for (const poolId of [20, 21, 22, 23, 24, 25]) {
+    const pool = getPool(poolId)
+    if (pool) pool.clear()
+  }
+  // Re-add all placed objects
+  for (let i = 0; i < placedObjects.length; i++) {
+    const obj = placedObjects[i]
+    const pool = getPool(obj.poolId)
+    if (pool) {
+      const y = getTerrainHeight(obj.x, obj.z) + (obj.type === 'resource' ? 0.8 : 0)
+      pool.add(i + 2000, obj.x, y, obj.z, obj.rotation)
+    }
+  }
+}
+
+// ── Scatter nature objects ───────────────────────────────────
+
+let scatterSeed = Date.now()
+
+function scatterNature() {
+  // Clear existing objects
+  placedObjects.length = 0
+  scatterSeed = Date.now()
+
+  let s = scatterSeed % 2147483647
+  const rand = () => { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646 }
+
+  const MAP_HALF = 100
+  // Keep spawn areas clear
+  const distToSpawn = (x: number, z: number) => Math.min(
+    Math.sqrt((x - spawnPoints.player.x) ** 2 + (z - spawnPoints.player.z) ** 2),
+    Math.sqrt((x - spawnPoints.enemy.x) ** 2 + (z - spawnPoints.enemy.z) ** 2),
+  )
+
+  // Tree clusters: groups of 3-6 trees in natural clumps
+  const CLUSTER_COUNT = 25
+  for (let c = 0; c < CLUSTER_COUNT; c++) {
+    const cx = (rand() - 0.5) * MAP_HALF * 1.6
+    const cz = (rand() - 0.5) * MAP_HALF * 1.6
+    if (distToSpawn(cx, cz) < 25) continue
+
+    const h = getTerrainHeight(cx, cz)
+    if (h < -0.5 || h > 8) continue // no trees underwater or on peaks
+
+    const count = 3 + Math.floor(rand() * 4)
+    for (let i = 0; i < count; i++) {
+      const tx = cx + (rand() - 0.5) * 6
+      const tz = cz + (rand() - 0.5) * 6
+      const th = getTerrainHeight(tx, tz)
+      if (th < -0.5 || th > 8) continue
+      placedObjects.push({
+        type: 'obstacle', poolId: 23, // tree
+        x: tx, z: tz, rotation: rand() * Math.PI * 2,
+      })
+    }
+  }
+
+  // Rock formations: scattered rocks and boulders on slopes and high ground
+  const ROCK_COUNT = 40
+  for (let i = 0; i < ROCK_COUNT; i++) {
+    const rx = (rand() - 0.5) * MAP_HALF * 1.6
+    const rz = (rand() - 0.5) * MAP_HALF * 1.6
+    if (distToSpawn(rx, rz) < 20) continue
+
+    const h = getTerrainHeight(rx, rz)
+    if (h < -0.5) continue
+
+    // Prefer higher ground and slopes for rocks
+    const chance = h > 4 ? 0.8 : h > 2 ? 0.5 : 0.2
+    if (rand() > chance) continue
+
+    const poolId = rand() < 0.4 ? 24 : rand() < 0.7 ? 22 : 25 // boulder, rock1, rock2
+    placedObjects.push({
+      type: 'obstacle', poolId,
+      x: rx, z: rz, rotation: rand() * Math.PI * 2,
+    })
+  }
+
+  // Rebuild visuals
+  rebuildObjectVisuals()
+
+  // Mirror objects if mirror mode active
+  if (mirrorMode !== 'none') {
+    const origLen = placedObjects.length
+    for (let i = 0; i < origLen; i++) {
+      const obj = placedObjects[i]
+      const pts = getMirrorPoints(obj.x, obj.z)
+      if (pts.length > 1) {
+        placedObjects.push({ ...obj, x: pts[1][0], z: pts[1][1], rotation: obj.rotation + Math.PI })
+      }
+    }
+    rebuildObjectVisuals()
+  }
+}
+
+// ── Spawn points ─────────────────────────────────────────────
 
 function placeSpawn(wx: number, wz: number) {
   if (selectedSpawn === 'player') {
@@ -433,10 +563,12 @@ function wireUI() {
       elStatusTool.textContent = `Tool: ${tool.charAt(0).toUpperCase() + tool.slice(1)}`
 
       // Show/hide panels
+      const isBrush = !['objects', 'spawns', 'delete'].includes(tool)
       document.getElementById('panel-paint')!.style.display = tool === 'paint' ? '' : 'none'
-      document.getElementById('panel-brush')!.style.display = (tool !== 'objects' && tool !== 'spawns') ? '' : 'none'
+      document.getElementById('panel-brush')!.style.display = isBrush ? '' : 'none'
       document.getElementById('panel-objects')!.style.display = tool === 'objects' ? '' : 'none'
       document.getElementById('panel-spawns')!.style.display = tool === 'spawns' ? '' : 'none'
+      document.getElementById('panel-delete')!.style.display = tool === 'delete' ? '' : 'none'
     })
   }
 
@@ -455,6 +587,7 @@ function wireUI() {
 
   // Auto-texture button
   document.getElementById('btn-auto-texture')!.addEventListener('click', autoTextureFromGeometry)
+  document.getElementById('btn-scatter')!.addEventListener('click', scatterNature)
 
   // Paint type buttons: click = select, double-click = replace texture
   for (const btn of document.querySelectorAll<HTMLElement>('[data-paint]')) {

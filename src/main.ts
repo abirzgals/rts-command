@@ -279,8 +279,8 @@ function setupMap(world: IWorld) {
     }
   }
 
-  // ── Scatter 3D obstacles across the map ──────────────────
-  spawnMapObstacles(world)
+  // ── Scatter 3D obstacles (only for random maps, not loaded ones) ──
+  if (mapObjects.length === 0) spawnMapObstacles(world)
 }
 
 function spawnMapObstacles(world: IWorld) {

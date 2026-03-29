@@ -124,6 +124,7 @@
         <button class="tool-btn" data-tool="flatten">&#x2550; Flatten</button>
         <button class="tool-btn" data-tool="objects">Objects</button>
         <button class="tool-btn" data-tool="spawns">Spawns</button>
+        <button class="tool-btn" data-tool="delete" style="color:#f66">&#x2716; Delete</button>
       </div>
     </div>
 
@@ -187,6 +188,14 @@
         <button class="obj-btn" data-obj="23">Tree</button>
         <button class="obj-btn" data-obj="24">Boulder</button>
       </div>
+      <button class="btn" id="btn-scatter" style="width:100%;margin-top:6px;background:#2a3a5a;border-color:#4a6a9a">&#x1F333; Scatter Nature</button>
+      <div style="font-size:10px;color:#666;margin-top:2px">Auto-place trees, rocks, boulders. Re-click = new seed.</div>
+    </div>
+
+    <!-- Delete info -->
+    <div class="panel" id="panel-delete" style="display:none">
+      <div class="panel-title">Delete Tool</div>
+      <div style="font-size:11px;color:#aaa">Click on map to remove objects under cursor</div>
     </div>
 
     <!-- Spawns (shown when tool=spawns) -->

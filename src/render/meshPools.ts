@@ -144,6 +144,14 @@ export class MeshPool {
     if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true
   }
 
+  clear() {
+    this.eidToIndex.clear()
+    this.indexToEid.fill(-1)
+    this.activeCount = 0
+    this.mesh.count = 0
+    this.mesh.instanceMatrix.needsUpdate = true
+  }
+
   updateTransform(eid: number, x: number, y: number, z: number, rotY: number) {
     const idx = this.eidToIndex.get(eid)
     if (idx === undefined) return
