@@ -129,6 +129,7 @@ async function showMapSelector(): Promise<'random' | { name: string }> {
 
 let mapSpawnPoints = { player: { x: -65, z: -65 }, enemy: { x: 65, z: 65 } }
 let mapObjects: any[] = []
+let isLoadedMap = false
 
 async function init() {
   // 0. Map selection
@@ -143,6 +144,7 @@ async function init() {
     const result = loadMapIntoTerrain(mapData)
     mapSpawnPoints = result.spawnPoints
     mapObjects = result.objects
+    isLoadedMap = true
   }
 
   // 2. Init Three.js renderer + lighting
@@ -193,94 +195,80 @@ async function init() {
 init()
 
 function setupMap(world: IWorld) {
-  // Player base — from map spawn points
   const px = mapSpawnPoints.player.x, pz = mapSpawnPoints.player.z
-
-  // Command Center
-  spawnBuilding(world, BT_COMMAND_CENTER, FACTION_PLAYER, px, pz, true)
-
-  // Supply Depot — offset so it doesn't overlap CC (radius ~2 + 1.2 = need ~4 gap)
-  spawnBuilding(world, BT_SUPPLY_DEPOT, FACTION_PLAYER, px - 6, pz + 5, true)
-
-  // Barracks — well spaced from CC
-  spawnBuilding(world, BT_BARRACKS, FACTION_PLAYER, px + 8, pz - 5, true)
-
-  // Factory — opposite side from barracks
-  spawnBuilding(world, BT_FACTORY, FACTION_PLAYER, px - 7, pz - 6, true)
-
-  // Starting workers — ring around CC but outside building radius
-  for (let i = 0; i < 5; i++) {
-    const angle = (i / 5) * Math.PI * 2 + 0.3
-    spawnUnit(world, UT_WORKER, FACTION_PLAYER, px + Math.cos(angle) * 5, pz + Math.sin(angle) * 5)
-  }
-
-  // Starting marines — further out, between buildings
-  for (let i = 0; i < 6; i++) {
-    const angle = (i / 6) * Math.PI * 2
-    spawnUnit(world, UT_MARINE, FACTION_PLAYER, px + 12 + Math.cos(angle) * 3, pz + 3 + Math.sin(angle) * 3)
-  }
-
-  // Starting tanks — even further out
-  for (let i = 0; i < 3; i++) {
-    const angle = (i / 3) * Math.PI * 2
-    spawnUnit(world, UT_TANK, FACTION_PLAYER, px + 18 + Math.cos(angle) * 3, pz + Math.sin(angle) * 3)
-  }
-
-  // Player minerals — arc on the far side from center (toward corner)
-  for (let i = 0; i < 8; i++) {
-    const angle = (i / 8) * Math.PI * 0.6 + Math.PI * 0.7
-    const dist = 10 + (i % 2) * 2.5
-    spawnResourceNode(world, RES_MINERALS, px + Math.cos(angle) * dist, pz + Math.sin(angle) * dist, 1500)
-  }
-
-  // Player gas — near CC but not overlapping
-  spawnResourceNode(world, RES_GAS, px + 12, pz - 8, 2000)
-  spawnResourceNode(world, RES_GAS, px - 8, pz + 12, 2000)
-
-  // ── Enemy base — from map spawn points ──
   const ex = mapSpawnPoints.enemy.x, ez = mapSpawnPoints.enemy.z
 
-  spawnBuilding(world, BT_COMMAND_CENTER, FACTION_ENEMY, ex, ez, true)
-  spawnBuilding(world, BT_SUPPLY_DEPOT, FACTION_ENEMY, ex + 6, ez - 5, true)
-  spawnBuilding(world, BT_BARRACKS, FACTION_ENEMY, ex - 8, ez + 5, true)
+  if (isLoadedMap) {
+    // ── Loaded map: minimal start — CC + 1 worker + 1 marine per side ──
+    spawnBuilding(world, BT_COMMAND_CENTER, FACTION_PLAYER, px, pz, true)
+    spawnUnit(world, UT_WORKER, FACTION_PLAYER, px + 4, pz + 3)
+    spawnUnit(world, UT_MARINE, FACTION_PLAYER, px - 4, pz + 3)
 
-  for (let i = 0; i < 5; i++) {
-    const angle = (i / 5) * Math.PI * 2 + 0.3
-    spawnUnit(world, UT_WORKER, FACTION_ENEMY, ex + Math.cos(angle) * 5, ez + Math.sin(angle) * 5)
-  }
+    spawnBuilding(world, BT_COMMAND_CENTER, FACTION_ENEMY, ex, ez, true)
+    spawnUnit(world, UT_WORKER, FACTION_ENEMY, ex + 4, ez + 3)
+    spawnUnit(world, UT_MARINE, FACTION_ENEMY, ex - 4, ez + 3)
+  } else {
+    // ── Random map: full starting base ──
+    spawnBuilding(world, BT_COMMAND_CENTER, FACTION_PLAYER, px, pz, true)
+    spawnBuilding(world, BT_SUPPLY_DEPOT, FACTION_PLAYER, px - 6, pz + 5, true)
+    spawnBuilding(world, BT_BARRACKS, FACTION_PLAYER, px + 8, pz - 5, true)
+    spawnBuilding(world, BT_FACTORY, FACTION_PLAYER, px - 7, pz - 6, true)
 
-  // Enemy minerals — arc toward corner
-  for (let i = 0; i < 8; i++) {
-    const angle = (i / 8) * Math.PI * 0.6 + Math.PI * 1.7
-    const dist = 10 + (i % 2) * 2.5
-    spawnResourceNode(world, RES_MINERALS, ex + Math.cos(angle) * dist, ez + Math.sin(angle) * dist, 1500)
-  }
-
-  spawnResourceNode(world, RES_GAS, ex - 12, ez + 8, 2000)
-  spawnResourceNode(world, RES_GAS, ex + 8, ez - 12, 2000)
-
-  // Middle contested resources
-  for (let i = 0; i < 6; i++) {
-    const angle = (i / 6) * Math.PI * 2
-    spawnResourceNode(world, RES_MINERALS, Math.cos(angle) * 15, Math.sin(angle) * 15, 2000)
-  }
-  spawnResourceNode(world, RES_GAS, 5, 5, 3000)
-  spawnResourceNode(world, RES_GAS, -5, -5, 3000)
-
-  // Scattered resources
-  const spots = [[-40, 0], [0, -40], [40, 0], [0, 40], [-50, 50], [50, -50]]
-  for (const [sx, sz] of spots) {
-    for (let i = 0; i < 4; i++) {
-      spawnResourceNode(world, RES_MINERALS,
-        sx + (Math.random() - 0.5) * 8,
-        sz + (Math.random() - 0.5) * 8,
-        1000,
-      )
+    for (let i = 0; i < 5; i++) {
+      const angle = (i / 5) * Math.PI * 2 + 0.3
+      spawnUnit(world, UT_WORKER, FACTION_PLAYER, px + Math.cos(angle) * 5, pz + Math.sin(angle) * 5)
     }
-  }
+    for (let i = 0; i < 6; i++) {
+      const angle = (i / 6) * Math.PI * 2
+      spawnUnit(world, UT_MARINE, FACTION_PLAYER, px + 12 + Math.cos(angle) * 3, pz + 3 + Math.sin(angle) * 3)
+    }
+    for (let i = 0; i < 3; i++) {
+      const angle = (i / 3) * Math.PI * 2
+      spawnUnit(world, UT_TANK, FACTION_PLAYER, px + 18 + Math.cos(angle) * 3, pz + Math.sin(angle) * 3)
+    }
 
-  // ── Scatter 3D obstacles (only for random maps, not loaded ones) ──
-  if (mapObjects.length === 0) spawnMapObstacles(world)
+    for (let i = 0; i < 8; i++) {
+      const angle = (i / 8) * Math.PI * 0.6 + Math.PI * 0.7
+      const dist = 10 + (i % 2) * 2.5
+      spawnResourceNode(world, RES_MINERALS, px + Math.cos(angle) * dist, pz + Math.sin(angle) * dist, 1500)
+    }
+    spawnResourceNode(world, RES_GAS, px + 12, pz - 8, 2000)
+    spawnResourceNode(world, RES_GAS, px - 8, pz + 12, 2000)
+
+    spawnBuilding(world, BT_COMMAND_CENTER, FACTION_ENEMY, ex, ez, true)
+    spawnBuilding(world, BT_SUPPLY_DEPOT, FACTION_ENEMY, ex + 6, ez - 5, true)
+    spawnBuilding(world, BT_BARRACKS, FACTION_ENEMY, ex - 8, ez + 5, true)
+
+    for (let i = 0; i < 5; i++) {
+      const angle = (i / 5) * Math.PI * 2 + 0.3
+      spawnUnit(world, UT_WORKER, FACTION_ENEMY, ex + Math.cos(angle) * 5, ez + Math.sin(angle) * 5)
+    }
+
+    for (let i = 0; i < 8; i++) {
+      const angle = (i / 8) * Math.PI * 0.6 + Math.PI * 1.7
+      const dist = 10 + (i % 2) * 2.5
+      spawnResourceNode(world, RES_MINERALS, ex + Math.cos(angle) * dist, ez + Math.sin(angle) * dist, 1500)
+    }
+    spawnResourceNode(world, RES_GAS, ex - 12, ez + 8, 2000)
+    spawnResourceNode(world, RES_GAS, ex + 8, ez - 12, 2000)
+
+    // Middle contested resources
+    for (let i = 0; i < 6; i++) {
+      const angle = (i / 6) * Math.PI * 2
+      spawnResourceNode(world, RES_MINERALS, Math.cos(angle) * 15, Math.sin(angle) * 15, 2000)
+    }
+    spawnResourceNode(world, RES_GAS, 5, 5, 3000)
+    spawnResourceNode(world, RES_GAS, -5, -5, 3000)
+
+    const spots = [[-40, 0], [0, -40], [40, 0], [0, 40], [-50, 50], [50, -50]]
+    for (const [sx, sz] of spots) {
+      for (let i = 0; i < 4; i++) {
+        spawnResourceNode(world, RES_MINERALS, sx + (Math.random() - 0.5) * 8, sz + (Math.random() - 0.5) * 8, 1000)
+      }
+    }
+
+    spawnMapObstacles(world)
+  }
 }
 
 function spawnMapObstacles(world: IWorld) {
