@@ -144,16 +144,31 @@ export function createTerrainMesh(): THREE.Mesh {
       #include <shadowmask_pars_fragment>
 
       void main() {
+        vec3 n = normalize(vNorm);
+
         vec3 tg = texture2D(texGrass, vTileUV).rgb;
         vec3 td = texture2D(texDirt,  vTileUV).rgb;
         vec3 tr = texture2D(texRock,  vTileUV * 0.7).rgb;
-        vec3 tc = texture2D(texCliff, vTileUV * 0.5).rgb;
-        vec3 albedo = tg * vSplat.r + td * vSplat.g + tr * vSplat.b + tc * vSplat.a;
+        // Cliff: triplanar projection for steep surfaces (avoids stretching)
+        vec3 tcXY = texture2D(texCliff, vTileUV * 0.5).rgb;
+        vec3 tcXZ = texture2D(texCliff, vec2(vTileUV.x, vHeight * 0.08) * 0.5).rgb;
+        vec3 tcYZ = texture2D(texCliff, vec2(vTileUV.y, vHeight * 0.08) * 0.5).rgb;
+        vec3 blend = abs(n);
+        blend = blend / (blend.x + blend.y + blend.z + 0.001);
+        vec3 tc = tcXZ * blend.y + tcXY * blend.z + tcYZ * blend.x;
 
-        float ndl = max(dot(normalize(vNorm), sunDir), 0.0);
+        // Base painted albedo from splat weights
+        vec3 painted = tg * vSplat.r + td * vSplat.g + tr * vSplat.b + tc * vSplat.a;
+
+        // Slope-based cliff override: steep surfaces get cliff texture automatically
+        // n.y = 1.0 for flat, 0.0 for vertical
+        // Start blending cliff at ~35° (n.y < 0.82), full cliff at ~55° (n.y < 0.57)
+        float slopeFactor = 1.0 - smoothstep(0.57, 0.82, n.y);
+        vec3 albedo = mix(painted, tc, slopeFactor);
+
+        float ndl = max(dot(n, sunDir), 0.0);
         float hf = 0.9 + clamp(vHeight * 0.015, 0.0, 0.2);
 
-        // Try shadow mask, fallback to 1.0
         float shadow = getShadowMask();
 
         vec3 col = albedo * (0.35 + 0.65 * ndl * shadow) * hf;
