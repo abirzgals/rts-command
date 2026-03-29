@@ -260,6 +260,39 @@ export function movementSystem(world: IWorld, dt: number) {
       }
     }
 
+    // Yield: if another unit is closer to the same waypoint, wait
+    const unitRadius = hasComponent(world, CollisionRadius, eid) ? CollisionRadius.value[eid] : 0.4
+    _nearby.length = 0
+    spatialHash.query(px, pz, unitRadius * 3, _nearby)
+    let shouldYield = false
+    for (const other of _nearby) {
+      if (other === eid) continue
+      if (hasComponent(world, Dead, other)) continue
+      if (!hasComponent(world, PathFollower, other)) continue
+      // Check if other unit targets a similar waypoint (within radius)
+      const otherPath = getPath(PathFollower.pathId[other])
+      const otherWpIdx = PathFollower.waypointIndex[other]
+      if (!otherPath || otherWpIdx >= otherPath.length) continue
+      const otherWp = otherPath[otherWpIdx]
+      const wpDx = otherWp.x - wp.x, wpDz = otherWp.z - wp.z
+      if (wpDx * wpDx + wpDz * wpDz > unitRadius * unitRadius * 4) continue
+      // Same waypoint area — who is closer?
+      const myDist2 = dx * dx + dz * dz
+      const oDx = otherWp.x - Position.x[other], oDz = otherWp.z - Position.z[other]
+      const otherDist2 = oDx * oDx + oDz * oDz
+      if (otherDist2 < myDist2) {
+        shouldYield = true
+        break
+      }
+    }
+    if (shouldYield) {
+      // Wait: don't move this frame, let the closer unit pass
+      Velocity.x[eid] = 0; Velocity.z[eid] = 0
+      if (hasComponent(world, CurrentSpeed, eid)) CurrentSpeed.value[eid] = 0
+      telemetry.endFrame(eid)
+      continue
+    }
+
     // ── Step 2: Desired direction ────────────────────────────
     const desiredDirX = dx / dist
     const desiredDirZ = dz / dist
