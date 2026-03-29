@@ -15,6 +15,7 @@ import { generateTerrain, getTerrainHeight, getTerrainTypeAt, T_CLIFF, T_WATER, 
 import { isWorldWalkable } from './pathfinding/navGrid'
 import { createTerrainMesh, updateWater } from './terrain/terrainMesh'
 import { initNavGrid } from './pathfinding/navGrid'
+import { buildSectorGraph } from './pathfinding/sectorGraph'
 
 // Systems
 import { movementSystem } from './ecs/systems/movementSystem'
@@ -59,8 +60,9 @@ async function init() {
   const terrainMeshObj = createTerrainMesh()
   setGroundPlane(terrainMeshObj)
 
-  // 4. Init navigation grid from terrain
+  // 4. Init navigation grid + sector graph from terrain
   initNavGrid()
+  buildSectorGraph()
 
   // 5. Load 3D models and create mesh pools
   await createMeshPools()

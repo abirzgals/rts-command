@@ -5,7 +5,7 @@ import {
   MoveSpeed, Armor, Selectable, MeshRef, CollisionRadius,
   WorkerC, ResourceDropoff, IsBuilding, BuildProgress, Producer,
   SupplyProvider, SupplyCost, ResourceNode, Projectile, Selected,
-  ArcProjectile,
+  ArcProjectile, TurnRate, Acceleration, MaxSlope, CurrentSpeed, StuckState,
 } from './components'
 import {
   UNIT_DEFS, BUILDING_DEFS, FACTION_PLAYER, UT_WORKER,
@@ -16,6 +16,16 @@ import { getAnimManager } from '../render/animatedMeshManager'
 import { spatialHash } from '../globals'
 import { getTerrainHeight } from '../terrain/heightmap'
 import { blockCells } from '../pathfinding/navGrid'
+
+// Map unit meshPool IDs → editor config keys
+const UNIT_POOL_TO_KEY: Record<number, string> = { 0: 'worker', 1: 'marine', 2: 'tank' }
+
+/** Read a stat from editorConfig (if available), falling back to UnitDef value */
+function cfgStat(def: UnitDef, key: string): number {
+  const cfgKey = UNIT_POOL_TO_KEY[def.meshPool]
+  const val = cfgKey ? editorConfig?.[cfgKey]?.[key] : undefined
+  return val ?? (def as any)[key]
+}
 
 export function spawnUnit(
   world: IWorld,
@@ -48,32 +58,49 @@ export function spawnUnit(
   addComponent(world, UnitTypeC, eid)
   UnitTypeC.id[eid] = unitType
 
+  // All stats: read from editorConfig (persistent volume) → fallback to code defaults
   addComponent(world, Health, eid)
-  Health.current[eid] = def.hp
-  Health.max[eid] = def.hp
+  Health.current[eid] = cfgStat(def, 'hp')
+  Health.max[eid] = cfgStat(def, 'hp')
 
   addComponent(world, MoveSpeed, eid)
-  MoveSpeed.value[eid] = def.speed
+  MoveSpeed.value[eid] = cfgStat(def, 'speed')
+
+  addComponent(world, TurnRate, eid)
+  TurnRate.value[eid] = cfgStat(def, 'turnRate')
+
+  addComponent(world, Acceleration, eid)
+  Acceleration.value[eid] = cfgStat(def, 'acceleration')
+
+  addComponent(world, MaxSlope, eid)
+  MaxSlope.value[eid] = cfgStat(def, 'maxSlope')
+
+  addComponent(world, CurrentSpeed, eid)
+  CurrentSpeed.value[eid] = 0
+
+  addComponent(world, StuckState, eid)
+  StuckState.phase[eid] = 0
+  StuckState.timer[eid] = 0
 
   addComponent(world, Armor, eid)
-  Armor.value[eid] = def.armor
+  Armor.value[eid] = cfgStat(def, 'armor')
 
   addComponent(world, Selectable, eid)
-  Selectable.radius[eid] = def.radius
+  Selectable.radius[eid] = cfgStat(def, 'selectionRadius') ?? def.radius
 
   addComponent(world, CollisionRadius, eid)
-  CollisionRadius.value[eid] = def.radius
+  CollisionRadius.value[eid] = cfgStat(def, 'collisionRadius') ?? def.radius
 
   addComponent(world, SupplyCost, eid)
   SupplyCost.amount[eid] = def.supply
 
   if (def.attack) {
     addComponent(world, AttackC, eid)
-    AttackC.damage[eid] = def.attack.damage
-    AttackC.range[eid] = def.attack.range
-    AttackC.cooldown[eid] = def.attack.cooldown
+    AttackC.damage[eid] = cfgStat(def, 'damage') ?? def.attack.damage
+    AttackC.range[eid] = cfgStat(def, 'range') ?? def.attack.range
+    AttackC.cooldown[eid] = cfgStat(def, 'cooldown') ?? def.attack.cooldown
     AttackC.timer[eid] = 0
-    AttackC.splash[eid] = def.attack.splash ?? 0
+    AttackC.splash[eid] = cfgStat(def, 'splash') ?? def.attack.splash ?? 0
   }
 
   if (unitType === UT_WORKER) {

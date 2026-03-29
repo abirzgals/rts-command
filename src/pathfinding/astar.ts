@@ -1,5 +1,6 @@
 import { GRID_RES, worldToGrid, gridToWorld, CELL_SIZE } from '../terrain/heightmap'
-import { walkable, moveCost, dynamicCost, isWalkable } from './navGrid'
+import { walkable, moveCost, dynamicCost, isWalkable, isClearFor, isClearForUnit, slopeData, ensureClearance } from './navGrid'
+import { sectorId, findSectorPath, SECTOR_SIZE, SECTOR_COLS } from './sectorGraph'
 import type { Waypoint } from './pathStore'
 
 // ── Binary min-heap ──────────────────────────────────────────
@@ -80,9 +81,13 @@ const gCost = new Float32Array(GRID_RES * GRID_RES)
 const fCost = new Float32Array(GRID_RES * GRID_RES)
 const cameFrom = new Int32Array(GRID_RES * GRID_RES)
 const visited = new Uint32Array(GRID_RES * GRID_RES)
-const inOpen = new Uint8Array(GRID_RES * GRID_RES)
+// inOpen uses generation counter too — prevents stale values from previous searches
+const inOpen = new Uint32Array(GRID_RES * GRID_RES)
 let generation = 0
-let currentClearance = 0  // set during findPath, used by smoothPath
+
+// Current search params (used by smoothPath)
+let currentClearance = 0
+let currentMaxSlope = 100.0
 
 function idx(gx: number, gz: number) { return gz * GRID_RES + gx }
 
@@ -93,69 +98,30 @@ function heuristic(ax: number, az: number, bx: number, bz: number): number {
   return Math.max(dx, dz) + (SQRT2 - 1) * Math.min(dx, dz)
 }
 
-const BUILDING_BLOCK_THRESHOLD = 50
-
-// Precomputed clearance maps — built once per findPath call
-const clearanceCache = new Map<number, Uint8Array>()
-let clearanceDirty = true
-
-/** Mark clearance cache as dirty (call when nav grid or dynamic costs change) */
-export function invalidateClearance() { clearanceDirty = true }
-
-/** Build clearance map for a given radius. Cell=1 means passable with that clearance. */
-function getClearanceMap(clearance: number): Uint8Array {
-  if (!clearanceDirty && clearanceCache.has(clearance)) return clearanceCache.get(clearance)!
-  if (clearanceDirty) { clearanceCache.clear(); clearanceDirty = false }
-
-  const map = new Uint8Array(GRID_RES * GRID_RES)
-  const total = GRID_RES * GRID_RES
-
-  if (clearance <= 0) {
-    // Simple: just walkable + no building
-    for (let i = 0; i < total; i++) {
-      map[i] = (walkable[i] === 1 && dynamicCost[i] < BUILDING_BLOCK_THRESHOLD) ? 1 : 0
-    }
-  } else {
-    // For each cell, check if all cells within radius are passable
-    for (let gz = 0; gz < GRID_RES; gz++) {
-      for (let gx = 0; gx < GRID_RES; gx++) {
-        let ok = true
-        outer: for (let dz = -clearance; dz <= clearance; dz++) {
-          for (let dx = -clearance; dx <= clearance; dx++) {
-            if (dx * dx + dz * dz > clearance * clearance) continue
-            const nx = gx + dx
-            const nz = gz + dz
-            if (nx < 0 || nx >= GRID_RES || nz < 0 || nz >= GRID_RES) { ok = false; break outer }
-            const ni = nz * GRID_RES + nx
-            if (walkable[ni] === 0 || dynamicCost[ni] >= BUILDING_BLOCK_THRESHOLD) { ok = false; break outer }
-          }
-        }
-        map[gz * GRID_RES + gx] = ok ? 1 : 0
-      }
-    }
-  }
-
-  clearanceCache.set(clearance, map)
-  return map
-}
-
-/** Fast clearance check — single array lookup */
-function hasClearance(gx: number, gz: number, clearance: number): boolean {
+/** Check if cell passable for current search (clearance + slope) */
+function isPassableForSearch(gx: number, gz: number): boolean {
   if (gx < 0 || gx >= GRID_RES || gz < 0 || gz >= GRID_RES) return false
-  const map = getClearanceMap(clearance)
-  return map[gz * GRID_RES + gx] === 1
+  const i = gz * GRID_RES + gx
+  if (walkable[i] === 0) return false
+  if (currentClearance > 0 && !isClearFor(gx, gz, currentClearance)) return false
+  if (currentMaxSlope < 100 && slopeData[i] > currentMaxSlope) return false
+  return true
 }
 
-// ── Main A* function ─────────────────────────────────────────
-export function findPath(
+// ── Hierarchical A* (Supreme Commander style) ────────────────
+// 1. Find sector path (coarse)
+// 2. Run fine A* constrained to the sector corridor
+
+export function findPathHierarchical(
   startX: number, startZ: number,
   goalX: number, goalZ: number,
-  ignoreDynamic = false,
   unitRadius = 0,
+  maxSlope = 100.0,
+  ignoreDynamic = false,
 ): Waypoint[] | null {
-  // Convert unit radius to grid cells for clearance checks.
-  // Only large units (radius > 0.8) need clearance — small units fit in one cell.
-  const clearance = unitRadius > 0.8 ? Math.floor(unitRadius / CELL_SIZE) : 0
+  ensureClearance()
+
+  const clearance = unitRadius > 0.8 ? Math.ceil(unitRadius / CELL_SIZE) : 0
 
   let [sx, sz] = worldToGrid(startX, startZ)
   const [gx, gz] = worldToGrid(goalX, goalZ)
@@ -167,7 +133,6 @@ export function findPath(
     ;[sx, sz] = found
   }
 
-  // If goal is unwalkable, find nearest walkable cell
   let tgx = gx, tgz = gz
   if (!isWalkable(gx, gz)) {
     const found = findNearestWalkable(gx, gz)
@@ -177,7 +142,79 @@ export function findPath(
 
   if (sx === tgx && sz === tgz) return []
 
+  // Set search params
   currentClearance = clearance
+  currentMaxSlope = maxSlope
+
+  const startSector = sectorId(sx, sz)
+  const goalSector = sectorId(tgx, tgz)
+
+  // Same sector or adjacent → run fine A* directly (no corridor constraint overhead)
+  if (startSector === goalSector || Math.abs(startSector % SECTOR_COLS - goalSector % SECTOR_COLS) <= 1 &&
+      Math.abs(((startSector / SECTOR_COLS) | 0) - ((goalSector / SECTOR_COLS) | 0)) <= 1) {
+    return findPathDirect(sx, sz, tgx, tgz, ignoreDynamic)
+  }
+
+  // Hierarchical: find sector corridor first
+  const sectorPath = findSectorPath(startSector, goalSector)
+  if (!sectorPath) {
+    // No sector path — try direct A* as fallback (maybe sectors are stale)
+    return findPathDirect(sx, sz, tgx, tgz, ignoreDynamic)
+  }
+
+  // Build allowed sectors set (corridor + 1-sector padding for path smoothing)
+  const allowedSectors = new Set<number>()
+  for (const s of sectorPath) {
+    allowedSectors.add(s)
+    // Add 8-neighbor sectors as padding
+    const scol = s % SECTOR_COLS
+    const srow = (s / SECTOR_COLS) | 0
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) {
+        const nr = srow + dr
+        const nc = scol + dc
+        if (nr >= 0 && nr < Math.ceil(GRID_RES / SECTOR_SIZE) && nc >= 0 && nc < SECTOR_COLS) {
+          allowedSectors.add(nr * SECTOR_COLS + nc)
+        }
+      }
+    }
+  }
+
+  // Corridor-constrained fine A*
+  const result = findPathConstrained(sx, sz, tgx, tgz, ignoreDynamic, allowedSectors)
+
+  // Fallback to unconstrained if corridor fails
+  if (!result) return findPathDirect(sx, sz, tgx, tgz, ignoreDynamic)
+
+  return result
+}
+
+/** Direct (unconstrained) fine A* — used for short distances or fallback */
+function findPathDirect(
+  sx: number, sz: number,
+  tgx: number, tgz: number,
+  ignoreDynamic: boolean,
+): Waypoint[] | null {
+  return runAStar(sx, sz, tgx, tgz, ignoreDynamic, null)
+}
+
+/** Corridor-constrained A* — only expand nodes in allowed sectors */
+function findPathConstrained(
+  sx: number, sz: number,
+  tgx: number, tgz: number,
+  ignoreDynamic: boolean,
+  allowedSectors: Set<number>,
+): Waypoint[] | null {
+  return runAStar(sx, sz, tgx, tgz, ignoreDynamic, allowedSectors)
+}
+
+/** Core A* search — optionally constrained to a set of sectors */
+function runAStar(
+  sx: number, sz: number,
+  tgx: number, tgz: number,
+  ignoreDynamic: boolean,
+  allowedSectors: Set<number> | null,
+): Waypoint[] | null {
   generation++
   const heap = new BinaryHeap(GRID_RES * GRID_RES)
 
@@ -185,7 +222,7 @@ export function findPath(
   gCost[startIdx] = 0
   fCost[startIdx] = heuristic(sx, sz, tgx, tgz)
   visited[startIdx] = generation
-  inOpen[startIdx] = 1
+  inOpen[startIdx] = generation
   cameFrom[startIdx] = -1
   heap.push(startIdx, fCost[startIdx])
 
@@ -196,7 +233,7 @@ export function findPath(
     const cx = current % GRID_RES
     const cz = (current / GRID_RES) | 0
 
-    inOpen[current] = 0
+    inOpen[current] = 0  // mark as closed (no longer in open)
 
     if (cx === tgx && cz === tgz) {
       return reconstructPath(current, startIdx)
@@ -210,17 +247,17 @@ export function findPath(
 
       if (nx < 0 || nx >= GRID_RES || nz < 0 || nz >= GRID_RES) continue
 
-      const ni = idx(nx, nz)
-      if (walkable[ni] === 0) continue
+      // Corridor constraint — skip cells outside allowed sectors
+      if (allowedSectors && !allowedSectors.has(sectorId(nx, nz))) continue
 
-      // Check clearance for unit radius
-      if (clearance > 0 && !hasClearance(nx, nz, clearance)) continue
+      if (!isPassableForSearch(nx, nz)) continue
 
-      // Prevent corner cutting through diagonals
+      // Prevent corner cutting: for diagonal moves, both adjacent cardinals must be passable
       if (dx !== 0 && dz !== 0) {
-        if (!hasClearance(cx + dx, cz, clearance) || !hasClearance(cx, cz + dz, clearance)) continue
+        if (!isPassableForSearch(cx + dx, cz) || !isPassableForSearch(cx, cz + dz)) continue
       }
 
+      const ni = idx(nx, nz)
       const cost = baseCost * (moveCost[ni] + (ignoreDynamic ? 0 : dynamicCost[ni]))
       const tentativeG = gCost[current] + cost
 
@@ -231,8 +268,8 @@ export function findPath(
       fCost[ni] = tentativeG + heuristic(nx, nz, tgx, tgz)
       visited[ni] = generation
 
-      if (inOpen[ni] !== 1) {
-        inOpen[ni] = 1
+      if (inOpen[ni] !== generation) {
+        inOpen[ni] = generation
         heap.push(ni, fCost[ni])
       } else {
         heap.updateScore(ni, fCost[ni])
@@ -240,7 +277,7 @@ export function findPath(
     }
   }
 
-  return null // No path found
+  return null
 }
 
 function reconstructPath(goalIdx: number, startIdx: number): Waypoint[] {
@@ -252,7 +289,6 @@ function reconstructPath(goalIdx: number, startIdx: number): Waypoint[] {
   }
   gridPath.reverse()
 
-  // Convert to world coordinates and simplify
   const waypoints: Waypoint[] = []
   for (let i = 0; i < gridPath.length; i++) {
     const gx = gridPath[i] % GRID_RES
@@ -261,7 +297,6 @@ function reconstructPath(goalIdx: number, startIdx: number): Waypoint[] {
     waypoints.push({ x: wx, z: wz })
   }
 
-  // Path smoothing: skip waypoints that are in line-of-sight
   return smoothPath(waypoints)
 }
 
@@ -291,9 +326,8 @@ function hasLineOfSight(x1: number, z1: number, x2: number, z2: number): boolean
   const [gx1, gz1] = worldToGrid(x1, z1)
   const [gx2, gz2] = worldToGrid(x2, z2)
 
-  // DDA line rasterization — more reliable than Bresenham for grid checks
   const steps = Math.max(Math.abs(gx2 - gx1), Math.abs(gz2 - gz1))
-  if (steps === 0) return hasClearance(gx1, gz1, currentClearance)
+  if (steps === 0) return isPassableForSearch(gx1, gz1)
 
   const stepX = (gx2 - gx1) / steps
   const stepZ = (gz2 - gz1) / steps
@@ -301,14 +335,13 @@ function hasLineOfSight(x1: number, z1: number, x2: number, z2: number): boolean
   for (let i = 0; i <= steps; i++) {
     const cx = Math.round(gx1 + stepX * i)
     const cz = Math.round(gz1 + stepZ * i)
-    if (!hasClearance(cx, cz, currentClearance)) return false
-    // Also check adjacent cell on diagonal to prevent corner cutting
+    if (!isPassableForSearch(cx, cz)) return false
+    // Diagonal corner-cutting check
     if (i > 0) {
       const prevX = Math.round(gx1 + stepX * (i - 1))
       const prevZ = Math.round(gz1 + stepZ * (i - 1))
       if (cx !== prevX && cz !== prevZ) {
-        // Diagonal step — check both axis-aligned neighbors
-        if (!hasClearance(prevX, cz, currentClearance) || !hasClearance(cx, prevZ, currentClearance)) return false
+        if (!isPassableForSearch(prevX, cz) || !isPassableForSearch(cx, prevZ)) return false
       }
     }
   }
@@ -328,3 +361,6 @@ function findNearestWalkable(gx: number, gz: number): [number, number] | null {
   }
   return null
 }
+
+// Legacy export for backward compatibility (sandbox etc.)
+export { findPathHierarchical as findPath }

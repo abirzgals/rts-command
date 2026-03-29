@@ -28,6 +28,7 @@ import { createTerrainMesh, terrainMesh, waterMesh, updateWater } from './terrai
 
 // ── Pathfinding ─────────────────────────────────────────────────────────────
 import { initNavGrid } from './pathfinding/navGrid'
+import { buildSectorGraph } from './pathfinding/sectorGraph'
 
 // ── ECS Systems (NO aiSystem!) ──────────────────────────────────────────────
 import { movementSystem } from './ecs/systems/movementSystem'
@@ -103,8 +104,9 @@ async function init() {
   const tmesh = createTerrainMesh()
   setGroundPlane(tmesh)
 
-  // 4. Build navigation grid from terrain data
+  // 4. Build navigation grid + sector graph from terrain data
   initNavGrid()
+  buildSectorGraph()
 
   // 5. Load 3D models and create instanced mesh pools
   await createMeshPools()
@@ -293,8 +295,9 @@ function regenerateMap() {
   const newMesh = createTerrainMesh()
   setGroundPlane(newMesh)
 
-  // 5. Reinit navigation grid
+  // 5. Reinit navigation grid + sector graph
   initNavGrid()
+  buildSectorGraph()
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

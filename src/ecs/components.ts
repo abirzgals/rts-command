@@ -146,3 +146,26 @@ export const ArcProjectile = defineComponent({
 export const CollisionRadius = defineComponent({
   value: Types.f32,
 })
+
+// ── SupCom-style movement physics ───────────────────────────
+export const TurnRate = defineComponent({
+  value: Types.f32, // radians/sec — how fast unit rotates
+})
+
+export const Acceleration = defineComponent({
+  value: Types.f32, // units/sec² — how fast unit speeds up
+})
+
+export const MaxSlope = defineComponent({
+  value: Types.f32, // max traversable height delta between adjacent cells
+})
+
+export const CurrentSpeed = defineComponent({
+  value: Types.f32, // actual current speed (distinct from MoveSpeed max)
+})
+
+// Stuck escalation: 0=normal, 1=wiggle, 2=repath, 3=stopped
+export const StuckState = defineComponent({
+  phase: Types.ui8,
+  timer: Types.f32,
+})

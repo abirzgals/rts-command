@@ -4,10 +4,11 @@ import type { IWorld } from 'bitecs'
 import {
   Position, Faction, MeshRef, PathFollower, MoveTarget,
   AttackTarget, WorkerC, Dead, Velocity, Selected, CollisionRadius,
+  CurrentSpeed, MoveSpeed, StuckState, TurnRate,
 } from '../ecs/components'
 import { getPath } from '../pathfinding/pathStore'
 import { getTerrainHeight, GRID_RES, gridToWorld, CELL_SIZE, worldToGrid } from '../terrain/heightmap'
-import { walkable, dynamicCost } from '../pathfinding/navGrid'
+import { walkable, dynamicCost, getClearanceAt, slopeData } from '../pathfinding/navGrid'
 import { scene } from './engine'
 import { FACTION_PLAYER } from '../game/config'
 
@@ -51,6 +52,10 @@ const MOVE_DOT = new THREE.Color(0x00aaff)
 const GATHER_DOT = new THREE.Color(0xffaa00)
 const IDLE_DOT = new THREE.Color(0x888888)
 const SELECTED_DOT = new THREE.Color(0x00ff00)
+const STUCK_DOT = new THREE.Color(0xff8800)
+
+// DOM element for selected unit info
+let unitInfoDiv: HTMLDivElement | null = null
 
 export function isDebugEnabled() { return enabled }
 
@@ -70,6 +75,7 @@ export function toggleDebug() {
     scene.remove(clearanceMesh); clearanceMesh.geometry.dispose(); (clearanceMesh.material as THREE.Material).dispose()
     clearanceMesh = null; lastClearanceEid = -1
   }
+  if (!enabled && unitInfoDiv) unitInfoDiv.style.display = 'none'
 
   // Show/hide legend
   let legend = document.getElementById('debug-legend')
@@ -78,17 +84,20 @@ export function toggleDebug() {
     legend.id = 'debug-legend'
     legend.innerHTML = `
       <b>DEBUG</b> (F1)<br>
-      <span style="color:#0f8">━━</span> player path<br>
+      <span style="color:#0f8">━━</span> player path
       <span style="color:#f44">━━</span> enemy path<br>
       <span style="color:#0af">●</span> moving
-      <span style="color:#fa0">●</span> gathering<br>
-      <span style="color:#f00">●</span> attacking
-      <span style="color:#888">●</span> idle<br>
-      <span style="color:#0f0">●</span> selected<br>
-      <span style="color:#ff0">○</span> collider<br>
-      <span style="color:#f00;opacity:0.5">■</span> blocked cell<br>
-      <span style="color:#1b4">■</span> passable (selected)
-      <span style="color:#c21">■</span> blocked (selected)
+      <span style="color:#fa0">●</span> gathering
+      <span style="color:#f00">●</span> attacking<br>
+      <span style="color:#888">●</span> idle
+      <span style="color:#0f0">●</span> selected
+      <span style="color:#f80">●</span> stuck<br>
+      <span style="color:#ff0">○</span> collider
+      <span style="color:#f00;opacity:0.5">■</span> blocked<br>
+      <span style="color:#1b4">■</span> passable
+      <span style="color:#c21">■</span> blocked (clearance)
+      <span style="color:#cc0;opacity:0.5">■</span> steep slope<br>
+      <small>Select unit: shows speed/turn/slope info</small>
     `
     Object.assign(legend.style, {
       position: 'absolute', top: '44px', left: '8px',
@@ -277,7 +286,9 @@ export function updateDebugOverlay(world: IWorld) {
     if (labelIdx < MAX_LABELS) {
       let dotColor: THREE.Color
 
-      if (hasComponent(world, Selected, eid)) {
+      if (hasComponent(world, StuckState, eid) && StuckState.phase[eid] > 0) {
+        dotColor = STUCK_DOT // stuck unit — orange
+      } else if (hasComponent(world, Selected, eid)) {
         dotColor = SELECTED_DOT
       } else if (hasComponent(world, AttackTarget, eid)) {
         dotColor = ATTACK_DOT
@@ -388,30 +399,25 @@ export function updateDebugOverlay(world: IWorld) {
           const gz = ugz + dz
           if (gx < 0 || gx >= GRID_RES || gz < 0 || gz >= GRID_RES) continue
 
-          // Check clearance at this cell
-          let passable = true
-          if (clearance <= 0) {
-            const i = gz * GRID_RES + gx
-            passable = walkable[i] === 1 && dynamicCost[i] < 50
-          } else {
-            for (let cdz = -clearance; cdz <= clearance && passable; cdz++) {
-              for (let cdx = -clearance; cdx <= clearance && passable; cdx++) {
-                if (cdx * cdx + cdz * cdz > clearance * clearance) continue
-                const nx = gx + cdx, nz = gz + cdz
-                if (nx < 0 || nx >= GRID_RES || nz < 0 || nz >= GRID_RES) { passable = false; break }
-                const ni = nz * GRID_RES + nx
-                if (walkable[ni] === 0 || dynamicCost[ni] >= 50) { passable = false; break }
-              }
-            }
-          }
+          // Check clearance using distance-transform clearance map
+          const clr = getClearanceAt(gx, gz)
+          const passable = clr >= (clearance > 0 ? clearance : 1)
+          // Also check slope steepness
+          const slope = slopeData[gz * GRID_RES + gx]
+          const isSteep = slope > 1.5 // show slopes that would block tanks
 
           const [wx, wz] = gridToWorld(gx, gz)
           const y = getTerrainHeight(wx, wz) + 0.15
           const half = 0.42
 
-          const r = passable ? 0.1 : 0.8
-          const g = passable ? 0.7 : 0.1
-          const b = 0.1
+          let r: number, g: number, b: number
+          if (!passable) {
+            r = 0.8; g = 0.1; b = 0.1 // red = blocked
+          } else if (isSteep) {
+            r = 0.8; g = 0.8; b = 0.0 // yellow = steep slope
+          } else {
+            r = 0.1; g = 0.7; b = 0.1 // green = passable
+          }
 
           // Two triangles
           positions[vi++] = wx - half; positions[vi++] = y; positions[vi++] = wz - half
@@ -439,6 +445,42 @@ export function updateDebugOverlay(world: IWorld) {
       clearanceMesh.renderOrder = 97
       scene.add(clearanceMesh)
     }
+    // Show unit info panel
+    if (!unitInfoDiv) {
+      unitInfoDiv = document.createElement('div')
+      unitInfoDiv.id = 'debug-unit-info'
+      Object.assign(unitInfoDiv.style, {
+        position: 'absolute', top: '44px', right: '8px',
+        background: 'rgba(0,0,0,0.8)', color: '#ddd',
+        padding: '8px 12px', borderRadius: '6px',
+        fontSize: '12px', lineHeight: '1.5', zIndex: '30',
+        fontFamily: 'monospace', pointerEvents: 'none',
+        minWidth: '180px',
+      })
+      document.body.appendChild(unitInfoDiv)
+    }
+
+    const eid = selectedEid
+    const curSpd = hasComponent(world, CurrentSpeed, eid) ? CurrentSpeed.value[eid] : 0
+    const maxSpd = hasComponent(world, MoveSpeed, eid) ? MoveSpeed.value[eid] : 0
+    const turnR = hasComponent(world, TurnRate, eid) ? TurnRate.value[eid] : 0
+    const stuckP = hasComponent(world, StuckState, eid) ? StuckState.phase[eid] : 0
+    const stuckT = hasComponent(world, StuckState, eid) ? StuckState.timer[eid] : 0
+    const hasPath = hasComponent(world, PathFollower, eid)
+    const hasMT = hasComponent(world, MoveTarget, eid)
+
+    const stuckLabels = ['normal', 'wiggle', 'repath', 'stopped']
+    const stuckColor = stuckP === 0 ? '#0f8' : stuckP === 1 ? '#ff0' : stuckP === 2 ? '#f80' : '#f00'
+
+    unitInfoDiv.innerHTML = `
+      <b>Unit #${eid}</b><br>
+      Speed: <b>${curSpd.toFixed(1)}</b> / ${maxSpd.toFixed(1)} u/s<br>
+      Turn rate: ${turnR.toFixed(1)} rad/s<br>
+      Radius: ${CollisionRadius.value[eid].toFixed(1)}<br>
+      Stuck: <span style="color:${stuckColor}">${stuckLabels[stuckP] || '?'}</span> (${stuckT.toFixed(1)}s)<br>
+      Path: ${hasPath ? 'following' : hasMT ? 'seeking' : 'idle'}
+    `
+    unitInfoDiv.style.display = 'block'
   } else {
     // No single selection — remove clearance overlay
     if (clearanceMesh) {
@@ -448,5 +490,6 @@ export function updateDebugOverlay(world: IWorld) {
       clearanceMesh = null
     }
     lastClearanceEid = -1
+    if (unitInfoDiv) unitInfoDiv.style.display = 'none'
   }
 }

@@ -1,59 +1,89 @@
+/**
+ * Supreme Commander-style movement system.
+ *
+ * Per-unit pipeline each tick:
+ *  1. Waypoint management (advance when close)
+ *  2. Desired direction = normalize(waypoint - position)
+ *  3. Turn rate application (smooth rotation)
+ *  4. Acceleration / deceleration
+ *  5. Terrain collision — axis-separated wall slide with footprint
+ *  6. Position update + Y snap to terrain
+ *  7. Stuck escalation (wiggle → repath → stop)
+ */
+
 import { defineQuery, hasComponent, removeComponent, addComponent } from 'bitecs'
 import type { IWorld } from 'bitecs'
-import { Position, Rotation, MoveTarget, MoveSpeed, Velocity, IsBuilding, PathFollower, Projectile, CollisionRadius, Dead } from '../components'
+import {
+  Position, Rotation, MoveTarget, MoveSpeed, Velocity,
+  IsBuilding, PathFollower, Projectile, CollisionRadius, Dead,
+  TurnRate, Acceleration, CurrentSpeed, MaxSlope, StuckState,
+} from '../components'
 import { getPath, removePath } from '../../pathfinding/pathStore'
 import { resetPathAttempt } from './pathfindingSystem'
 import { getTerrainHeight, getTerrainTypeAt, T_WATER, worldToGrid, GRID_RES } from '../../terrain/heightmap'
-import { isWorldWalkable, dynamicCost } from '../../pathfinding/navGrid'
+import { isWorldWalkable, dynamicCost, slopeData, BUILDING_BLOCK_THRESHOLD } from '../../pathfinding/navGrid'
 import { spatialHash } from '../../globals'
 
-const BUILDING_COST_THRESHOLD = 50 // dynamicCost above this = building (impassable)
-
-/** Check if a point is blocked by a building (dynamic obstacle) */
-function isBlockedByBuilding(x: number, z: number): boolean {
-  const [gx, gz] = worldToGrid(x, z)
-  if (gx < 0 || gx >= GRID_RES || gz < 0 || gz >= GRID_RES) return false
-  return dynamicCost[gz * GRID_RES + gx] >= BUILDING_COST_THRESHOLD
-}
-
-/** Check if a circle of given radius is fully on walkable terrain and not inside buildings */
-function isRadiusWalkable(x: number, z: number, radius: number): boolean {
-  if (!isWorldWalkable(x, z)) return false
-  if (getTerrainTypeAt(x, z) === T_WATER) return false
-  if (isBlockedByBuilding(x, z)) return false
-  if (radius <= 0.2) return true
-  for (let i = 0; i < 4; i++) {
-    const angle = i * Math.PI * 0.5
-    const cx = x + Math.cos(angle) * radius
-    const cz = z + Math.sin(angle) * radius
-    if (getTerrainTypeAt(cx, cz) === T_WATER || !isWorldWalkable(cx, cz)) return false
-    if (isBlockedByBuilding(cx, cz)) return false
-  }
-  return true
-}
-
-const pathQuery = defineQuery([Position, PathFollower, MoveSpeed])
-const directQuery = defineQuery([Position, MoveTarget, MoveSpeed])
-const unitQuery = defineQuery([Position, MoveSpeed, CollisionRadius])
-
+// ── Constants ────────────────────────────────────────────────
 const ARRIVE_THRESHOLD = 0.8
-
-// Stuck detection
-const lastX = new Float32Array(8000)
-const lastZ = new Float32Array(8000)
-const stuckTimer = new Float32Array(8000)
-const STUCK_CHECK_DIST = 0.3
-const STUCK_TIMEOUT = 1.5
-const REPATH_COOLDOWN = 2.0
-const repathCooldown = new Float32Array(8000)
 
 // Separation
 const SEPARATION_RADIUS = 1.5
 const SEPARATION_FORCE = 3.0
 const _nearby: number[] = []
 
+// Stuck escalation thresholds
+const STUCK_DIST = 0.3        // minimum movement to be "not stuck"
+const PHASE0_TIMEOUT = 1.5    // seconds before wiggle
+const PHASE1_DURATION = 0.5   // wiggle time
+const PHASE2_COOLDOWN = 2.0   // cooldown after repath before giving up
+const PHASE3_TIMEOUT = 4.0    // total stuck time before stop
+
+// ── Queries ──────────────────────────────────────────────────
+const pathQuery = defineQuery([Position, PathFollower, MoveSpeed])
+const directQuery = defineQuery([Position, MoveTarget, MoveSpeed])
+const unitQuery = defineQuery([Position, MoveSpeed, CollisionRadius])
+
+// ── Helpers ──────────────────────────────────────────────────
+
+/** Shortest signed angle difference in [-PI, PI] */
+function angleDiff(target: number, current: number): number {
+  let d = target - current
+  while (d > Math.PI) d -= Math.PI * 2
+  while (d < -Math.PI) d += Math.PI * 2
+  return d
+}
+
+/** Check if a position is walkable for a unit considering footprint + slope + buildings */
+function checkFootprint(x: number, z: number, radius: number, maxSl: number): boolean {
+  if (!isWorldWalkable(x, z)) return false
+  if (getTerrainTypeAt(x, z) === T_WATER) return false
+
+  const [gx, gz] = worldToGrid(x, z)
+  if (gx < 0 || gx >= GRID_RES || gz < 0 || gz >= GRID_RES) return false
+  if (dynamicCost[gz * GRID_RES + gx] >= BUILDING_BLOCK_THRESHOLD) return false
+  if (maxSl < 100 && slopeData[gz * GRID_RES + gx] > maxSl) return false
+
+  if (radius <= 0.3) return true
+
+  // Check 4 cardinal edge points of footprint
+  const offsets = [[radius, 0], [-radius, 0], [0, radius], [0, -radius]]
+  for (const [ox, oz] of offsets) {
+    const cx = x + ox
+    const cz = z + oz
+    if (!isWorldWalkable(cx, cz)) return false
+    if (getTerrainTypeAt(cx, cz) === T_WATER) return false
+    const [ggx, ggz] = worldToGrid(cx, cz)
+    if (ggx < 0 || ggx >= GRID_RES || ggz < 0 || ggz >= GRID_RES) return false
+    if (dynamicCost[ggz * GRID_RES + ggx] >= BUILDING_BLOCK_THRESHOLD) return false
+  }
+  return true
+}
+
+// ── Main movement system ─────────────────────────────────────
 export function movementSystem(world: IWorld, dt: number) {
-  // ── Unit separation: push overlapping units apart ──────────
+
+  // ── 1. Unit separation: push overlapping units apart ───────
   const allUnits = unitQuery(world)
   for (const eid of allUnits) {
     if (hasComponent(world, IsBuilding, eid)) continue
@@ -63,6 +93,7 @@ export function movementSystem(world: IWorld, dt: number) {
     const px = Position.x[eid]
     const pz = Position.z[eid]
     const myRadius = CollisionRadius.value[eid]
+    const maxSl = hasComponent(world, MaxSlope, eid) ? MaxSlope.value[eid] : 100
 
     _nearby.length = 0
     spatialHash.query(px, pz, SEPARATION_RADIUS + myRadius, _nearby)
@@ -82,14 +113,12 @@ export function movementSystem(world: IWorld, dt: number) {
       const minDist = myRadius + CollisionRadius.value[other]
 
       if (dist < minDist && dist > 0.01) {
-        // Push apart proportional to overlap
         const overlap = minDist - dist
         const nx = dx / dist
         const nz = dz / dist
         sepX += nx * overlap * SEPARATION_FORCE
         sepZ += nz * overlap * SEPARATION_FORCE
       } else if (dist < 0.01) {
-        // Exactly on top — push in random direction
         const angle = Math.random() * Math.PI * 2
         sepX += Math.cos(angle) * SEPARATION_FORCE * 0.5
         sepZ += Math.sin(angle) * SEPARATION_FORCE * 0.5
@@ -99,8 +128,7 @@ export function movementSystem(world: IWorld, dt: number) {
     if (sepX !== 0 || sepZ !== 0) {
       const newX = px + sepX * dt
       const newZ = pz + sepZ * dt
-      // Only apply separation if result is walkable (radius-aware)
-      if (isRadiusWalkable(newX, newZ, myRadius * 0.6)) {
+      if (checkFootprint(newX, newZ, myRadius * 0.6, maxSl)) {
         Position.x[eid] = newX
         Position.z[eid] = newZ
         Position.y[eid] = getTerrainHeight(newX, newZ)
@@ -109,13 +137,12 @@ export function movementSystem(world: IWorld, dt: number) {
     }
   }
 
-  // ── Path-following movement ─────────────────────────
+  // ── 2. Path-following movement (SupCom pipeline) ───────────
   const pathEntities = pathQuery(world)
 
   for (const eid of pathEntities) {
     if (hasComponent(world, IsBuilding, eid)) continue
-
-    if (repathCooldown[eid] > 0) repathCooldown[eid] -= dt
+    if (hasComponent(world, Dead, eid)) continue
 
     // If MoveTarget changed while following a path, cancel and repath
     if (hasComponent(world, MoveTarget, eid)) {
@@ -125,7 +152,7 @@ export function movementSystem(world: IWorld, dt: number) {
         const lastWp = path[path.length - 1]
         const dx = MoveTarget.x[eid] - lastWp.x
         const dz = MoveTarget.z[eid] - lastWp.z
-        if (dx * dx + dz * dz > 4) { // target moved > 2 units from path end
+        if (dx * dx + dz * dz > 4) {
           forceRepath(world, eid, pathId)
           continue
         }
@@ -138,102 +165,188 @@ export function movementSystem(world: IWorld, dt: number) {
     if (!path) {
       removeComponent(world, PathFollower, eid)
       if (hasComponent(world, MoveTarget, eid)) removeComponent(world, MoveTarget, eid)
-      Velocity.x[eid] = 0
-      Velocity.z[eid] = 0
+      Velocity.x[eid] = 0; Velocity.z[eid] = 0
+      CurrentSpeed.value[eid] = 0
       continue
     }
 
     let wpIdx = PathFollower.waypointIndex[eid]
-
     if (wpIdx >= path.length) {
       finishPath(world, eid, pathId)
       continue
     }
 
+    // ── Step 1: Waypoint management ──────────────────────────
     const wp = path[wpIdx]
     const px = Position.x[eid]
     const pz = Position.z[eid]
-    const dx = wp.x - px
-    const dz = wp.z - pz
-    const dist = Math.sqrt(dx * dx + dz * dz)
+    let dx = wp.x - px
+    let dz = wp.z - pz
+    let dist = Math.sqrt(dx * dx + dz * dz)
 
     if (dist < ARRIVE_THRESHOLD) {
       wpIdx++
       PathFollower.waypointIndex[eid] = wpIdx
-      lastX[eid] = px
-      lastZ[eid] = pz
-      stuckTimer[eid] = 0
-
+      // Reset stuck tracking on waypoint advance
+      if (hasComponent(world, StuckState, eid)) {
+        StuckState.phase[eid] = 0
+        StuckState.timer[eid] = 0
+      }
       if (wpIdx >= path.length) {
         finishPath(world, eid, pathId)
         continue
       }
-      continue
+      // Recalculate toward new waypoint
+      const nwp = path[wpIdx]
+      dx = nwp.x - px
+      dz = nwp.z - pz
+      dist = Math.sqrt(dx * dx + dz * dz)
+      if (dist < 0.01) { finishPath(world, eid, pathId); continue }
     }
 
-    const speed = MoveSpeed.value[eid]
-    const nx = dx / dist
-    const nz = dz / dist
+    // ── Step 2: Desired direction ────────────────────────────
+    const desiredDirX = dx / dist
+    const desiredDirZ = dz / dist
+    const desiredYaw = Math.atan2(desiredDirX, desiredDirZ)
 
-    const step = speed * dt
-    let newX: number, newZ: number
-    if (step >= dist) {
-      newX = wp.x
-      newZ = wp.z
+    // ── Step 3: Turn rate application ────────────────────────
+    const turnRate = hasComponent(world, TurnRate, eid) ? TurnRate.value[eid] : 5.0
+    const currentYaw = Rotation.y[eid]
+    const delta = angleDiff(desiredYaw, currentYaw)
+    const maxTurn = turnRate * dt
+    const newYaw = currentYaw + Math.max(-maxTurn, Math.min(maxTurn, delta))
+    Rotation.y[eid] = newYaw
+
+    // Facing direction (actual movement direction based on current rotation)
+    const facingX = Math.sin(newYaw)
+    const facingZ = Math.cos(newYaw)
+
+    // Speed reduction when turning: dot(facing, desired) — slow down for sharp turns
+    const facingDot = facingX * desiredDirX + facingZ * desiredDirZ
+    const turnSpeedFactor = Math.max(0.0, facingDot)
+
+    // ── Step 4: Acceleration / deceleration ──────────────────
+    const maxSpeed = MoveSpeed.value[eid]
+    const accel = hasComponent(world, Acceleration, eid) ? Acceleration.value[eid] : 8.0
+    const terrainIdx = worldToGrid(px, pz)
+    // terrainCost not needed as separate import — moveCost already in navGrid
+    const targetSpeed = maxSpeed * turnSpeedFactor
+
+    let curSpeed = hasComponent(world, CurrentSpeed, eid) ? CurrentSpeed.value[eid] : maxSpeed
+    if (targetSpeed > curSpeed) {
+      curSpeed = Math.min(targetSpeed, curSpeed + accel * dt)
     } else {
-      newX = px + nx * step
-      newZ = pz + nz * step
+      curSpeed = Math.max(targetSpeed, curSpeed - accel * 2.0 * dt) // decel is 2x accel
+    }
+    if (hasComponent(world, CurrentSpeed, eid)) CurrentSpeed.value[eid] = curSpeed
+
+    // ── Step 5: Compute displacement ─────────────────────────
+    const stepDist = curSpeed * dt
+    let moveX = facingX * stepDist
+    let moveZ = facingZ * stepDist
+
+    // Clamp step to not overshoot waypoint
+    if (stepDist > dist) {
+      moveX = dx
+      moveZ = dz
     }
 
-    // Block on unwalkable terrain (check with unit radius)
+    let newX = px + moveX
+    let newZ = pz + moveZ
+
+    // ── Step 6: Terrain collision — axis-separated wall slide ─
     const unitRadius = hasComponent(world, CollisionRadius, eid) ? CollisionRadius.value[eid] : 0.4
-    if (!isRadiusWalkable(newX, newZ, unitRadius * 0.6)) {
-      // Try sliding along X or Z axis separately
-      const slideX = px + nx * step
-      const slideZ = pz + nz * step
-      if (isRadiusWalkable(slideX, pz, unitRadius * 0.6)) {
-        newX = slideX
+    const maxSl = hasComponent(world, MaxSlope, eid) ? MaxSlope.value[eid] : 100
+    const checkR = unitRadius * 0.6
+
+    if (!checkFootprint(newX, newZ, checkR, maxSl)) {
+      // Try X only
+      const xOk = checkFootprint(px + moveX, pz, checkR, maxSl)
+      // Try Z only
+      const zOk = checkFootprint(px, pz + moveZ, checkR, maxSl)
+
+      if (xOk && !zOk) {
+        newX = px + moveX
         newZ = pz
-      } else if (isRadiusWalkable(px, slideZ, unitRadius * 0.6)) {
+      } else if (!xOk && zOk) {
         newX = px
-        newZ = slideZ
+        newZ = pz + moveZ
+      } else if (xOk && zOk) {
+        // Diagonal corner — pick axis with greater velocity component
+        if (Math.abs(moveX) > Math.abs(moveZ)) {
+          newX = px + moveX
+          newZ = pz
+        } else {
+          newX = px
+          newZ = pz + moveZ
+        }
       } else {
-        forceRepath(world, eid, pathId)
-        continue
+        // Both blocked — don't move, handle stuck below
+        newX = px
+        newZ = pz
       }
     }
 
+    // ── Step 7: Position update + Y snap ─────────────────────
     Position.x[eid] = newX
     Position.z[eid] = newZ
-    Velocity.x[eid] = nx * speed
-    Velocity.z[eid] = nz * speed
-    Rotation.y[eid] = Math.atan2(nx, nz)
     Position.y[eid] = getTerrainHeight(newX, newZ)
+    Velocity.x[eid] = facingX * curSpeed
+    Velocity.z[eid] = facingZ * curSpeed
     spatialHash.update(eid, newX, newZ)
 
-    // Stuck detection
-    const movedX = newX - lastX[eid]
-    const movedZ = newZ - lastZ[eid]
-    const movedDist = Math.sqrt(movedX * movedX + movedZ * movedZ)
+    // ── Step 8: Stuck escalation ─────────────────────────────
+    if (hasComponent(world, StuckState, eid)) {
+      const movedDist = Math.sqrt((newX - px) * (newX - px) + (newZ - pz) * (newZ - pz))
 
-    if (movedDist > STUCK_CHECK_DIST) {
-      lastX[eid] = newX
-      lastZ[eid] = newZ
-      stuckTimer[eid] = 0
-    } else {
-      stuckTimer[eid] += dt
-      if (stuckTimer[eid] > STUCK_TIMEOUT && repathCooldown[eid] <= 0) {
-        forceRepath(world, eid, pathId)
+      if (movedDist > STUCK_DIST * dt * 60) {
+        // Moving fine — reset
+        StuckState.phase[eid] = 0
+        StuckState.timer[eid] = 0
+      } else {
+        StuckState.timer[eid] += dt
+        const phase = StuckState.phase[eid]
+        const timer = StuckState.timer[eid]
+
+        if (phase === 0 && timer > PHASE0_TIMEOUT) {
+          // Phase 1: Wiggle — random perpendicular impulse
+          StuckState.phase[eid] = 1
+          StuckState.timer[eid] = 0
+          const perpAngle = newYaw + (Math.random() > 0.5 ? Math.PI / 2 : -Math.PI / 2)
+          const wiggleX = Math.sin(perpAngle) * 1.5
+          const wiggleZ = Math.cos(perpAngle) * 1.5
+          const wX = newX + wiggleX
+          const wZ = newZ + wiggleZ
+          if (checkFootprint(wX, wZ, checkR, maxSl)) {
+            Position.x[eid] = wX
+            Position.z[eid] = wZ
+            Position.y[eid] = getTerrainHeight(wX, wZ)
+            spatialHash.update(eid, wX, wZ)
+          }
+        } else if (phase === 1 && timer > PHASE1_DURATION) {
+          // Phase 2: Force repath
+          StuckState.phase[eid] = 2
+          StuckState.timer[eid] = 0
+          forceRepath(world, eid, pathId)
+          continue
+        } else if (phase === 2 && timer > PHASE2_COOLDOWN) {
+          // Phase 3: Give up — stop
+          StuckState.phase[eid] = 3
+          StuckState.timer[eid] = 0
+          finishPath(world, eid, pathId)
+          continue
+        }
       }
     }
   }
 
-  // ── Direct movement ──────────────────────────────────
+  // ── 3. Direct movement (no path, short distances) ──────────
   const directEntities = directQuery(world)
 
   for (const eid of directEntities) {
     if (hasComponent(world, IsBuilding, eid)) continue
     if (hasComponent(world, PathFollower, eid)) continue
+    if (hasComponent(world, Dead, eid)) continue
 
     const tx = MoveTarget.x[eid]
     const tz = MoveTarget.z[eid]
@@ -243,68 +356,105 @@ export function movementSystem(world: IWorld, dt: number) {
     const dz = tz - pz
     const dist = Math.sqrt(dx * dx + dz * dz)
 
-    // Long distances: wait for pathfinding, but not forever
-    // (pathfinding will assign PathFollower next frame if a path exists)
-
     if (dist < ARRIVE_THRESHOLD) {
       removeComponent(world, MoveTarget, eid)
-      Velocity.x[eid] = 0
-      Velocity.z[eid] = 0
+      Velocity.x[eid] = 0; Velocity.z[eid] = 0
+      if (hasComponent(world, CurrentSpeed, eid)) CurrentSpeed.value[eid] = 0
       continue
     }
 
-    const speed = MoveSpeed.value[eid]
-    const nx = dx / dist
-    const nz = dz / dist
-    const step = speed * dt
     const isProjectile = hasComponent(world, Projectile, eid)
+    const maxSpeed = MoveSpeed.value[eid]
 
-    let newX: number, newZ: number
-    if (step >= dist) {
-      newX = tx
-      newZ = tz
-    } else {
-      newX = px + nx * step
-      newZ = pz + nz * step
-    }
+    // Direct movers also get turn rate + acceleration
+    const desiredDirX = dx / dist
+    const desiredDirZ = dz / dist
 
-    // Block non-projectile units from walking into unwalkable terrain — slide along edges
     if (!isProjectile) {
+      // Apply turn rate
+      const desiredYaw = Math.atan2(desiredDirX, desiredDirZ)
+      const turnRate = hasComponent(world, TurnRate, eid) ? TurnRate.value[eid] : 5.0
+      const currentYaw = Rotation.y[eid]
+      const delta = angleDiff(desiredYaw, currentYaw)
+      const maxTurn = turnRate * dt
+      const newYaw = currentYaw + Math.max(-maxTurn, Math.min(maxTurn, delta))
+      Rotation.y[eid] = newYaw
+
+      const facingX = Math.sin(newYaw)
+      const facingZ = Math.cos(newYaw)
+      const facingDot = Math.max(0, facingX * desiredDirX + facingZ * desiredDirZ)
+
+      // Acceleration
+      const accel = hasComponent(world, Acceleration, eid) ? Acceleration.value[eid] : 8.0
+      const targetSpeed = maxSpeed * facingDot
+      let curSpeed = hasComponent(world, CurrentSpeed, eid) ? CurrentSpeed.value[eid] : maxSpeed
+      if (targetSpeed > curSpeed) curSpeed = Math.min(targetSpeed, curSpeed + accel * dt)
+      else curSpeed = Math.max(targetSpeed, curSpeed - accel * 2.0 * dt)
+      if (hasComponent(world, CurrentSpeed, eid)) CurrentSpeed.value[eid] = curSpeed
+
+      const step = curSpeed * dt
+      let moveX = facingX * step
+      let moveZ = facingZ * step
+      if (step > dist) { moveX = dx; moveZ = dz }
+
+      let newX = px + moveX
+      let newZ = pz + moveZ
+
+      // Wall slide
       const unitRadius = hasComponent(world, CollisionRadius, eid) ? CollisionRadius.value[eid] : 0.4
-      if (!isRadiusWalkable(newX, newZ, unitRadius * 0.6)) {
-        // Try sliding: move only along X or only along Z
-        const slideX = px + nx * step
-        const slideZ = pz + nz * step
-        if (isRadiusWalkable(slideX, pz, unitRadius * 0.6)) {
-          newX = slideX
-          newZ = pz
-        } else if (isRadiusWalkable(px, slideZ, unitRadius * 0.6)) {
-          newX = px
-          newZ = slideZ
+      const maxSl = hasComponent(world, MaxSlope, eid) ? MaxSlope.value[eid] : 100
+      const checkR = unitRadius * 0.6
+
+      if (!checkFootprint(newX, newZ, checkR, maxSl)) {
+        const xOk = checkFootprint(px + moveX, pz, checkR, maxSl)
+        const zOk = checkFootprint(px, pz + moveZ, checkR, maxSl)
+
+        if (xOk && !zOk) { newX = px + moveX; newZ = pz }
+        else if (!xOk && zOk) { newX = px; newZ = pz + moveZ }
+        else if (xOk && zOk) {
+          if (Math.abs(moveX) > Math.abs(moveZ)) { newX = px + moveX; newZ = pz }
+          else { newX = px; newZ = pz + moveZ }
         } else {
           // Completely blocked — stop
           removeComponent(world, MoveTarget, eid)
-          Velocity.x[eid] = 0
-          Velocity.z[eid] = 0
+          Velocity.x[eid] = 0; Velocity.z[eid] = 0
+          if (hasComponent(world, CurrentSpeed, eid)) CurrentSpeed.value[eid] = 0
           continue
         }
       }
-    }
 
-    Position.x[eid] = newX
-    Position.z[eid] = newZ
-    if (step >= dist) {
-      removeComponent(world, MoveTarget, eid)
-      Velocity.x[eid] = 0
-      Velocity.z[eid] = 0
+      Position.x[eid] = newX
+      Position.z[eid] = newZ
+      Velocity.x[eid] = facingX * curSpeed
+      Velocity.z[eid] = facingZ * curSpeed
+      Position.y[eid] = getTerrainHeight(newX, newZ)
+      spatialHash.update(eid, newX, newZ)
+
+      if (step >= dist) {
+        removeComponent(world, MoveTarget, eid)
+        Velocity.x[eid] = 0; Velocity.z[eid] = 0
+        if (hasComponent(world, CurrentSpeed, eid)) CurrentSpeed.value[eid] = 0
+      }
     } else {
-      Velocity.x[eid] = nx * speed
-      Velocity.z[eid] = nz * speed
-      Rotation.y[eid] = Math.atan2(nx, nz)
-    }
+      // Projectiles — simple direct movement, no turn rate or collision
+      const step = maxSpeed * dt
+      let newX: number, newZ: number
+      if (step >= dist) { newX = tx; newZ = tz }
+      else { newX = px + desiredDirX * step; newZ = pz + desiredDirZ * step }
 
-    Position.y[eid] = getTerrainHeight(newX, newZ)
-    spatialHash.update(eid, newX, newZ)
+      Position.x[eid] = newX
+      Position.z[eid] = newZ
+      if (step >= dist) {
+        removeComponent(world, MoveTarget, eid)
+        Velocity.x[eid] = 0; Velocity.z[eid] = 0
+      } else {
+        Velocity.x[eid] = desiredDirX * maxSpeed
+        Velocity.z[eid] = desiredDirZ * maxSpeed
+        Rotation.y[eid] = Math.atan2(desiredDirX, desiredDirZ)
+      }
+      Position.y[eid] = getTerrainHeight(newX, newZ)
+      spatialHash.update(eid, newX, newZ)
+    }
   }
 }
 
@@ -313,8 +463,7 @@ function forceRepath(world: IWorld, eid: number, pathId: number) {
   removeComponent(world, PathFollower, eid)
   Velocity.x[eid] = 0
   Velocity.z[eid] = 0
-  stuckTimer[eid] = 0
-  repathCooldown[eid] = REPATH_COOLDOWN
+  if (hasComponent(world, CurrentSpeed, eid)) CurrentSpeed.value[eid] = 0
   resetPathAttempt(eid)
 }
 
@@ -324,5 +473,9 @@ function finishPath(world: IWorld, eid: number, pathId: number) {
   if (hasComponent(world, MoveTarget, eid)) removeComponent(world, MoveTarget, eid)
   Velocity.x[eid] = 0
   Velocity.z[eid] = 0
-  stuckTimer[eid] = 0
+  if (hasComponent(world, CurrentSpeed, eid)) CurrentSpeed.value[eid] = 0
+  if (hasComponent(world, StuckState, eid)) {
+    StuckState.phase[eid] = 0
+    StuckState.timer[eid] = 0
+  }
 }

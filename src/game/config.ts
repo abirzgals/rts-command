@@ -28,6 +28,10 @@ export interface UnitDef {
   cost: { minerals: number; gas: number }
   buildTime: number    // seconds
   meshPool: number     // which mesh pool to use
+  // SupCom-style movement physics
+  turnRate: number     // radians/sec — how fast unit rotates
+  acceleration: number // units/sec² — how fast unit speeds up/slows down
+  maxSlope: number     // max traversable height delta per cell (binary pass/block)
 }
 
 export interface BuildingDef {
@@ -51,6 +55,7 @@ export const UNIT_DEFS: Record<number, UnitDef> = {
     attack: { damage: 5, range: 1.2, cooldown: 1.5 },
     cost: { minerals: 50, gas: 0 }, buildTime: 12,
     meshPool: 0,
+    turnRate: 6.0, acceleration: 8.0, maxSlope: 2.0,
   },
   [UT_MARINE]: {
     name: 'Marine',
@@ -58,6 +63,7 @@ export const UNIT_DEFS: Record<number, UnitDef> = {
     attack: { damage: 8, range: 6, cooldown: 0.8 },
     cost: { minerals: 50, gas: 0 }, buildTime: 18,
     meshPool: 1,
+    turnRate: 5.0, acceleration: 7.0, maxSlope: 2.5,
   },
   [UT_TANK]: {
     name: 'Tank',
@@ -65,6 +71,7 @@ export const UNIT_DEFS: Record<number, UnitDef> = {
     attack: { damage: 30, range: 8, cooldown: 2.5, splash: 1.5 },
     cost: { minerals: 150, gas: 75 }, buildTime: 30,
     meshPool: 2,
+    turnRate: 1.5, acceleration: 3.0, maxSlope: 1.5,
   },
 }
 

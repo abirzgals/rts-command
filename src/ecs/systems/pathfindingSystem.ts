@@ -1,9 +1,10 @@
 import { defineQuery, hasComponent, addComponent, removeComponent, Not } from 'bitecs'
 import type { IWorld } from 'bitecs'
-import { Position, MoveTarget, PathFollower, IsBuilding, MoveSpeed, CollisionRadius, Dead, WorkerC, Selectable } from '../components'
-import { findPath, invalidateClearance } from '../../pathfinding/astar'
+import { Position, MoveTarget, PathFollower, IsBuilding, MoveSpeed, CollisionRadius, Dead, WorkerC, Selectable, MaxSlope } from '../components'
+import { findPathHierarchical } from '../../pathfinding/astar'
 import { storePath } from '../../pathfinding/pathStore'
-import { clearDynamicCosts, markBuildingObstacle } from '../../pathfinding/navGrid'
+import { clearDynamicCosts, markBuildingObstacle, rebuildClearance } from '../../pathfinding/navGrid'
+import { buildSectorGraph } from '../../pathfinding/sectorGraph'
 
 const needsPathQuery = defineQuery([Position, MoveTarget, MoveSpeed, Not(PathFollower), Not(IsBuilding)])
 const buildingQuery = defineQuery([Position, IsBuilding, Selectable])
@@ -15,7 +16,7 @@ let lastBuildingCount = -1
 const pathCooldown = new Float32Array(8000)
 
 export function pathfindingSystem(world: IWorld, dt: number) {
-  // Rebuild dynamic costs when building count changes
+  // Rebuild dynamic costs + sector graph when building count changes
   const buildings = buildingQuery(world)
   if (buildings.length !== lastBuildingCount) {
     lastBuildingCount = buildings.length
@@ -24,7 +25,9 @@ export function pathfindingSystem(world: IWorld, dt: number) {
       if (hasComponent(world, Dead, eid)) continue
       markBuildingObstacle(Position.x[eid], Position.z[eid], Selectable.radius[eid])
     }
-    invalidateClearance()
+    // Rebuild clearance map (distance transform) and sector connectivity
+    rebuildClearance()
+    buildSectorGraph()
   }
 
   const entities = needsPathQuery(world)
@@ -47,8 +50,11 @@ export function pathfindingSystem(world: IWorld, dt: number) {
     if (ddx * ddx + ddz * ddz < 4) continue
 
     const isWorker = hasComponent(world, WorkerC, eid)
-    // No clearance for pathfinding — let movement system handle wall sliding
-    const waypoints = findPath(sx, sz, gx, gz, isWorker, 0)
+    const unitRadius = hasComponent(world, CollisionRadius, eid) ? CollisionRadius.value[eid] : 0.4
+    const maxSlope = hasComponent(world, MaxSlope, eid) ? MaxSlope.value[eid] : 100.0
+
+    // Hierarchical A* with unit-specific clearance and slope
+    const waypoints = findPathHierarchical(sx, sz, gx, gz, unitRadius, maxSlope, isWorker)
     computed++
 
     if (!waypoints || waypoints.length === 0) {
