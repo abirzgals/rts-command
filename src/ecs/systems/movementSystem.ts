@@ -255,21 +255,33 @@ export function movementSystem(world: IWorld, dt: number) {
     telemetry.set('distToWp', dist)
     telemetry.set('desiredYaw', desiredYaw)
 
+    // Check if on blocked terrain — if so, skip turn rate and move directly
+    const unitRadius = hasComponent(world, CollisionRadius, eid) ? CollisionRadius.value[eid] : 0.4
+    const maxSl = hasComponent(world, MaxSlope, eid) ? MaxSlope.value[eid] : 100
+    const checkR = unitRadius * 0.6
+    const onBlockedTerrain = !checkFootprint(px, pz, checkR, maxSl)
+
     // ── Step 3: Turn rate application ────────────────────────
-    const turnRate = hasComponent(world, TurnRate, eid) ? TurnRate.value[eid] : 5.0
-    const currentYaw = Rotation.y[eid]
-    const delta = angleDiff(desiredYaw, currentYaw)
-    const maxTurn = turnRate * dt
-    const newYaw = currentYaw + Math.max(-maxTurn, Math.min(maxTurn, delta))
-    Rotation.y[eid] = newYaw
+    let facingX: number, facingZ: number, turnSpeedFactor: number
 
-    // Facing direction (actual movement direction based on current rotation)
-    const facingX = Math.sin(newYaw)
-    const facingZ = Math.cos(newYaw)
-
-    // Speed reduction when turning: slow down for sharp turns but keep minimum 20%
-    const facingDot = facingX * desiredDirX + facingZ * desiredDirZ
-    const turnSpeedFactor = 0.2 + 0.8 * Math.max(0.0, facingDot)
+    if (onBlockedTerrain) {
+      // ESCAPE: move directly toward target, ignore turn rate
+      Rotation.y[eid] = desiredYaw
+      facingX = desiredDirX
+      facingZ = desiredDirZ
+      turnSpeedFactor = 1.0 // full speed
+    } else {
+      const turnRate = hasComponent(world, TurnRate, eid) ? TurnRate.value[eid] : 5.0
+      const currentYaw = Rotation.y[eid]
+      const delta = angleDiff(desiredYaw, currentYaw)
+      const maxTurn = turnRate * dt
+      const newYaw = currentYaw + Math.max(-maxTurn, Math.min(maxTurn, delta))
+      Rotation.y[eid] = newYaw
+      facingX = Math.sin(newYaw)
+      facingZ = Math.cos(newYaw)
+      const facingDot = facingX * desiredDirX + facingZ * desiredDirZ
+      turnSpeedFactor = 0.2 + 0.8 * Math.max(0.0, facingDot)
+    }
     telemetry.set('yaw', newYaw)
     telemetry.set('yawDelta', delta)
     telemetry.set('turnSpeedFactor', turnSpeedFactor)
@@ -305,15 +317,9 @@ export function movementSystem(world: IWorld, dt: number) {
     let newZ = pz + moveZ
 
     // ── Step 6: Terrain collision — axis-separated wall slide ─
-    const unitRadius = hasComponent(world, CollisionRadius, eid) ? CollisionRadius.value[eid] : 0.4
-    const maxSl = hasComponent(world, MaxSlope, eid) ? MaxSlope.value[eid] : 100
-    const checkR = unitRadius * 0.6
+    // unitRadius, maxSl, checkR, onBlockedTerrain computed above in step 3
 
-    // If unit is ALREADY inside a blocked zone — disable collision entirely
-    // so it can escape. Normal collision resumes once it reaches valid terrain.
-    const currentPosOk = checkFootprint(px, pz, checkR, maxSl)
-
-    const fullOk = currentPosOk ? checkFootprint(newX, newZ, checkR, maxSl) : true
+    const fullOk = onBlockedTerrain ? true : checkFootprint(newX, newZ, checkR, maxSl)
     telemetry.set('moveX', moveX)
     telemetry.set('moveZ', moveZ)
     telemetry.set('fullOk', fullOk)
