@@ -259,12 +259,14 @@ export async function createMeshPools() {
   const workerMgr = new AnimatedMeshManager('/models/worker.glb', cfg('worker', 1.0), rot('worker', 0))
   const marineMgr = new AnimatedMeshManager('/models/marine.glb', cfg('marine', 1.0), rot('marine', 0))
   const tankMgr = new AnimatedMeshManager('/models/tank-v3.glb', cfg('tank', 0.55), rot('tank', Math.PI))
+  const jeepMgr = new AnimatedMeshManager('/models/humvee.glb', cfg('jeep', 1.0), rot('jeep', 0))
 
-  await Promise.all([workerMgr.load(), marineMgr.load(), tankMgr.load()])
+  await Promise.all([workerMgr.load(), marineMgr.load(), tankMgr.load(), jeepMgr.load()])
 
   registerAnimManager(0, workerMgr)
   registerAnimManager(1, marineMgr)
   registerAnimManager(2, tankMgr)
+  registerAnimManager(3, jeepMgr)
 
   // Load static .glb models in parallel for buildings/resources/obstacles
   const models = await loadModels([

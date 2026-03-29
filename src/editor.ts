@@ -59,6 +59,9 @@ const ALL_MODELS: ModelConfig[] = [
   { key: 'tank', name: 'Tank', category: 'units', modelUrl: '/models/tank-v3.glb', scale: 0.55, rotationOffset: Math.PI, icon: '\u2617',
     hp: 160, speed: 2.0, armor: 2, damage: 30, range: 8, cooldown: 2.5, splash: 1.5, selectionRadius: 1.2, collisionRadius: 1.2,
     turnRate: 1.5, acceleration: 3.0, maxSlope: 1.5 },
+  { key: 'jeep', name: 'Jeep', category: 'units', modelUrl: '/models/humvee.glb', scale: 1.0, rotationOffset: 0, icon: '\u{1F699}',
+    hp: 80, speed: 4.5, armor: 1, damage: 12, range: 7, cooldown: 0.4, splash: 0, selectionRadius: 0.8, collisionRadius: 0.8,
+    turnRate: 3.0, acceleration: 6.0, maxSlope: 1.8 },
   // ── Buildings ──
   { key: 'command-center', name: 'Command Center', category: 'buildings', modelUrl: '/models/command-center.glb', scale: 5.0, rotationOffset: 0, icon: '\u2302',
     hp: 1500, armor: 1, selectionRadius: 2.0, collisionRadius: 2.0 },

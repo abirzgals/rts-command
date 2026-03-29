@@ -10,6 +10,7 @@ export const FACTION_ENEMY = 1
 export const UT_WORKER = 0
 export const UT_MARINE = 1
 export const UT_TANK = 2
+export const UT_JEEP = 3
 
 // ── Building type IDs (offset by 100 to distinguish) ────────
 export const BT_COMMAND_CENTER = 100
@@ -73,6 +74,14 @@ export const UNIT_DEFS: Record<number, UnitDef> = {
     meshPool: 2,
     turnRate: 1.5, acceleration: 3.0, maxSlope: 1.5,
   },
+  [UT_JEEP]: {
+    name: 'Jeep',
+    hp: 80, speed: 4.5, armor: 1, radius: 0.8, supply: 2,
+    attack: { damage: 12, range: 7, cooldown: 0.4 },
+    cost: { minerals: 75, gas: 25 }, buildTime: 18,
+    meshPool: 3,
+    turnRate: 3.0, acceleration: 6.0, maxSlope: 1.8,
+  },
 }
 
 export const BUILDING_DEFS: Record<number, BuildingDef> = {
@@ -100,7 +109,7 @@ export const BUILDING_DEFS: Record<number, BuildingDef> = {
   [BT_FACTORY]: {
     name: 'Factory',
     hp: 1000, armor: 1, radius: 1.8,
-    canProduce: [UT_TANK],
+    canProduce: [UT_JEEP, UT_TANK],
     cost: { minerals: 200, gas: 100 }, buildTime: 50,
     meshPool: 13,
   },
