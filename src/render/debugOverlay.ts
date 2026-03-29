@@ -126,22 +126,28 @@ function buildNavGridOverlay() {
   const positions = new Float32Array(blockedCount * 6 * 3) // 2 triangles * 3 verts * 3 coords
   let vi = 0
 
+  const OFF = 0.15 // lift above terrain surface
   for (let gz = 0; gz < GRID_RES; gz++) {
     for (let gx = 0; gx < GRID_RES; gx++) {
       if (walkable[gz * GRID_RES + gx] !== 0) continue
 
       const [wx, wz] = gridToWorld(gx, gz)
-      const y = getTerrainHeight(wx, wz) + 0.2
-      const half = 0.45 // slightly smaller than cell to show grid
+      const half = 0.45
+
+      // Sample height at each corner to follow terrain slope
+      const y00 = getTerrainHeight(wx - half, wz - half) + OFF
+      const y10 = getTerrainHeight(wx + half, wz - half) + OFF
+      const y11 = getTerrainHeight(wx + half, wz + half) + OFF
+      const y01 = getTerrainHeight(wx - half, wz + half) + OFF
 
       // Triangle 1
-      positions[vi++] = wx - half; positions[vi++] = y; positions[vi++] = wz - half
-      positions[vi++] = wx + half; positions[vi++] = y; positions[vi++] = wz - half
-      positions[vi++] = wx + half; positions[vi++] = y; positions[vi++] = wz + half
+      positions[vi++] = wx - half; positions[vi++] = y00; positions[vi++] = wz - half
+      positions[vi++] = wx + half; positions[vi++] = y10; positions[vi++] = wz - half
+      positions[vi++] = wx + half; positions[vi++] = y11; positions[vi++] = wz + half
       // Triangle 2
-      positions[vi++] = wx - half; positions[vi++] = y; positions[vi++] = wz - half
-      positions[vi++] = wx + half; positions[vi++] = y; positions[vi++] = wz + half
-      positions[vi++] = wx - half; positions[vi++] = y; positions[vi++] = wz + half
+      positions[vi++] = wx - half; positions[vi++] = y00; positions[vi++] = wz - half
+      positions[vi++] = wx + half; positions[vi++] = y11; positions[vi++] = wz + half
+      positions[vi++] = wx - half; positions[vi++] = y01; positions[vi++] = wz + half
     }
   }
 
