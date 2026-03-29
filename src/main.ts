@@ -70,7 +70,7 @@ async function init() {
 
   // 7. Camera
   rtsCamera = new RTSCamera()
-  rtsCamera.target.set(-80, getTerrainHeight(-80, -80), -80)
+  rtsCamera.target.set(-65, getTerrainHeight(-65, -65), -65)
   rtsCamera.setHeightFunction(getTerrainHeight)
 
   // 8. Debug overlay + HP bars + shared buttons
@@ -183,17 +183,17 @@ function spawnMapObstacles(world: IWorld) {
   let s = seed
   const rand = () => { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646 }
 
-  // Helper: check if position is far enough from bases
+  // Helper: check if position is far enough from bases (at -65,-65 and 65,65)
   const distToBase = (x: number, z: number) => Math.min(
-    Math.sqrt((x + 80) ** 2 + (z + 80) ** 2),
-    Math.sqrt((x - 80) ** 2 + (z - 80) ** 2),
+    Math.sqrt((x + 65) ** 2 + (z + 65) ** 2),
+    Math.sqrt((x - 65) ** 2 + (z - 65) ** 2),
   )
 
   // ── Cliff rocks along cliff edges ──
   for (let gz = 2; gz < GRID_RES - 2; gz += 3) {
     for (let gx = 2; gx < GRID_RES - 2; gx += 3) {
       const [wx, wz] = gridToWorld(gx, gz)
-      if (getTerrainTypeAt(wx, wz) === T_CLIFF && distToBase(wx, wz) > 25) {
+      if (getTerrainTypeAt(wx, wz) === T_CLIFF && distToBase(wx, wz) > 35) {
         if (rand() < 0.35) {
           spawnObstacle(world, 25, wx + (rand() - 0.5) * 1.5, wz + (rand() - 0.5) * 1.5)
         }
@@ -207,7 +207,7 @@ function spawnMapObstacles(world: IWorld) {
       const [wx, wz] = gridToWorld(gx, gz)
       const tt = getTerrainTypeAt(wx, wz)
       if (tt === T_WATER || tt === T_CLIFF) continue
-      if (distToBase(wx, wz) < 28) continue
+      if (distToBase(wx, wz) < 35) continue
 
       const h = getTerrainHeight(wx, wz)
       // More rocks in elevated/rocky areas
@@ -228,7 +228,7 @@ function spawnMapObstacles(world: IWorld) {
       const [wx, wz] = gridToWorld(gx, gz)
       const tt = getTerrainTypeAt(wx, wz)
       if (tt === T_WATER || tt === T_CLIFF || tt === T_ROCK) continue
-      if (distToBase(wx, wz) < 22) continue
+      if (distToBase(wx, wz) < 35) continue
 
       const h = getTerrainHeight(wx, wz)
       // Trees in low to mid elevation grass/dirt
@@ -236,7 +236,7 @@ function spawnMapObstacles(world: IWorld) {
       if (rand() < treeChance) {
         const ox = wx + (rand() - 0.5) * 2.5
         const oz = wz + (rand() - 0.5) * 2.5
-        if (getTerrainTypeAt(ox, oz) !== T_WATER && distToBase(ox, oz) > 20) {
+        if (getTerrainTypeAt(ox, oz) !== T_WATER && distToBase(ox, oz) > 35) {
           spawnObstacle(world, 23, ox, oz)
         }
       }
@@ -256,7 +256,7 @@ function spawnMapObstacles(world: IWorld) {
       const wx = wall.cx + Math.cos(wall.angle) * t + (rand() - 0.5) * 1.5
       const wz = wall.cz + Math.sin(wall.angle) * t + (rand() - 0.5) * 1.5
       const tt = getTerrainTypeAt(wx, wz)
-      if (tt !== T_WATER && distToBase(wx, wz) > 15) {
+      if (tt !== T_WATER && distToBase(wx, wz) > 35) {
         spawnObstacle(world, rand() < 0.4 ? 25 : 24, wx, wz)
       }
     }

@@ -19,10 +19,10 @@ export const terrainType = new Uint8Array(GRID_RES * GRID_RES)
 
 // ── Base and resource locations that MUST be flat/walkable ───
 const BASE_POSITIONS = [
-  { x: -80, z: -80 }, // player
-  { x: 80, z: 80 },   // enemy
+  { x: -65, z: -65 }, // player
+  { x: 65, z: 65 },   // enemy
 ]
-const BASE_FLAT_RADIUS = 30  // guaranteed flat area around each base
+const BASE_FLAT_RADIUS = 35  // guaranteed flat area around each base
 const BASE_HEIGHT = 3.0      // guaranteed base height (well above water)
 
 // ── Perlin noise ─────────────────────────────────────────────
@@ -149,12 +149,12 @@ export function generateTerrain() {
 
   // ── Pass 3: Carve navigable corridors between bases ──
   // Main diagonal corridor
-  carveCorridorBetween(-80, -80, 80, 80, 14, BASE_HEIGHT * 0.8)
+  carveCorridorBetween(-65, -65, 65, 65, 14, BASE_HEIGHT * 0.8)
   // Side routes
-  carveCorridorBetween(-80, -80, 0, 40, 10, BASE_HEIGHT * 0.7)
-  carveCorridorBetween(0, 40, 80, 80, 10, BASE_HEIGHT * 0.7)
-  carveCorridorBetween(-80, -80, -40, 0, 10, BASE_HEIGHT * 0.7)
-  carveCorridorBetween(-40, 0, 80, 80, 10, BASE_HEIGHT * 0.7)
+  carveCorridorBetween(-65, -65, 0, 40, 10, BASE_HEIGHT * 0.7)
+  carveCorridorBetween(0, 40, 65, 65, 10, BASE_HEIGHT * 0.7)
+  carveCorridorBetween(-65, -65, -40, 0, 10, BASE_HEIGHT * 0.7)
+  carveCorridorBetween(-40, 0, 65, 65, 10, BASE_HEIGHT * 0.7)
 
   // ── Pass 4: Push map edges into water ──
   for (let gz = 0; gz < GRID_RES; gz++) {
