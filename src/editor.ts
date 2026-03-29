@@ -424,7 +424,7 @@ async function loadModel(modelKey: string) {
   turretBone = null
   barrelBone = null
   firePointAttachment = null
-  animEvents = []
+  // animEvents restored above from savedEvents — don't reset here
   selectedEventId = null
   // Hide pick info
   const pickInfo = document.getElementById('pick-info')
