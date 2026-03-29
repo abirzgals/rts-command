@@ -350,13 +350,18 @@ function handleRightClick(world: IWorld, sx: number, sy: number) {
     const dz = Position.z[eid] - hit.z
     if (dx * dx + dz * dz < 9) { // within 3 units
       isBuildSite = true
+      const bx = Position.x[eid], bz = Position.z[eid]
+      const bRadius = hasComponent(world, Selectable, eid) ? Selectable.radius[eid] : 2.0
       for (const wid of selected) {
         if (!hasComponent(world, WorkerC, wid)) continue
         WorkerC.state[wid] = 4 // movingToBuild
         WorkerC.buildTarget[wid] = eid
+        // Target edge of building
+        const wdx = Position.x[wid] - bx, wdz = Position.z[wid] - bz
+        const wd = Math.sqrt(wdx * wdx + wdz * wdz) || 1
         addComponent(world, MoveTarget, wid)
-        MoveTarget.x[wid] = Position.x[eid]
-        MoveTarget.z[wid] = Position.z[eid]
+        MoveTarget.x[wid] = bx + (wdx / wd) * (bRadius + 1.0)
+        MoveTarget.z[wid] = bz + (wdz / wd) * (bRadius + 1.0)
       }
       break
     }
@@ -444,17 +449,21 @@ function placeBuildingAtCursor(world: IWorld) {
     BuildProgress.spent[buildingEid] = 0
   }
 
-  // Send selected workers to build it
+  // Send selected workers to build it (target edge, not center)
   const selected = selectedQuery(world)
   for (const eid of selected) {
     if (!hasComponent(world, WorkerC, eid)) continue
     if (Faction.id[eid] !== FACTION_PLAYER) continue
     WorkerC.state[eid] = 4 // movingToBuild
     WorkerC.buildTarget[eid] = buildingEid
+    // Move to edge of building, not center (center is nav-blocked)
+    const wx = Position.x[eid], wz = Position.z[eid]
+    const dx = wx - sx, dz = wz - sz
+    const d = Math.sqrt(dx * dx + dz * dz) || 1
     addComponent(world, MoveTarget, eid)
-    MoveTarget.x[eid] = sx
-    MoveTarget.z[eid] = sz
-    break // one worker per building placement
+    MoveTarget.x[eid] = sx + (dx / d) * (def.radius + 1.0)
+    MoveTarget.z[eid] = sz + (dz / d) * (def.radius + 1.0)
+    break
   }
 
   gameState.buildMode = null

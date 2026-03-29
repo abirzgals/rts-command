@@ -3,6 +3,7 @@ import type { IWorld } from 'bitecs'
 import {
   Position, Faction, WorkerC, ResourceNode, MoveTarget,
   MoveSpeed, ResourceDropoff, Dead, PathFollower, BuildProgress, IsBuilding,
+  CollisionRadius, Selectable,
 } from '../components'
 import { gameState } from '../../game/state'
 import { spatialHash } from '../../globals'
@@ -21,6 +22,39 @@ const dropoffQuery = defineQuery([ResourceDropoff, Position, Faction])
 
 const GATHER_RANGE = 2.5
 const DROPOFF_RANGE = 4.0
+
+/** Move target to the EDGE of a building (not center which is blocked) */
+function moveToEntityEdge(world: IWorld, workerEid: number, targetEid: number) {
+  const tx = Position.x[targetEid]
+  const tz = Position.z[targetEid]
+  const wx = Position.x[workerEid]
+  const wz = Position.z[workerEid]
+
+  // Get the building radius
+  let radius = 1.0
+  if (hasComponent(world, Selectable, targetEid)) radius = Selectable.radius[targetEid]
+  else if (hasComponent(world, CollisionRadius, targetEid)) radius = CollisionRadius.value[targetEid]
+
+  // Direction from building to worker
+  const dx = wx - tx
+  const dz = wz - tz
+  const dist = Math.sqrt(dx * dx + dz * dz)
+
+  clearPath(world, workerEid)
+  addComponent(world, MoveTarget, workerEid)
+
+  if (dist > 0.1) {
+    // Target point on the edge of the building, facing the worker
+    const nx = dx / dist
+    const nz = dz / dist
+    MoveTarget.x[workerEid] = tx + nx * (radius + 1.0)
+    MoveTarget.z[workerEid] = tz + nz * (radius + 1.0)
+  } else {
+    // Worker is at center — pick any edge point
+    MoveTarget.x[workerEid] = tx + radius + 1.0
+    MoveTarget.z[workerEid] = tz
+  }
+}
 const GATHER_AMOUNT = 5
 const GATHER_TIME = 1.5 // seconds per gather tick
 
@@ -207,10 +241,7 @@ function moveToDropoff(world: IWorld, eid: number) {
 
   const target = WorkerC.returnTarget[eid]
   if (isValidEntity(target)) {
-    clearPath(world, eid)
-    addComponent(world, MoveTarget, eid)
-    MoveTarget.x[eid] = Position.x[target]
-    MoveTarget.z[eid] = Position.z[target]
+    moveToEntityEdge(world, eid, target)
   }
 }
 
@@ -260,10 +291,8 @@ function moveToBuild(world: IWorld, eid: number) {
     if (hasComponent(world, MoveTarget, eid)) removeComponent(world, MoveTarget, eid)
     clearPath(world, eid)
   } else if (!hasComponent(world, MoveTarget, eid) && !hasComponent(world, PathFollower, eid)) {
-    // Lost path — re-issue move command
-    addComponent(world, MoveTarget, eid)
-    MoveTarget.x[eid] = Position.x[target]
-    MoveTarget.z[eid] = Position.z[target]
+    // Lost path — re-issue move to building EDGE (center is blocked)
+    moveToEntityEdge(world, eid, target)
   }
 }
 
