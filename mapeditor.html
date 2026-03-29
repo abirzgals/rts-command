@@ -129,21 +129,21 @@
 
     <!-- Texture Paint (shown when tool=paint) -->
     <div class="panel" id="panel-paint">
-      <div class="panel-title">Paint Texture</div>
+      <div class="panel-title">Paint Texture <span style="color:#666;font-size:9px;font-weight:normal">dbl-click to replace</span></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px">
-        <div class="tex-btn active" data-paint="0">
+        <div class="tex-btn active" data-paint="0" data-tex="grass.jpg">
           <img src="/textures/grass.jpg" style="width:100%;height:40px;object-fit:cover;border-radius:3px">
           <div style="font-size:10px;text-align:center;margin-top:2px">Grass</div>
         </div>
-        <div class="tex-btn" data-paint="1">
+        <div class="tex-btn" data-paint="1" data-tex="dirt.jpg">
           <img src="/textures/dirt.jpg" style="width:100%;height:40px;object-fit:cover;border-radius:3px">
           <div style="font-size:10px;text-align:center;margin-top:2px">Dirt</div>
         </div>
-        <div class="tex-btn" data-paint="2">
+        <div class="tex-btn" data-paint="2" data-tex="rock.jpg">
           <img src="/textures/rock.jpg" style="width:100%;height:40px;object-fit:cover;border-radius:3px">
           <div style="font-size:10px;text-align:center;margin-top:2px">Rock</div>
         </div>
-        <div class="tex-btn" data-paint="4">
+        <div class="tex-btn" data-paint="4" data-tex="cliff.jpg">
           <img src="/textures/cliff.jpg" style="width:100%;height:40px;object-fit:cover;border-radius:3px">
           <div style="font-size:10px;text-align:center;margin-top:2px">Cliff (>35°)</div>
         </div>
@@ -151,12 +151,13 @@
           <div style="width:100%;height:40px;background:linear-gradient(135deg,#1a3a5a,#2a5a8a);border-radius:3px"></div>
           <div style="font-size:10px;text-align:center;margin-top:2px">Water</div>
         </div>
-        <div class="tex-btn" data-paint="5">
+        <div class="tex-btn" data-paint="5" data-tex="grass.jpg">
           <img src="/textures/grass.jpg" style="width:100%;height:40px;object-fit:cover;border-radius:3px;filter:brightness(0.7) saturate(1.3)">
           <div style="font-size:10px;text-align:center;margin-top:2px">Dark Grass</div>
         </div>
       </div>
       <button class="btn" id="btn-auto-texture" style="width:100%;margin-top:6px;background:#2a3a5a;border-color:#4a6a9a">&#x2728; Auto-Texture from Geometry</button>
+      <input type="file" id="tex-file-input" accept="image/*" style="display:none">
     </div>
 
     <!-- Brush Settings -->

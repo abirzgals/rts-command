@@ -6,7 +6,7 @@ import * as THREE from 'three'
 import { initRenderer, renderer, scene, camera, RTSCamera, setGroundPlane, groundPlane } from './render/engine'
 import { createMeshPools, getPool } from './render/meshPools'
 import { generateTerrain, getTerrainHeight, heightData, terrainType, GRID_RES, worldToGrid, gridToWorld, T_WATER, T_GRASS, T_DIRT, T_ROCK, T_CLIFF, T_DARK_GRASS } from './terrain/heightmap'
-import { createTerrainMesh, terrainMesh, waterMesh, updateWater } from './terrain/terrainMesh'
+import { createTerrainMesh, terrainMesh, waterMesh, updateWater, replaceTerrainTexture } from './terrain/terrainMesh'
 import { initNavGrid } from './pathfinding/navGrid'
 import { buildSectorGraph } from './pathfinding/sectorGraph'
 import { applyPreset, type PresetName } from './terrain/terrainPresets'
@@ -456,13 +456,22 @@ function wireUI() {
   // Auto-texture button
   document.getElementById('btn-auto-texture')!.addEventListener('click', autoTextureFromGeometry)
 
-  // Paint type buttons
+  // Paint type buttons: click = select, double-click = replace texture
   for (const btn of document.querySelectorAll<HTMLElement>('[data-paint]')) {
     btn.addEventListener('click', () => {
       document.querySelectorAll('[data-paint]').forEach(b => b.classList.remove('active'))
       btn.classList.add('active')
       brushSettings.terrainType = parseInt(btn.dataset.paint!)
     })
+    // Double-click opens texture library for slots that have textures
+    if (btn.dataset.tex) {
+      btn.addEventListener('dblclick', (e) => {
+        e.stopPropagation()
+        const texFile = btn.dataset.tex!
+        const slot = texFile.replace('.jpg', '').replace('.png', '')
+        openTextureLibrary(slot, btn)
+      })
+    }
   }
 
   // Object buttons
@@ -524,6 +533,114 @@ function wireUI() {
       placedObjects.pop()
       console.log('Removed last object')
     }
+  })
+}
+
+// ── Texture Library Dialog ───────────────────────────────────
+
+async function openTextureLibrary(slot: string, btnEl: HTMLElement) {
+  // Create modal overlay
+  const overlay = document.createElement('div')
+  Object.assign(overlay.style, {
+    position: 'fixed', inset: '0', zIndex: '2000',
+    background: 'rgba(0,0,0,0.8)', display: 'flex',
+    alignItems: 'center', justifyContent: 'center',
+  })
+
+  const dialog = document.createElement('div')
+  Object.assign(dialog.style, {
+    background: '#1a1a2e', border: '1px solid #444', borderRadius: '10px',
+    padding: '20px', width: '420px', maxHeight: '80vh', overflowY: 'auto',
+  })
+
+  dialog.innerHTML = `
+    <h2 style="color:#8af;font-size:16px;margin-bottom:4px">Replace: ${slot}</h2>
+    <p style="color:#666;font-size:12px;margin-bottom:16px">Choose a texture or upload a new one</p>
+    <div id="tex-lib-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px">
+      <div style="color:#666;font-size:12px;padding:20px;text-align:center">Loading...</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button id="tex-upload-btn" style="flex:1;padding:8px;border:1px dashed #4a6a9a;border-radius:6px;background:#1a2a3a;color:#8af;cursor:pointer;font-size:13px">Upload New Texture</button>
+      <button id="tex-cancel-btn" style="padding:8px 16px;border:1px solid #555;border-radius:6px;background:#2a2a3a;color:#ddd;cursor:pointer;font-size:13px">Cancel</button>
+    </div>
+    <input type="file" id="tex-lib-file" accept="image/jpeg,image/png,image/webp" style="display:none">
+  `
+  overlay.appendChild(dialog)
+  document.body.appendChild(overlay)
+
+  // Close on cancel or overlay click
+  const close = () => overlay.remove()
+  dialog.querySelector('#tex-cancel-btn')!.addEventListener('click', close)
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close() })
+
+  // Fetch available textures from server + built-in defaults
+  const grid = dialog.querySelector('#tex-lib-grid')!
+  const builtIn = ['grass.jpg', 'dirt.jpg', 'rock.jpg', 'cliff.jpg', 'stone.jpg', 'leaf.jpg']
+  let serverTextures: string[] = []
+  try {
+    const res = await fetch('/api/textures')
+    const json = await res.json()
+    serverTextures = json.data || []
+  } catch { /* ignore */ }
+
+  // Merge: server textures override built-in by name
+  const all = new Set([...builtIn, ...serverTextures])
+
+  grid.innerHTML = ''
+  for (const file of all) {
+    const isCustom = serverTextures.includes(file)
+    const url = `/textures/${file}`
+    const item = document.createElement('div')
+    Object.assign(item.style, {
+      cursor: 'pointer', borderRadius: '6px', border: '2px solid #333',
+      overflow: 'hidden', background: '#111',
+    })
+    item.innerHTML = `
+      <img src="${url}" style="width:100%;height:60px;object-fit:cover;display:block">
+      <div style="font-size:10px;padding:3px 4px;color:${isCustom ? '#8f8' : '#aaa'};text-align:center">${file}${isCustom ? ' ★' : ''}</div>
+    `
+    item.addEventListener('mouseenter', () => item.style.borderColor = '#4a8a4a')
+    item.addEventListener('mouseleave', () => item.style.borderColor = '#333')
+    item.addEventListener('click', () => {
+      // Apply this texture to the slot
+      replaceTerrainTexture(slot, url)
+      // Update the button thumbnail
+      const img = btnEl.querySelector('img')
+      if (img) img.src = url + '?t=' + Date.now()
+      close()
+    })
+    grid.appendChild(item)
+  }
+
+  // Upload button
+  const fileInput = dialog.querySelector('#tex-lib-file') as HTMLInputElement
+  dialog.querySelector('#tex-upload-btn')!.addEventListener('click', () => fileInput.click())
+  fileInput.addEventListener('change', async () => {
+    const file = fileInput.files?.[0]
+    if (!file) return
+
+    // Read as base64 and upload to server persistent volume
+    const reader = new FileReader()
+    reader.onload = async () => {
+      const base64 = (reader.result as string).split(',')[1]
+      const name = file.name.replace(/[^a-zA-Z0-9._-]/g, '')
+      try {
+        await fetch(`/api/textures/${name}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ data: base64 }),
+        })
+        // Apply immediately
+        const url = `/textures/${name}?t=${Date.now()}`
+        replaceTerrainTexture(slot, url)
+        const img = btnEl.querySelector('img')
+        if (img) img.src = url
+        close()
+      } catch (e) {
+        console.error('Upload failed:', e)
+      }
+    }
+    reader.readAsDataURL(file)
   })
 }
 

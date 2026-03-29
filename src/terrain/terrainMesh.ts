@@ -9,6 +9,23 @@ import { scene } from '../render/engine'
 export let terrainMesh: THREE.Mesh
 export let waterMesh: THREE.Mesh
 
+/** Replace a terrain texture at runtime (slot: 'grass'|'dirt'|'rock'|'cliff') */
+export function replaceTerrainTexture(slot: string, url: string) {
+  if (!terrainMesh) return
+  const mat = terrainMesh.material as THREE.ShaderMaterial
+  const uniformName = 'tex' + slot.charAt(0).toUpperCase() + slot.slice(1)
+  const uniform = mat.uniforms[uniformName]
+  if (!uniform) return
+  const loader = new THREE.TextureLoader()
+  const tex = loader.load(url)
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+  tex.minFilter = THREE.LinearMipmapLinearFilter
+  tex.colorSpace = THREE.SRGBColorSpace
+  // Dispose old texture
+  if (uniform.value) uniform.value.dispose()
+  uniform.value = tex
+}
+
 let waterUniforms: { time: { value: number } } | null = null
 export function updateWater(dt: number) {
   if (waterUniforms) waterUniforms.time.value += dt
