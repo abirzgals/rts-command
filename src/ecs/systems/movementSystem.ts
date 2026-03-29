@@ -421,6 +421,11 @@ export function movementSystem(world: IWorld, dt: number) {
     const dz = tz - pz
     const dist = Math.sqrt(dx * dx + dz * dz)
 
+    // Long distance: wait for pathfinding system to assign a path
+    // Only move directly for short distances (< 3 units)
+    const isProjectile = hasComponent(world, Projectile, eid)
+    if (dist > 3 && !isProjectile) continue
+
     if (dist < ARRIVE_THRESHOLD) {
       removeComponent(world, MoveTarget, eid)
       Velocity.x[eid] = 0; Velocity.z[eid] = 0
@@ -428,7 +433,6 @@ export function movementSystem(world: IWorld, dt: number) {
       continue
     }
 
-    const isProjectile = hasComponent(world, Projectile, eid)
     const maxSpeed = MoveSpeed.value[eid]
 
     // Direct movers also get turn rate + acceleration
