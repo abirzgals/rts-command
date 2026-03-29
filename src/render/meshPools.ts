@@ -212,13 +212,13 @@ export function createSelectionRingMesh() {
     opacity: 0.45,
     side: THREE.DoubleSide,
     depthWrite: false,
-    depthTest: false, // always visible — not hidden by terrain/rocks
+    depthTest: true,
   })
   selectionRingMesh = new THREE.InstancedMesh(geo, mat, MAX_SELECTION_RINGS)
   selectionRingMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
   selectionRingMesh.count = 0
   selectionRingMesh.frustumCulled = false
-  selectionRingMesh.renderOrder = -1 // render BEFORE units so units draw on top
+  selectionRingMesh.renderOrder = 0
   scene.add(selectionRingMesh)
 }
 
@@ -230,8 +230,8 @@ export function updateSelectionRings(positions: { x: number; y: number; z: numbe
     const { x, y, z, radius } = positions[i]
     const scale = radius * 1.5
     _ringScale.set(scale, scale, scale)
-    // Place ring at the entity's terrain Y + small offset to avoid z-fighting
-    _ringMat4.compose(_ringPos.set(x, y + 0.05, z), _ringQuat, _ringScale)
+    // Place ring well above terrain so it's not hidden by ground
+    _ringMat4.compose(_ringPos.set(x, y + 0.3, z), _ringQuat, _ringScale)
     selectionRingMesh.setMatrixAt(i, _ringMat4)
   }
 
