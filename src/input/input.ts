@@ -326,9 +326,8 @@ function handleRightClick(world: IWorld, sx: number, sy: number) {
     else if (!hasComponent(world, IsBuilding, eid)) hasUnits = true
   }
 
-  if (hasBuildings && !hasUnits) {
+  if (hasBuildings) {
     // Set rally point for all selected buildings
-    // Check if clicking on a resource node
     const nearbyR: number[] = []
     spatialHash.query(hit.x, hit.z, 2, nearbyR)
     let resEid = 0
@@ -346,7 +345,8 @@ function handleRightClick(world: IWorld, sx: number, sy: number) {
       Producer.rallyTargetEid[eid] = resEid
     }
     spawnMoveMarker(hit.x, hit.y, hit.z)
-    return
+    // If only buildings selected, don't also move units
+    if (!hasUnits) return
   }
 
   // Show target marker

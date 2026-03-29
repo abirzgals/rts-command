@@ -92,6 +92,12 @@ export function updateHUD(world: IWorld, _dt: number, time: number) {
       const pct = Math.floor((Producer.progress[eid] / Producer.duration[eid]) * 100)
       const unitDef = UNIT_DEFS[Producer.unitType[eid]]
       stats.push(`Producing: ${unitDef?.name ?? '?'} (${pct}%)`)
+      // Show queue
+      const queue = gameState.getQueue(eid)
+      if (queue.length > 1) {
+        const queueNames = queue.slice(1).map(q => UNIT_DEFS[q.unitType]?.name ?? '?').join(', ')
+        stats.push(`Queue: ${queueNames}`)
+      }
     }
     selectedStatsEl.innerHTML = stats.join('<br>')
 
