@@ -21,7 +21,8 @@ import {
 import { getPath, removePath } from '../../pathfinding/pathStore'
 import { resetPathAttempt } from './pathfindingSystem'
 import { getTerrainHeight, getTerrainTypeAt, T_WATER, worldToGrid, GRID_RES } from '../../terrain/heightmap'
-import { isWorldWalkable, dynamicCost, slopeData, BUILDING_BLOCK_THRESHOLD } from '../../pathfinding/navGrid'
+import { isWorldWalkable, dynamicCost, slopeData, BUILDING_BLOCK_THRESHOLD, getClearanceAt } from '../../pathfinding/navGrid'
+import { worldToGrid as wToG, GRID_RES as GR } from '../../terrain/heightmap'
 import { spatialHash } from '../../globals'
 import { telemetry } from '../../debug/movementTelemetry'
 
@@ -271,39 +272,58 @@ export function movementSystem(world: IWorld, dt: number) {
     const maxSl = hasComponent(world, MaxSlope, eid) ? MaxSlope.value[eid] : 100
     const checkR = unitRadius * 0.6
 
+    // Check if unit is ALREADY in a blocked zone (pushed in by clicks/separation)
+    const currentPosOk = checkFootprint(px, pz, checkR, maxSl)
+
     const fullOk = checkFootprint(newX, newZ, checkR, maxSl)
     telemetry.set('moveX', moveX)
     telemetry.set('moveZ', moveZ)
     telemetry.set('fullOk', fullOk)
 
     if (!fullOk) {
-      // Try X only
-      const xOk = checkFootprint(px + moveX, pz, checkR, maxSl)
-      // Try Z only
-      const zOk = checkFootprint(px, pz + moveZ, checkR, maxSl)
-      telemetry.set('xOnlyOk', xOk)
-      telemetry.set('zOnlyOk', zOk)
-
-      if (xOk && !zOk) {
-        newX = px + moveX; newZ = pz
-        telemetry.set('blocked', true)
-        telemetry.set('slideX', true)
-      } else if (!xOk && zOk) {
-        newX = px; newZ = pz + moveZ
-        telemetry.set('blocked', true)
-        telemetry.set('slideZ', true)
-      } else if (xOk && zOk) {
-        if (Math.abs(moveX) > Math.abs(moveZ)) {
-          newX = px + moveX; newZ = pz
+      if (!currentPosOk) {
+        // ESCAPE MODE: unit is stuck inside blocked zone.
+        // Allow movement if new position has better clearance (moving outward).
+        const [ogx, ogz] = wToG(px, pz)
+        const [ngx, ngz] = wToG(newX, newZ)
+        const oldClr = getClearanceAt(ogx, ogz)
+        const newClr = getClearanceAt(ngx, ngz)
+        if (newClr >= oldClr) {
+          // Moving toward freedom or at least not deeper — allow it
+          telemetry.set('blocked', false)
         } else {
-          newX = px; newZ = pz + moveZ
+          // Moving deeper into blocked zone — block it
+          newX = px; newZ = pz
+          telemetry.set('blocked', true)
+          telemetry.set('bothBlocked', true)
         }
-        telemetry.set('blocked', true)
       } else {
-        // Both blocked — don't move
-        newX = px; newZ = pz
-        telemetry.set('blocked', true)
-        telemetry.set('bothBlocked', true)
+        // Normal collision: unit is in valid position, new position is blocked
+        const xOk = checkFootprint(px + moveX, pz, checkR, maxSl)
+        const zOk = checkFootprint(px, pz + moveZ, checkR, maxSl)
+        telemetry.set('xOnlyOk', xOk)
+        telemetry.set('zOnlyOk', zOk)
+
+        if (xOk && !zOk) {
+          newX = px + moveX; newZ = pz
+          telemetry.set('blocked', true)
+          telemetry.set('slideX', true)
+        } else if (!xOk && zOk) {
+          newX = px; newZ = pz + moveZ
+          telemetry.set('blocked', true)
+          telemetry.set('slideZ', true)
+        } else if (xOk && zOk) {
+          if (Math.abs(moveX) > Math.abs(moveZ)) {
+            newX = px + moveX; newZ = pz
+          } else {
+            newX = px; newZ = pz + moveZ
+          }
+          telemetry.set('blocked', true)
+        } else {
+          newX = px; newZ = pz
+          telemetry.set('blocked', true)
+          telemetry.set('bothBlocked', true)
+        }
       }
     }
 
@@ -424,21 +444,31 @@ export function movementSystem(world: IWorld, dt: number) {
       const maxSl = hasComponent(world, MaxSlope, eid) ? MaxSlope.value[eid] : 100
       const checkR = unitRadius * 0.6
 
+      const curOk = checkFootprint(px, pz, checkR, maxSl)
       if (!checkFootprint(newX, newZ, checkR, maxSl)) {
-        const xOk = checkFootprint(px + moveX, pz, checkR, maxSl)
-        const zOk = checkFootprint(px, pz + moveZ, checkR, maxSl)
-
-        if (xOk && !zOk) { newX = px + moveX; newZ = pz }
-        else if (!xOk && zOk) { newX = px; newZ = pz + moveZ }
-        else if (xOk && zOk) {
-          if (Math.abs(moveX) > Math.abs(moveZ)) { newX = px + moveX; newZ = pz }
-          else { newX = px; newZ = pz + moveZ }
+        if (!curOk) {
+          // Escape mode — allow if moving toward better clearance
+          const [ogx, ogz] = wToG(px, pz)
+          const [ngx, ngz] = wToG(newX, newZ)
+          if (getClearanceAt(ngx, ngz) < getClearanceAt(ogx, ogz)) {
+            newX = px; newZ = pz // going deeper — block
+          }
+          // else: allow escape movement
         } else {
-          // Completely blocked — stop
-          removeComponent(world, MoveTarget, eid)
-          Velocity.x[eid] = 0; Velocity.z[eid] = 0
-          if (hasComponent(world, CurrentSpeed, eid)) CurrentSpeed.value[eid] = 0
-          continue
+          const xOk = checkFootprint(px + moveX, pz, checkR, maxSl)
+          const zOk = checkFootprint(px, pz + moveZ, checkR, maxSl)
+
+          if (xOk && !zOk) { newX = px + moveX; newZ = pz }
+          else if (!xOk && zOk) { newX = px; newZ = pz + moveZ }
+          else if (xOk && zOk) {
+            if (Math.abs(moveX) > Math.abs(moveZ)) { newX = px + moveX; newZ = pz }
+            else { newX = px; newZ = pz + moveZ }
+          } else {
+            removeComponent(world, MoveTarget, eid)
+            Velocity.x[eid] = 0; Velocity.z[eid] = 0
+            if (hasComponent(world, CurrentSpeed, eid)) CurrentSpeed.value[eid] = 0
+            continue
+          }
         }
       }
 

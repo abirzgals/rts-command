@@ -672,6 +672,15 @@ function onRightClick(e: MouseEvent) {
   const pos = raycastCanvasToGround(e.clientX, e.clientY)
   if (!pos) return
 
+  // Check if any units are selected — if none, do nothing
+  let hasSelected = false
+  const checkSel: number[] = []
+  spatialHash.query(0, 0, 9999, checkSel)
+  for (const eid of checkSel) {
+    if (hasComponent(world, Selected, eid) && !hasComponent(world, Dead, eid)) { hasSelected = true; break }
+  }
+  if (!hasSelected) return
+
   // Show target marker
   spawnMoveMarker(pos.x, pos.y, pos.z)
 
