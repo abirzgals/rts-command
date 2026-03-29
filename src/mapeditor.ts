@@ -1,0 +1,409 @@
+/**
+ * Map Editor — terrain painting, height sculpting, object placement, save/load.
+ */
+
+import * as THREE from 'three'
+import { initRenderer, renderer, scene, camera, RTSCamera, setGroundPlane, groundPlane } from './render/engine'
+import { createMeshPools, getPool } from './render/meshPools'
+import { generateTerrain, getTerrainHeight, heightData, terrainType, GRID_RES, worldToGrid, gridToWorld, T_WATER, T_GRASS, T_DIRT, T_ROCK, T_CLIFF, T_DARK_GRASS } from './terrain/heightmap'
+import { createTerrainMesh, terrainMesh, waterMesh, updateWater } from './terrain/terrainMesh'
+import { initNavGrid } from './pathfinding/navGrid'
+import { buildSectorGraph } from './pathfinding/sectorGraph'
+import { applyPreset, type PresetName } from './terrain/terrainPresets'
+import { applyBrush, type BrushTool, type BrushSettings } from './terrain/terrainEditor'
+import { serializeCurrentMap, loadMapIntoTerrain, fetchMapList, fetchMap, saveMap, deleteMap, type MapObject, type SpawnPoints } from './terrain/mapData'
+import { initSharedButtons } from './ui/sharedButtons'
+
+// ── State ────────────────────────────────────────────────────
+
+let rtsCamera: RTSCamera
+let currentTool: BrushTool | 'objects' | 'spawns' = 'paint'
+const brushSettings: BrushSettings = { tool: 'paint', radius: 5, strength: 0.5, terrainType: T_GRASS }
+
+let placedObjects: MapObject[] = []
+let objectMeshes: THREE.Object3D[] = [] // visual representations
+let spawnPoints: SpawnPoints = { player: { x: -65, z: -65 }, enemy: { x: 65, z: 65 } }
+let spawnMarkers: THREE.Mesh[] = []
+
+let selectedObjPool = 20 // minerals by default
+let selectedSpawn: 'player' | 'enemy' = 'player'
+
+let isPainting = false
+let lastTime = 0
+
+// ── DOM refs ─────────────────────────────────────────────────
+
+const canvas = document.getElementById('map-canvas') as HTMLCanvasElement
+const elMapName = document.getElementById('map-name') as HTMLInputElement
+const elFps = document.getElementById('fps')!
+const elStatusTool = document.getElementById('status-tool')!
+const elStatusPos = document.getElementById('status-pos')!
+const elStatusHeight = document.getElementById('status-height')!
+const elStatusType = document.getElementById('status-type')!
+const elMapList = document.getElementById('map-list')!
+const elBrushCursor = document.getElementById('brush-cursor')!
+
+const TERRAIN_TYPES = ['Grass', 'Dirt', 'Rock', 'Water', 'Cliff', 'DkGrass']
+
+// ── Init ─────────────────────────────────────────────────────
+
+async function init() {
+  // 1. Generate default terrain
+  applyPreset('islands')
+
+  // 2. Renderer
+  initRenderer(canvas)
+
+  // 3. Terrain mesh
+  const tmesh = createTerrainMesh()
+  setGroundPlane(tmesh)
+
+  // 4. Nav grid (for reference only)
+  initNavGrid()
+  buildSectorGraph()
+
+  // 5. Load mesh pools (for object placement)
+  await createMeshPools()
+
+  // 6. Camera
+  rtsCamera = new RTSCamera()
+  rtsCamera.target.set(0, 3, 0)
+  rtsCamera.setHeightFunction(getTerrainHeight)
+
+  // 7. Spawn markers
+  createSpawnMarkers()
+
+  // 8. UI
+  initSharedButtons()
+  wireUI()
+  refreshMapList()
+
+  // 9. Render loop
+  requestAnimationFrame(loop)
+}
+
+function loop(time: number) {
+  requestAnimationFrame(loop)
+  const dt = Math.min((time - lastTime) / 1000, 0.1)
+  lastTime = time
+
+  rtsCamera.update(dt)
+  updateWater(dt)
+
+  renderer.render(scene, camera)
+
+  // FPS
+  if (dt > 0) elFps.textContent = `${Math.round(1 / dt)} FPS`
+}
+
+// ── Terrain rebuild ──────────────────────────────────────────
+
+function rebuildTerrain() {
+  // Remove old meshes
+  if (terrainMesh) { scene.remove(terrainMesh); terrainMesh.geometry.dispose(); (terrainMesh.material as THREE.Material).dispose() }
+  if (waterMesh) { scene.remove(waterMesh); waterMesh.geometry.dispose(); (waterMesh.material as THREE.Material).dispose() }
+
+  const tmesh = createTerrainMesh()
+  setGroundPlane(tmesh)
+  initNavGrid()
+  buildSectorGraph()
+}
+
+// ── Spawn markers ────────────────────────────────────────────
+
+function createSpawnMarkers() {
+  const geo = new THREE.ConeGeometry(1.5, 3, 8)
+  const matP = new THREE.MeshBasicMaterial({ color: 0x4488ff, transparent: true, opacity: 0.7 })
+  const matE = new THREE.MeshBasicMaterial({ color: 0xff4444, transparent: true, opacity: 0.7 })
+
+  const mP = new THREE.Mesh(geo, matP)
+  const mE = new THREE.Mesh(geo, matE)
+
+  updateSpawnMarkerPos(mP, spawnPoints.player)
+  updateSpawnMarkerPos(mE, spawnPoints.enemy)
+
+  scene.add(mP, mE)
+  spawnMarkers = [mP, mE]
+}
+
+function updateSpawnMarkerPos(marker: THREE.Mesh, pos: { x: number; z: number }) {
+  const y = getTerrainHeight(pos.x, pos.z)
+  marker.position.set(pos.x, y + 3, pos.z)
+}
+
+// ── Raycasting ───────────────────────────────────────────────
+
+const raycaster = new THREE.Raycaster()
+const mouse = new THREE.Vector2()
+
+function raycastGround(clientX: number, clientY: number): THREE.Vector3 | null {
+  const rect = canvas.getBoundingClientRect()
+  mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1
+  mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1
+  raycaster.setFromCamera(mouse, camera)
+
+  if (groundPlane) {
+    const hits = raycaster.intersectObject(groundPlane)
+    if (hits.length > 0) return hits[0].point
+  }
+
+  // Fallback: intersect Y=3 plane
+  const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -3)
+  const target = new THREE.Vector3()
+  raycaster.ray.intersectPlane(plane, target)
+  return target
+}
+
+// ── Mouse handling ───────────────────────────────────────────
+
+function onMouseDown(e: MouseEvent) {
+  if (e.button === 2) return // RMB = camera pan
+  if (e.button !== 0) return
+
+  const pos = raycastGround(e.clientX, e.clientY)
+  if (!pos) return
+
+  if (currentTool === 'objects') {
+    placeObject(pos.x, pos.z)
+  } else if (currentTool === 'spawns') {
+    placeSpawn(pos.x, pos.z)
+  } else {
+    isPainting = true
+    applyBrush(pos.x, pos.z, brushSettings, 0.05)
+  }
+}
+
+function onMouseMove(e: MouseEvent) {
+  const pos = raycastGround(e.clientX, e.clientY)
+  if (!pos) return
+
+  // Status bar
+  const [gx, gz] = worldToGrid(pos.x, pos.z)
+  const i = gz * GRID_RES + gx
+  elStatusPos.textContent = `Pos: ${pos.x.toFixed(0)}, ${pos.z.toFixed(0)}`
+  elStatusHeight.textContent = `H: ${heightData[i]?.toFixed(1) ?? '-'}`
+  elStatusType.textContent = `Type: ${TERRAIN_TYPES[terrainType[i]] ?? '-'}`
+
+  // Brush cursor
+  if (currentTool !== 'objects' && currentTool !== 'spawns') {
+    elBrushCursor.style.display = 'block'
+    const r = brushSettings.radius * 8 // approximate screen size
+    elBrushCursor.style.width = r * 2 + 'px'
+    elBrushCursor.style.height = r * 2 + 'px'
+    elBrushCursor.style.left = e.clientX + 'px'
+    elBrushCursor.style.top = e.clientY + 'px'
+  } else {
+    elBrushCursor.style.display = 'none'
+  }
+
+  // Continuous painting
+  if (isPainting && currentTool !== 'objects' && currentTool !== 'spawns') {
+    applyBrush(pos.x, pos.z, brushSettings, 0.016)
+  }
+}
+
+function onMouseUp() {
+  if (isPainting) {
+    isPainting = false
+    // Rebuild water mesh after paint stroke (water cells may have changed)
+    rebuildTerrain()
+  }
+}
+
+// ── Object placement ─────────────────────────────────────────
+
+function placeObject(wx: number, wz: number) {
+  const y = getTerrainHeight(wx, wz)
+  const rot = Math.random() * Math.PI * 2
+  const isResource = selectedObjPool === 20 || selectedObjPool === 21
+
+  const obj: MapObject = {
+    type: isResource ? 'resource' : 'obstacle',
+    poolId: selectedObjPool,
+    x: wx, z: wz, rotation: rot,
+    amount: isResource ? 1500 : undefined,
+  }
+  placedObjects.push(obj)
+
+  // Visual
+  const pool = getPool(selectedObjPool)
+  if (pool) {
+    const idx = pool.add(placedObjects.length + 1000, wx, y + (isResource ? 0.8 : 0), wz, rot)
+  }
+}
+
+function placeSpawn(wx: number, wz: number) {
+  if (selectedSpawn === 'player') {
+    spawnPoints.player = { x: wx, z: wz }
+    updateSpawnMarkerPos(spawnMarkers[0], spawnPoints.player)
+  } else {
+    spawnPoints.enemy = { x: wx, z: wz }
+    updateSpawnMarkerPos(spawnMarkers[1], spawnPoints.enemy)
+  }
+}
+
+// ── Save / Load ──────────────────────────────────────────────
+
+async function onSave() {
+  const name = elMapName.value.trim()
+  if (!name) { alert('Enter a map name'); return }
+  const data = serializeCurrentMap(name, placedObjects, spawnPoints)
+  await saveMap(name, data)
+  refreshMapList()
+  console.log(`Map "${name}" saved`)
+}
+
+async function onLoad(name?: string) {
+  const mapName = name || prompt('Map name to load:')
+  if (!mapName) return
+
+  try {
+    const data = await fetchMap(mapName)
+    const { objects, spawnPoints: sp } = loadMapIntoTerrain(data)
+
+    placedObjects = objects
+    spawnPoints = sp
+    elMapName.value = data.metadata?.name || mapName
+
+    rebuildTerrain()
+    updateSpawnMarkerPos(spawnMarkers[0], spawnPoints.player)
+    updateSpawnMarkerPos(spawnMarkers[1], spawnPoints.enemy)
+
+    // Re-place object visuals
+    for (const obj of placedObjects) {
+      const pool = getPool(obj.poolId)
+      if (pool) {
+        const y = getTerrainHeight(obj.x, obj.z) + (obj.type === 'resource' ? 0.8 : 0)
+        pool.add(Math.random() * 10000 | 0, obj.x, y, obj.z, obj.rotation)
+      }
+    }
+    console.log(`Map "${mapName}" loaded (${objects.length} objects)`)
+  } catch (e) {
+    console.error('Failed to load map:', e)
+  }
+}
+
+async function onDelete() {
+  const name = elMapName.value.trim()
+  if (!name) return
+  if (!confirm(`Delete map "${name}"?`)) return
+  await deleteMap(name)
+  refreshMapList()
+}
+
+async function refreshMapList() {
+  try {
+    const maps = await fetchMapList()
+    if (maps.length === 0) {
+      elMapList.innerHTML = '<div style="color:#666">No saved maps</div>'
+      return
+    }
+    elMapList.innerHTML = maps.map(m =>
+      `<div style="padding:3px 0;cursor:pointer;border-bottom:1px solid #222" class="map-item" data-name="${m.name}">
+        <span style="color:#aaf">${m.name}</span>
+        <span style="color:#666;font-size:10px;margin-left:6px">${new Date(m.modified).toLocaleDateString()}</span>
+      </div>`
+    ).join('')
+    // Click to load
+    for (const el of elMapList.querySelectorAll('.map-item')) {
+      el.addEventListener('click', () => onLoad((el as HTMLElement).dataset.name!))
+    }
+  } catch {
+    elMapList.innerHTML = '<div style="color:#666">Failed to load</div>'
+  }
+}
+
+// ── Wire UI ──────────────────────────────────────────────────
+
+function wireUI() {
+  // Tool buttons
+  for (const btn of document.querySelectorAll<HTMLElement>('[data-tool]')) {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('[data-tool]').forEach(b => b.classList.remove('active'))
+      btn.classList.add('active')
+      const tool = btn.dataset.tool!
+      currentTool = tool as any
+      brushSettings.tool = (['paint', 'raise', 'lower', 'smooth', 'flatten'].includes(tool) ? tool : 'paint') as BrushTool
+      elStatusTool.textContent = `Tool: ${tool.charAt(0).toUpperCase() + tool.slice(1)}`
+
+      // Show/hide panels
+      document.getElementById('panel-paint')!.style.display = tool === 'paint' ? '' : 'none'
+      document.getElementById('panel-brush')!.style.display = (tool !== 'objects' && tool !== 'spawns') ? '' : 'none'
+      document.getElementById('panel-objects')!.style.display = tool === 'objects' ? '' : 'none'
+      document.getElementById('panel-spawns')!.style.display = tool === 'spawns' ? '' : 'none'
+    })
+  }
+
+  // Paint type buttons
+  for (const btn of document.querySelectorAll<HTMLElement>('[data-paint]')) {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('[data-paint]').forEach(b => b.classList.remove('active'))
+      btn.classList.add('active')
+      brushSettings.terrainType = parseInt(btn.dataset.paint!)
+    })
+  }
+
+  // Object buttons
+  for (const btn of document.querySelectorAll<HTMLElement>('[data-obj]')) {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('[data-obj]').forEach(b => b.classList.remove('active'))
+      btn.classList.add('active')
+      selectedObjPool = parseInt(btn.dataset.obj!)
+    })
+  }
+
+  // Spawn buttons
+  for (const btn of document.querySelectorAll<HTMLElement>('[data-spawn]')) {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('[data-spawn]').forEach(b => b.classList.remove('active'))
+      btn.classList.add('active')
+      selectedSpawn = btn.dataset.spawn as 'player' | 'enemy'
+    })
+  }
+
+  // Brush sliders
+  const radiusSlider = document.getElementById('brush-radius') as HTMLInputElement
+  const radiusVal = document.getElementById('brush-radius-val')!
+  radiusSlider.addEventListener('input', () => {
+    brushSettings.radius = parseInt(radiusSlider.value)
+    radiusVal.textContent = radiusSlider.value
+  })
+
+  const strengthSlider = document.getElementById('brush-strength') as HTMLInputElement
+  const strengthVal = document.getElementById('brush-strength-val')!
+  strengthSlider.addEventListener('input', () => {
+    brushSettings.strength = parseInt(strengthSlider.value) / 100
+    strengthVal.textContent = brushSettings.strength.toFixed(1)
+  })
+
+  // Generate button
+  document.getElementById('btn-generate')!.addEventListener('click', () => {
+    const preset = (document.getElementById('preset-select') as HTMLSelectElement).value as PresetName
+    applyPreset(preset)
+    rebuildTerrain()
+    updateSpawnMarkerPos(spawnMarkers[0], spawnPoints.player)
+    updateSpawnMarkerPos(spawnMarkers[1], spawnPoints.enemy)
+  })
+
+  // Save / Load / Delete
+  document.getElementById('btn-save')!.addEventListener('click', onSave)
+  document.getElementById('btn-load')!.addEventListener('click', () => onLoad())
+  document.getElementById('btn-delete')!.addEventListener('click', onDelete)
+
+  // Canvas mouse events
+  canvas.addEventListener('mousedown', onMouseDown)
+  canvas.addEventListener('mousemove', onMouseMove)
+  canvas.addEventListener('mouseup', onMouseUp)
+  canvas.addEventListener('contextmenu', e => e.preventDefault())
+
+  // Keyboard: Delete key removes last placed object
+  window.addEventListener('keydown', e => {
+    if (e.key === 'Delete' && placedObjects.length > 0) {
+      placedObjects.pop()
+      console.log('Removed last object')
+    }
+  })
+}
+
+// ── Start ────────────────────────────────────────────────────
+init().catch(console.error)

@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RTS Command — Map Editor</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a12; color: #ccc; font-family: 'Segoe UI', Arial, sans-serif; overflow: hidden; height: 100vh; }
+
+  #app { display: grid; grid-template-columns: 260px 1fr; grid-template-rows: 42px 1fr 28px; height: 100vh; }
+
+  /* ── Top Bar ─── */
+  #top-bar {
+    grid-column: 1 / -1; display: flex; align-items: center; gap: 8px;
+    background: #151520; border-bottom: 1px solid #333; padding: 0 12px; z-index: 10;
+  }
+  #top-bar h1 { font-size: 14px; color: #8af; white-space: nowrap; }
+  #map-name { background: #222; border: 1px solid #444; color: #fff; padding: 3px 8px; border-radius: 4px; width: 140px; font-size: 13px; }
+  .btn { padding: 4px 12px; border: 1px solid #555; border-radius: 4px; background: #2a2a3a; color: #ddd; cursor: pointer; font-size: 12px; white-space: nowrap; }
+  .btn:hover { background: #3a3a4a; }
+  .btn.primary { background: #2a5a2a; border-color: #4a8a4a; }
+  .btn.danger { background: #5a2a2a; border-color: #8a4a4a; }
+  .spacer { flex: 1; }
+  .sep { width: 1px; height: 24px; background: #444; }
+  .nav-link { color: #88aaff; text-decoration: none; font-size: 12px; padding: 4px 8px; }
+
+  /* ── Sidebar ─── */
+  #sidebar {
+    background: #12121e; border-right: 1px solid #333; overflow-y: auto; padding: 8px;
+  }
+  .panel { margin-bottom: 12px; }
+  .panel-title { font-size: 11px; font-weight: bold; color: #8af; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid #333; }
+  .panel-row { display: flex; gap: 4px; margin-bottom: 4px; flex-wrap: wrap; }
+  .tool-btn { padding: 4px 8px; border: 1px solid #444; border-radius: 3px; background: #1a1a2a; color: #bbb; cursor: pointer; font-size: 11px; }
+  .tool-btn:hover { background: #2a2a3a; }
+  .tool-btn.active { background: #2a4a2a; border-color: #4a8a4a; color: #fff; }
+  .slider-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+  .slider-row label { font-size: 11px; color: #999; width: 55px; flex-shrink: 0; }
+  .slider-row input[type=range] { flex: 1; height: 4px; }
+  .slider-row .val { font-size: 11px; color: #aaa; width: 30px; text-align: right; }
+  .obj-btn { padding: 6px; border: 1px solid #444; border-radius: 4px; background: #1a1a2a; color: #ccc; cursor: pointer; font-size: 11px; text-align: center; min-width: 56px; }
+  .obj-btn:hover { background: #2a2a3a; }
+  .obj-btn.active { background: #2a3a5a; border-color: #4a6a9a; }
+  select { background: #222; border: 1px solid #444; color: #ddd; padding: 3px 6px; border-radius: 3px; font-size: 12px; width: 100%; }
+
+  /* ── Canvas ─── */
+  #map-canvas { width: 100%; height: 100%; display: block; }
+
+  /* ── Status Bar ─── */
+  #status-bar {
+    grid-column: 1 / -1; display: flex; align-items: center; gap: 12px;
+    background: #151520; border-top: 1px solid #333; padding: 0 12px;
+    font-size: 11px; color: #888;
+  }
+
+  /* ── Brush cursor ─── */
+  #brush-cursor {
+    position: fixed; pointer-events: none; border: 2px solid rgba(255,255,100,0.6);
+    border-radius: 50%; transform: translate(-50%, -50%); z-index: 50; display: none;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- Top Bar -->
+  <div id="top-bar">
+    <h1>Map Editor</h1>
+    <div class="sep"></div>
+    <input type="text" id="map-name" placeholder="Map name..." value="untitled">
+    <button class="btn primary" id="btn-save">Save</button>
+    <button class="btn" id="btn-load">Load</button>
+    <button class="btn danger" id="btn-delete">Delete</button>
+    <div class="sep"></div>
+    <span id="fps" style="font-size:11px">-- FPS</span>
+    <div class="spacer"></div>
+    <a class="nav-link" href="/index.html">Game</a>
+    <a class="nav-link" href="/sandbox.html">Sandbox</a>
+    <a class="nav-link" href="/editor.html">Units</a>
+  </div>
+
+  <!-- Sidebar -->
+  <div id="sidebar">
+    <!-- Terrain Generator -->
+    <div class="panel">
+      <div class="panel-title">Terrain Generator</div>
+      <select id="preset-select">
+        <option value="flat">Flat</option>
+        <option value="islands" selected>Islands</option>
+        <option value="mountains">Mountains</option>
+        <option value="valleys">Valleys</option>
+        <option value="canyon">Canyon</option>
+        <option value="archipelago">Archipelago</option>
+      </select>
+      <div style="margin-top:4px">
+        <button class="btn" id="btn-generate" style="width:100%">Generate</button>
+      </div>
+    </div>
+
+    <!-- Tools -->
+    <div class="panel">
+      <div class="panel-title">Tools</div>
+      <div class="panel-row">
+        <button class="tool-btn active" data-tool="paint">Paint</button>
+        <button class="tool-btn" data-tool="raise">Raise</button>
+        <button class="tool-btn" data-tool="lower">Lower</button>
+        <button class="tool-btn" data-tool="smooth">Smooth</button>
+        <button class="tool-btn" data-tool="flatten">Flatten</button>
+        <button class="tool-btn" data-tool="objects">Objects</button>
+        <button class="tool-btn" data-tool="spawns">Spawns</button>
+      </div>
+    </div>
+
+    <!-- Paint Type (shown when tool=paint) -->
+    <div class="panel" id="panel-paint">
+      <div class="panel-title">Paint Type</div>
+      <div class="panel-row">
+        <button class="tool-btn active" data-paint="0" style="color:#4a4">Grass</button>
+        <button class="tool-btn" data-paint="1" style="color:#a86">Dirt</button>
+        <button class="tool-btn" data-paint="2" style="color:#888">Rock</button>
+        <button class="tool-btn" data-paint="3" style="color:#48f">Water</button>
+      </div>
+    </div>
+
+    <!-- Brush Settings -->
+    <div class="panel" id="panel-brush">
+      <div class="panel-title">Brush</div>
+      <div class="slider-row">
+        <label>Radius</label>
+        <input type="range" id="brush-radius" min="1" max="20" value="5">
+        <span class="val" id="brush-radius-val">5</span>
+      </div>
+      <div class="slider-row">
+        <label>Strength</label>
+        <input type="range" id="brush-strength" min="10" max="100" value="50">
+        <span class="val" id="brush-strength-val">0.5</span>
+      </div>
+    </div>
+
+    <!-- Objects (shown when tool=objects) -->
+    <div class="panel" id="panel-objects" style="display:none">
+      <div class="panel-title">Place Objects</div>
+      <div class="panel-row">
+        <button class="obj-btn" data-obj="20">Minerals</button>
+        <button class="obj-btn" data-obj="21">Gas</button>
+      </div>
+      <div class="panel-row">
+        <button class="obj-btn" data-obj="22">Rock</button>
+        <button class="obj-btn" data-obj="23">Tree</button>
+        <button class="obj-btn" data-obj="24">Boulder</button>
+      </div>
+    </div>
+
+    <!-- Spawns (shown when tool=spawns) -->
+    <div class="panel" id="panel-spawns" style="display:none">
+      <div class="panel-title">Spawn Points</div>
+      <div class="panel-row">
+        <button class="obj-btn active" data-spawn="player" style="color:#4af">Player</button>
+        <button class="obj-btn" data-spawn="enemy" style="color:#f44">Enemy</button>
+      </div>
+      <div style="font-size:11px;color:#888;margin-top:4px">Click on map to place spawn point</div>
+    </div>
+
+    <!-- Map List -->
+    <div class="panel">
+      <div class="panel-title">Saved Maps</div>
+      <div id="map-list" style="max-height:200px;overflow-y:auto;font-size:11px">Loading...</div>
+    </div>
+  </div>
+
+  <!-- 3D Viewport -->
+  <canvas id="map-canvas"></canvas>
+
+  <!-- Status Bar -->
+  <div id="status-bar">
+    <span id="status-tool">Tool: Paint</span>
+    <span id="status-pos">Pos: -</span>
+    <span id="status-height">H: -</span>
+    <span id="status-type">Type: -</span>
+  </div>
+</div>
+
+<div id="brush-cursor"></div>
+
+<script type="module" src="/src/mapeditor.ts"></script>
+</body>
+</html>

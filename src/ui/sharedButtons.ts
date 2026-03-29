@@ -49,8 +49,11 @@ export function initSharedButtons() {
   if (!currentPath.endsWith('/sandbox.html')) {
     buttons.push({ id: 'sb-sandbox', icon: '\u2694', title: 'Sandbox', href: '/sandbox.html', right: 112 })
   }
-  if (currentPath.endsWith('/editor.html') || currentPath.endsWith('/sandbox.html')) {
-    buttons.push({ id: 'sb-game', icon: '\u{1F3AE}', title: 'Game', href: '/', right: 112 + (buttons.length > 2 ? 48 : 0) })
+  if (!currentPath.endsWith('/mapeditor.html')) {
+    buttons.push({ id: 'sb-mapeditor', icon: '\u{1F5FA}', title: 'Map Editor', href: '/mapeditor.html', right: 16 + buttons.length * 48 })
+  }
+  if (currentPath.endsWith('/editor.html') || currentPath.endsWith('/sandbox.html') || currentPath.endsWith('/mapeditor.html')) {
+    buttons.push({ id: 'sb-game', icon: '\u{1F3AE}', title: 'Game', href: '/', right: 16 + buttons.length * 48 })
   }
 
   const wrapper = document.createElement('div')

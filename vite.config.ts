@@ -13,6 +13,7 @@ export default defineConfig({
         main: path.resolve(__dirname, 'index.html'),
         editor: path.resolve(__dirname, 'editor.html'),
         sandbox: path.resolve(__dirname, 'sandbox.html'),
+        mapeditor: path.resolve(__dirname, 'mapeditor.html'),
       },
     },
   },

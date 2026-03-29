@@ -39,6 +39,7 @@ import { initHPBars, updateHPBars } from './render/hpBars'
 import { updateHUD } from './ui/hud'
 import { updateMinimap } from './ui/minimap'
 import { initSharedButtons } from './ui/sharedButtons'
+import { fetchMapList, fetchMap, loadMapIntoTerrain } from './terrain/mapData'
 
 // ── World ────────────────────────────────────────────────────
 const world: IWorld = createWorld()
@@ -50,9 +51,99 @@ const canvas = document.getElementById('game-canvas') as HTMLCanvasElement
 // ── Async init ───────────────────────────────────────────────
 let rtsCamera: RTSCamera
 
+// ── Map selection overlay ────────────────────────────────────
+
+async function showMapSelector(): Promise<'random' | { name: string }> {
+  const overlay = document.createElement('div')
+  Object.assign(overlay.style, {
+    position: 'fixed', inset: '0', zIndex: '1000',
+    background: 'rgba(5,5,15,0.95)', display: 'flex',
+    alignItems: 'center', justifyContent: 'center',
+    fontFamily: "'Segoe UI', Arial, sans-serif",
+  })
+
+  const box = document.createElement('div')
+  Object.assign(box.style, {
+    background: '#12121e', border: '1px solid #333', borderRadius: '12px',
+    padding: '32px', minWidth: '360px', maxWidth: '500px', textAlign: 'center',
+  })
+
+  box.innerHTML = `
+    <h1 style="color:#8af;font-size:24px;margin-bottom:4px">RTS Command</h1>
+    <p style="color:#666;font-size:13px;margin-bottom:24px">Select a map to start</p>
+    <div id="map-selector-list" style="margin-bottom:16px;max-height:300px;overflow-y:auto">
+      <div style="color:#666">Loading maps...</div>
+    </div>
+    <button id="btn-random-map" style="
+      padding:10px 32px;border:1px solid #4a8a4a;border-radius:6px;
+      background:#2a5a2a;color:#fff;cursor:pointer;font-size:14px;width:100%
+    ">Random Map</button>
+  `
+  overlay.appendChild(box)
+  document.body.appendChild(overlay)
+
+  // Fetch maps
+  let maps: { name: string; modified: string }[] = []
+  try { maps = await fetchMapList() } catch { /* empty */ }
+
+  const listEl = document.getElementById('map-selector-list')!
+  if (maps.length === 0) {
+    listEl.innerHTML = '<div style="color:#666;padding:12px">No saved maps. Use Map Editor to create one.</div>'
+  } else {
+    listEl.innerHTML = maps.map(m => `
+      <div class="map-select-item" data-name="${m.name}" style="
+        padding:10px 16px;margin:4px 0;border:1px solid #333;border-radius:6px;
+        background:#1a1a2a;cursor:pointer;text-align:left;
+      ">
+        <div style="color:#aaf;font-size:14px">${m.name}</div>
+        <div style="color:#666;font-size:11px">${new Date(m.modified).toLocaleString()}</div>
+      </div>
+    `).join('')
+  }
+
+  return new Promise(resolve => {
+    // Random map button
+    document.getElementById('btn-random-map')!.addEventListener('click', () => {
+      overlay.remove()
+      resolve('random')
+    })
+
+    // Map items
+    for (const el of listEl.querySelectorAll('.map-select-item')) {
+      (el as HTMLElement).addEventListener('mouseenter', () => {
+        (el as HTMLElement).style.borderColor = '#4a6a9a'
+      })
+      ;(el as HTMLElement).addEventListener('mouseleave', () => {
+        (el as HTMLElement).style.borderColor = '#333'
+      })
+      el.addEventListener('click', () => {
+        const name = (el as HTMLElement).dataset.name!
+        overlay.remove()
+        resolve({ name })
+      })
+    }
+  })
+}
+
+// ── Game init ────────────────────────────────────────────────
+
+let mapSpawnPoints = { player: { x: -65, z: -65 }, enemy: { x: 65, z: 65 } }
+let mapObjects: any[] = []
+
 async function init() {
-  // 1. Generate terrain data
-  generateTerrain()
+  // 0. Map selection
+  const choice = await showMapSelector()
+
+  if (choice === 'random') {
+    // 1a. Procedural terrain
+    generateTerrain()
+  } else {
+    // 1b. Load saved map
+    const mapData = await fetchMap(choice.name)
+    const result = loadMapIntoTerrain(mapData)
+    mapSpawnPoints = result.spawnPoints
+    mapObjects = result.objects
+  }
 
   // 2. Init Three.js renderer + lighting
   initRenderer(canvas)
@@ -71,9 +162,11 @@ async function init() {
   // 6. Init input handling
   initInput(world)
 
-  // 7. Camera
+  // 7. Camera — start at player base
   rtsCamera = new RTSCamera()
-  rtsCamera.target.set(-65, getTerrainHeight(-65, -65), -65)
+  const camX = mapSpawnPoints.player.x
+  const camZ = mapSpawnPoints.player.z
+  rtsCamera.target.set(camX, getTerrainHeight(camX, camZ), camZ)
   rtsCamera.setHeightFunction(getTerrainHeight)
 
   // 8. Debug overlay + HP bars + shared buttons
@@ -81,18 +174,27 @@ async function init() {
   initHPBars()
   initSharedButtons()
 
-  // 9. Spawn initial map
+  // 9. Spawn initial entities (bases, resources, obstacles)
   setupMap(world)
 
-  // 9. Start game loop
+  // 10. If loaded map had objects, spawn them
+  for (const obj of mapObjects) {
+    if (obj.type === 'resource') {
+      spawnResourceNode(world, obj.poolId === 21 ? RES_GAS : RES_MINERALS, obj.x, obj.z, obj.amount ?? 1500)
+    } else {
+      spawnObstacle(world, obj.poolId, obj.x, obj.z)
+    }
+  }
+
+  // Start game loop
   requestAnimationFrame(gameLoop)
 }
 
 init()
 
 function setupMap(world: IWorld) {
-  // Player base — bottom-left corner, 30 units from edge
-  const px = -65, pz = -65
+  // Player base — from map spawn points
+  const px = mapSpawnPoints.player.x, pz = mapSpawnPoints.player.z
 
   // Command Center
   spawnBuilding(world, BT_COMMAND_CENTER, FACTION_PLAYER, px, pz, true)
@@ -135,8 +237,8 @@ function setupMap(world: IWorld) {
   spawnResourceNode(world, RES_GAS, px + 12, pz - 8, 2000)
   spawnResourceNode(world, RES_GAS, px - 8, pz + 12, 2000)
 
-  // ── Enemy base — top-right corner, 30 units from edge ──
-  const ex = 65, ez = 65
+  // ── Enemy base — from map spawn points ──
+  const ex = mapSpawnPoints.enemy.x, ez = mapSpawnPoints.enemy.z
 
   spawnBuilding(world, BT_COMMAND_CENTER, FACTION_ENEMY, ex, ez, true)
   spawnBuilding(world, BT_SUPPLY_DEPOT, FACTION_ENEMY, ex + 6, ez - 5, true)
