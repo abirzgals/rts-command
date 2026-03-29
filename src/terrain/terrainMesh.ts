@@ -275,13 +275,28 @@ function createWater() {
       varying float vIsWater;
       varying float vPoolSize;
       varying vec2 vWorld;
+      varying float vWaveHeight;
       void main() {
         vShoreDist = color.r;
         vIsWater = color.g;
         vPoolSize = color.b;
         vec4 wp = modelMatrix * vec4(position, 1.0);
         vWorld = wp.xz;
-        wp.y += sin(wp.x * 0.4 + time * 0.7) * 0.03 + sin(wp.z * 0.3 + time * 0.5) * 0.02;
+
+        // Open water: gentle sway
+        float openWave = sin(wp.x * 0.4 + time * 0.7) * 0.03
+                       + sin(wp.z * 0.3 + time * 0.5) * 0.02;
+
+        // Shore wave: water rises when foam approaches shore, falls when it recedes
+        float waveZone = mix(0.15, 0.8, smoothstep(0.1, 0.7, vPoolSize));
+        float wavePhase = vShoreDist / max(waveZone, 0.01);
+        float shoreWave = sin(wavePhase * 12.0 + time * 1.2) * 0.5 + 0.5;
+        // Only near shore, scaled by proximity
+        float shoreInfluence = smoothstep(0.4, 0.0, vShoreDist);
+        float tideRise = shoreWave * shoreInfluence * 0.15;
+
+        wp.y += openWave + tideRise;
+        vWaveHeight = shoreWave;
         gl_Position = projectionMatrix * viewMatrix * wp;
       }
     `,
@@ -292,6 +307,7 @@ function createWater() {
       varying float vIsWater;
       varying float vPoolSize;
       varying vec2 vWorld;
+      varying float vWaveHeight;
 
       // Hash and value noise
       float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
@@ -364,8 +380,16 @@ function createWater() {
         vec3 col = deepColor + caustic * vec3(0.15, 0.22, 0.28);
         col = mix(col, foamColor, foam);
 
-        // Transparency: clear in deep water, opaque at shore foam
-        float alpha = mix(0.45, 0.85, smoothstep(0.5, 0.0, vShoreDist));
+        // Transparency layers:
+        // 1. Deep water base opacity
+        float depthAlpha = mix(0.45, 0.85, smoothstep(0.5, 0.0, vShoreDist));
+        // 2. Shore edge fade: water smoothly disappears at coastline
+        float edgeFade = smoothstep(0.0, 0.06, vShoreDist);
+        // 3. Foam makes water more opaque where visible
+        float foamOpacity = foam * 0.4;
+
+        float alpha = depthAlpha * edgeFade + foamOpacity;
+        alpha = clamp(alpha, 0.0, 0.95);
         gl_FragColor = vec4(col, alpha);
       }
     `,
