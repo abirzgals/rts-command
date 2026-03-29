@@ -118,6 +118,7 @@ async function init() {
   initHPBars()
   initDebugOverlay()
   initSharedButtons()
+  ;(window as any).__ecsWorld = world // expose for telemetry (F2)
 
   // 7. Camera — start centered at map origin
   rtsCamera = new RTSCamera()

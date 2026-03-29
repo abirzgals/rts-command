@@ -3,6 +3,11 @@
 // Call initSharedButtons() once after DOM is ready.
 
 import { toggleDebug, isDebugEnabled } from '../render/debugOverlay'
+import { telemetry } from '../debug/movementTelemetry'
+import { Selected } from '../ecs/components'
+import { defineQuery } from 'bitecs'
+
+const selectedQuery = defineQuery([Selected])
 
 const BUTTON_STYLE = `
   position:fixed; width:40px; height:40px; border-radius:50%;
@@ -88,6 +93,32 @@ export function initSharedButtons() {
       e.preventDefault()
       const btn = document.getElementById('sb-debug')
       if (btn) btn.click()
+    }
+    // F2: toggle movement telemetry for selected unit
+    if (e.key === 'F2') {
+      e.preventDefault()
+      if (telemetry.enabled) {
+        telemetry.dump('Manual dump (F2)')
+        telemetry.stop()
+      } else {
+        // Find selected unit in any world
+        const w = (window as any).__ecsWorld
+        if (w) {
+          const sel = selectedQuery(w)
+          if (sel.length > 0) {
+            telemetry.start(sel[0])
+          } else {
+            console.log('[TELEMETRY] Select a unit first, then press F2')
+          }
+        }
+      }
+    }
+    // F3: dump telemetry without stopping
+    if (e.key === 'F3') {
+      e.preventDefault()
+      if (telemetry.enabled) {
+        telemetry.dump('Snapshot (F3)')
+      }
     }
   })
 }

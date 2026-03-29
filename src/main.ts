@@ -42,6 +42,7 @@ import { initSharedButtons } from './ui/sharedButtons'
 
 // ── World ────────────────────────────────────────────────────
 const world: IWorld = createWorld()
+;(window as any).__ecsWorld = world // expose for telemetry (F2)
 
 // ── Init ─────────────────────────────────────────────────────
 const canvas = document.getElementById('game-canvas') as HTMLCanvasElement

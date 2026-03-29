@@ -23,6 +23,7 @@ import { resetPathAttempt } from './pathfindingSystem'
 import { getTerrainHeight, getTerrainTypeAt, T_WATER, worldToGrid, GRID_RES } from '../../terrain/heightmap'
 import { isWorldWalkable, dynamicCost, slopeData, BUILDING_BLOCK_THRESHOLD } from '../../pathfinding/navGrid'
 import { spatialHash } from '../../globals'
+import { telemetry } from '../../debug/movementTelemetry'
 
 // ── Constants ────────────────────────────────────────────────
 const ARRIVE_THRESHOLD = 0.8
@@ -124,6 +125,7 @@ export function movementSystem(world: IWorld, dt: number) {
     }
 
     if (sepX !== 0 || sepZ !== 0) {
+      telemetry.recordSeparation(eid, sepX, sepZ)
       const newX = px + sepX * dt
       const newZ = pz + sepZ * dt
       if (checkFootprint(newX, newZ, myRadius * 0.6, maxSl)) {
@@ -174,10 +176,14 @@ export function movementSystem(world: IWorld, dt: number) {
       continue
     }
 
+    telemetry.beginFrame(eid)
+
     // ── Step 1: Waypoint management ──────────────────────────
     const wp = path[wpIdx]
     const px = Position.x[eid]
     const pz = Position.z[eid]
+    telemetry.set('px', px)
+    telemetry.set('pz', pz)
     let dx = wp.x - px
     let dz = wp.z - pz
     let dist = Math.sqrt(dx * dx + dz * dz)
@@ -206,6 +212,10 @@ export function movementSystem(world: IWorld, dt: number) {
     const desiredDirX = dx / dist
     const desiredDirZ = dz / dist
     const desiredYaw = Math.atan2(desiredDirX, desiredDirZ)
+    telemetry.set('wpX', wp.x)
+    telemetry.set('wpZ', wp.z)
+    telemetry.set('distToWp', dist)
+    telemetry.set('desiredYaw', desiredYaw)
 
     // ── Step 3: Turn rate application ────────────────────────
     const turnRate = hasComponent(world, TurnRate, eid) ? TurnRate.value[eid] : 5.0
@@ -222,6 +232,9 @@ export function movementSystem(world: IWorld, dt: number) {
     // Speed reduction when turning: slow down for sharp turns but keep minimum 20%
     const facingDot = facingX * desiredDirX + facingZ * desiredDirZ
     const turnSpeedFactor = 0.2 + 0.8 * Math.max(0.0, facingDot)
+    telemetry.set('yaw', newYaw)
+    telemetry.set('yawDelta', delta)
+    telemetry.set('turnSpeedFactor', turnSpeedFactor)
 
     // ── Step 4: Acceleration / deceleration ──────────────────
     const maxSpeed = MoveSpeed.value[eid]
@@ -235,6 +248,9 @@ export function movementSystem(world: IWorld, dt: number) {
       curSpeed = Math.max(targetSpeed, curSpeed - accel * 2.0 * dt) // decel is 2x accel
     }
     if (hasComponent(world, CurrentSpeed, eid)) CurrentSpeed.value[eid] = curSpeed
+    telemetry.set('maxSpeed', maxSpeed)
+    telemetry.set('targetSpeed', targetSpeed)
+    telemetry.set('currentSpeed', curSpeed)
 
     // ── Step 5: Compute displacement ─────────────────────────
     const stepDist = curSpeed * dt
@@ -255,31 +271,39 @@ export function movementSystem(world: IWorld, dt: number) {
     const maxSl = hasComponent(world, MaxSlope, eid) ? MaxSlope.value[eid] : 100
     const checkR = unitRadius * 0.6
 
-    if (!checkFootprint(newX, newZ, checkR, maxSl)) {
+    const fullOk = checkFootprint(newX, newZ, checkR, maxSl)
+    telemetry.set('moveX', moveX)
+    telemetry.set('moveZ', moveZ)
+    telemetry.set('fullOk', fullOk)
+
+    if (!fullOk) {
       // Try X only
       const xOk = checkFootprint(px + moveX, pz, checkR, maxSl)
       // Try Z only
       const zOk = checkFootprint(px, pz + moveZ, checkR, maxSl)
+      telemetry.set('xOnlyOk', xOk)
+      telemetry.set('zOnlyOk', zOk)
 
       if (xOk && !zOk) {
-        newX = px + moveX
-        newZ = pz
+        newX = px + moveX; newZ = pz
+        telemetry.set('blocked', true)
+        telemetry.set('slideX', true)
       } else if (!xOk && zOk) {
-        newX = px
-        newZ = pz + moveZ
+        newX = px; newZ = pz + moveZ
+        telemetry.set('blocked', true)
+        telemetry.set('slideZ', true)
       } else if (xOk && zOk) {
-        // Diagonal corner — pick axis with greater velocity component
         if (Math.abs(moveX) > Math.abs(moveZ)) {
-          newX = px + moveX
-          newZ = pz
+          newX = px + moveX; newZ = pz
         } else {
-          newX = px
-          newZ = pz + moveZ
+          newX = px; newZ = pz + moveZ
         }
+        telemetry.set('blocked', true)
       } else {
-        // Both blocked — don't move, handle stuck below
-        newX = px
-        newZ = pz
+        // Both blocked — don't move
+        newX = px; newZ = pz
+        telemetry.set('blocked', true)
+        telemetry.set('bothBlocked', true)
       }
     }
 
@@ -292,9 +316,11 @@ export function movementSystem(world: IWorld, dt: number) {
     spatialHash.update(eid, newX, newZ)
 
     // ── Step 8: Stuck detection — no teleport, just repath then give up
+    const actualMovedDist = Math.sqrt((newX - px) * (newX - px) + (newZ - pz) * (newZ - pz))
+    telemetry.set('actualDist', actualMovedDist)
+
     if (hasComponent(world, StuckState, eid)) {
-      // Check actual speed vs expected — if moving very slowly, count as stuck
-      const actualSpeed = Math.sqrt((newX - px) * (newX - px) + (newZ - pz) * (newZ - pz)) / Math.max(dt, 0.001)
+      const actualSpeed = actualMovedDist / Math.max(dt, 0.001)
       const isStuck = actualSpeed < maxSpeed * STUCK_SPEED_THRESHOLD && curSpeed > 0.1
 
       if (!isStuck) {
@@ -310,17 +336,27 @@ export function movementSystem(world: IWorld, dt: number) {
           // Phase 1: Force repath — find a new route
           StuckState.phase[eid] = 1
           StuckState.timer[eid] = 0
+          telemetry.set('stuckPhase', 1)
+          telemetry.set('stuckTimer', 0)
+          telemetry.endFrame(eid)
+          telemetry.dump(`STUCK → repath (unit #${eid})`)
           forceRepath(world, eid, pathId)
           continue
         } else if (phase === 1 && timer > PHASE1_COOLDOWN) {
           // Phase 2: Give up — stop
           StuckState.phase[eid] = 2
           StuckState.timer[eid] = 0
+          telemetry.set('stuckPhase', 2)
+          telemetry.endFrame(eid)
+          telemetry.dump(`GIVE UP (unit #${eid})`)
           finishPath(world, eid, pathId)
           continue
         }
       }
+      telemetry.set('stuckPhase', StuckState.phase[eid])
+      telemetry.set('stuckTimer', StuckState.timer[eid])
     }
+    telemetry.endFrame(eid)
   }
 
   // ── 3. Direct movement (no path, short distances) ──────────
