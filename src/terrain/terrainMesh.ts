@@ -276,32 +276,33 @@ function createWater() {
       }
 
       void main() {
-        float dist = texture2D(shoreMask, vUv).r; // 0=land, small=shore, 1=deep
+        float dist = texture2D(shoreMask, vUv).r; // 0=land, >0=water
 
         // Discard land pixels
         if (dist < 0.01) discard;
 
-        // Shore proximity (0 = deep, 1 = right at shore)
-        float shore = 1.0 - smoothstep(0.0, 0.25, dist);
+        // Shore foam: only in first ~3 cells from land (dist 0.01 to ~0.12)
+        // dist is encoded as cellDistance * 25.5 / 255, so 3 cells ≈ 0.3
+        float shore = 1.0 - smoothstep(0.02, 0.12, dist);
 
-        // Animated foam at shoreline
-        float foamWave = sin(shore * 30.0 - time * 3.0) * 0.5 + 0.5;
-        float foamNoise = noise(vWorld * 0.3 + time * 0.12);
-        float foam = shore * (0.3 + 0.7 * foamWave * foamNoise);
+        // Animated foam wave pattern at shore edge
+        float foamWave = sin(shore * 15.0 - time * 2.5) * 0.5 + 0.5;
+        float foamNoise = noise(vWorld * 0.5 + time * 0.15);
+        float foam = shore * (0.5 + 0.5 * foamWave) * (0.6 + 0.4 * foamNoise);
 
-        // Caustics on water surface
-        float c1 = noise(vWorld * 0.2 + vec2(time * 0.1));
-        float c2 = noise(vWorld * 0.35 - vec2(time * 0.08, time * 0.12));
-        float caustic = pow(c1 * c2, 1.5) * 0.25;
+        // Subtle caustics everywhere on water
+        float c1 = noise(vWorld * 0.2 + vec2(time * 0.08));
+        float c2 = noise(vWorld * 0.35 - vec2(time * 0.06, time * 0.1));
+        float caustic = pow(c1 * c2, 1.5) * 0.2;
 
-        // Color: deep → shallow → foam
-        float depth = smoothstep(0.0, 0.5, dist);
-        vec3 col = mix(shallowColor, deepColor, depth);
-        col += caustic * 0.3;
-        col = mix(col, foamColor, foam * 0.7);
+        // Water color: uniform deep color + subtle caustic shimmer
+        vec3 col = deepColor + caustic * vec3(0.15, 0.2, 0.25);
 
-        // Opacity
-        float alpha = 0.65 + depth * 0.1;
+        // Mix in white foam at shore
+        col = mix(col, foamColor, foam * 0.8);
+
+        // Constant opacity for all water
+        float alpha = 0.7;
 
         gl_FragColor = vec4(col, alpha);
       }
