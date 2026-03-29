@@ -27,13 +27,17 @@ interface AnimatedUnit {
   occlusionGroup?: THREE.Group // silhouette shown when occluded
 }
 
-// Shared material for occluded silhouette — renders only where depth test FAILS
+// Shared material for occluded silhouette — renders only behind other objects
 const occlusionMat = new THREE.MeshBasicMaterial({
   color: 0x44aaff,
   transparent: true,
-  opacity: 0.35,
-  depthFunc: THREE.GreaterDepth, // only draw where something is in front
+  opacity: 0.2,
+  depthFunc: THREE.GreaterDepth,
   depthWrite: false,
+  colorWrite: true,
+  polygonOffset: true,
+  polygonOffsetFactor: -1,
+  polygonOffsetUnits: -1,
 })
 
 /**
@@ -115,27 +119,30 @@ export class AnimatedMeshManager {
       }
     })
 
-    // Create occlusion silhouette — shows unit outline when behind obstacles
+    // Create occlusion silhouette — shows ONLY when behind other objects
+    // Rendered as separate scene children (not parented to clone) to avoid self-occlusion
     const occGroup = new THREE.Group()
     clone.traverse((child) => {
       if ((child as THREE.Mesh).isMesh) {
         const mesh = child as THREE.Mesh
-        const occMesh = new THREE.Mesh(mesh.geometry, occlusionMat)
-        // Share skeleton for skinned meshes so silhouette follows animation
         if ((mesh as THREE.SkinnedMesh).isSkinnedMesh) {
           const skinned = mesh as THREE.SkinnedMesh
           const occSkinned = new THREE.SkinnedMesh(mesh.geometry, occlusionMat)
           occSkinned.skeleton = skinned.skeleton
           occSkinned.bindMatrix.copy(skinned.bindMatrix)
           occSkinned.bindMatrixInverse.copy(skinned.bindMatrixInverse)
-          occSkinned.renderOrder = 99
+          occSkinned.renderOrder = 999
+          occSkinned.frustumCulled = false
           occGroup.add(occSkinned)
         } else {
-          occMesh.renderOrder = 99
+          const occMesh = new THREE.Mesh(mesh.geometry, occlusionMat)
+          occMesh.renderOrder = 999
+          occMesh.frustumCulled = false
           occGroup.add(occMesh)
         }
       }
     })
+    // Parent to clone so it follows position/rotation/scale
     clone.add(occGroup)
 
     this.units.set(eid, { mesh: clone, mixer, actions, currentAnim: 'Idle', turretBone, barrelBone, occlusionGroup: occGroup })
