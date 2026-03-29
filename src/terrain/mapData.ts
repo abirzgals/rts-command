@@ -4,6 +4,7 @@
  */
 
 import { GRID_RES, heightData, terrainType, gridToWorld } from './heightmap'
+import { textureOverrides, replaceTerrainTexture } from './terrainMesh'
 
 const TOTAL = GRID_RES * GRID_RES
 
@@ -34,6 +35,7 @@ export interface MapData {
   terrainType: string   // base64-encoded RLE Uint8Array
   objects: MapObject[]
   spawnPoints: SpawnPoints
+  textures?: Record<string, string> // slot → URL overrides (e.g. { cliff: '/textures/myCliff.jpg' })
 }
 
 // ── Compression: height data ─────────────────────────────────
@@ -121,6 +123,7 @@ export function serializeCurrentMap(
     terrainType: encodeTerrainType(terrainType),
     objects,
     spawnPoints,
+    textures: Object.keys(textureOverrides).length > 0 ? { ...textureOverrides } : undefined,
   }
 }
 
@@ -132,6 +135,15 @@ export function loadMapIntoTerrain(mapData: MapData): {
 } {
   decodeHeightData(mapData.heightData, heightData)
   decodeTerrainType(mapData.terrainType, terrainType)
+
+  // Restore texture overrides
+  for (const k of Object.keys(textureOverrides)) delete textureOverrides[k]
+  if (mapData.textures) {
+    for (const [slot, url] of Object.entries(mapData.textures)) {
+      replaceTerrainTexture(slot, url)
+    }
+  }
+
   return {
     objects: mapData.objects || [],
     spawnPoints: mapData.spawnPoints || {

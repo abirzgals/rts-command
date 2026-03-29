@@ -9,8 +9,8 @@ import { scene } from '../render/engine'
 export let terrainMesh: THREE.Mesh
 export let waterMesh: THREE.Mesh
 
-// Track custom texture URLs — survives mesh rebuilds
-const textureOverrides: Record<string, string> = {}
+// Track custom texture URLs — survives mesh rebuilds, saved with map
+export const textureOverrides: Record<string, string> = {}
 
 /** Get the URL for a terrain texture slot (custom or default) */
 function getTextureUrl(slot: string): string {
