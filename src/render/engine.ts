@@ -100,13 +100,33 @@ export class RTSCamera {
   private getTerrainHeight: ((x: number, z: number) => number) | null = null
   private lastMouseX = 0
   private lastMouseY = 0
+  private rmb = false  // right mouse button held
+  private dragPrevX = 0
+  private dragPrevY = 0
 
   constructor() {
     window.addEventListener('keydown', (e) => this.keys.add(e.code))
     window.addEventListener('keyup', (e) => this.keys.delete(e.code))
+    window.addEventListener('mousedown', (e) => {
+      if (e.button === 2) { this.rmb = true; this.dragPrevX = e.clientX; this.dragPrevY = e.clientY }
+    })
+    window.addEventListener('mouseup', (e) => {
+      if (e.button === 2) this.rmb = false
+    })
     window.addEventListener('mousemove', (e) => {
       this.lastMouseX = e.clientX
       this.lastMouseY = e.clientY
+      // Right-click drag → pan camera
+      if (this.rmb) {
+        const dx = e.clientX - this.dragPrevX
+        const dy = e.clientY - this.dragPrevY
+        this.dragPrevX = e.clientX
+        this.dragPrevY = e.clientY
+        // Scale pan speed by distance (zoom level)
+        const scale = this.distance * 0.003
+        this.target.x -= dx * scale
+        this.target.z -= dy * scale
+      }
     })
     window.addEventListener('wheel', (e) => {
       // Zoom toward/away from cursor position
