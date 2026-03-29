@@ -46,7 +46,7 @@ export function initRenderer(canvas: HTMLCanvasElement) {
   sun.shadow.camera.top = 130
   sun.shadow.camera.bottom = -130
   sun.shadow.camera.near = 10
-  sun.shadow.camera.far = 300
+  sun.shadow.camera.far = 400
   sun.shadow.bias = -0.0005
   sun.shadow.normalBias = 0.02
   scene.add(sun)
@@ -88,7 +88,7 @@ export class RTSCamera {
   target = new THREE.Vector3(-80, 0, -80)
   distance = 45
   minDistance = 12
-  maxDistance = 110
+  maxDistance = 180
   pitch = 0.95 // ~55° from horizontal — classic RTS angle
   yaw = 0      // rotation around Y axis (radians, 0 = looking north)
 
