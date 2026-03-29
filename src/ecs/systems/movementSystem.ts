@@ -97,7 +97,7 @@ export function movementSystem(world: IWorld, dt: number) {
     const r = hasComponent(world, CollisionRadius, eid) ? CollisionRadius.value[eid] : 0.4
     const sl = hasComponent(world, MaxSlope, eid) ? MaxSlope.value[eid] : 100
 
-    if (!checkFootprint(px, pz, r * 0.6, sl)) {
+    if (!checkFootprint(px, pz, r * 0.3, sl)) {
       // Unit is stuck on blocked terrain with no orders — find nearest walkable
       const [gx, gz] = wToG(px, pz)
       for (let ring = 1; ring < 10; ring++) {
@@ -107,7 +107,7 @@ export function movementSystem(world: IWorld, dt: number) {
             const nx = gx + ox, nz = gz + oz
             if (nx < 0 || nx >= GR || nz < 0 || nz >= GR) continue
             const [wx, wz] = gridToWorld(nx, nz)
-            if (checkFootprint(wx, wz, r * 0.6, sl)) {
+            if (checkFootprint(wx, wz, r * 0.3, sl)) {
               addComponent(world, MoveTarget, eid)
               MoveTarget.x[eid] = wx
               MoveTarget.z[eid] = wz
@@ -166,7 +166,7 @@ export function movementSystem(world: IWorld, dt: number) {
       telemetry.recordSeparation(eid, sepX, sepZ)
       const newX = px + sepX * dt
       const newZ = pz + sepZ * dt
-      if (checkFootprint(newX, newZ, myRadius * 0.6, maxSl)) {
+      if (checkFootprint(newX, newZ, myRadius * 0.3, maxSl)) {
         Position.x[eid] = newX
         Position.z[eid] = newZ
         Position.y[eid] = getTerrainHeight(newX, newZ)
@@ -258,7 +258,7 @@ export function movementSystem(world: IWorld, dt: number) {
     // Check if on blocked terrain — if so, skip turn rate and move directly
     const unitRadius = hasComponent(world, CollisionRadius, eid) ? CollisionRadius.value[eid] : 0.4
     const maxSl = hasComponent(world, MaxSlope, eid) ? MaxSlope.value[eid] : 100
-    const checkR = unitRadius * 0.6
+    const checkR = unitRadius * 0.3
     const onBlockedTerrain = !checkFootprint(px, pz, checkR, maxSl)
 
     // ── Step 3: Turn rate application ────────────────────────
@@ -472,7 +472,7 @@ export function movementSystem(world: IWorld, dt: number) {
       // Wall slide
       const unitRadius = hasComponent(world, CollisionRadius, eid) ? CollisionRadius.value[eid] : 0.4
       const maxSl = hasComponent(world, MaxSlope, eid) ? MaxSlope.value[eid] : 100
-      const checkR = unitRadius * 0.6
+      const checkR = unitRadius * 0.3
 
       const curOk = checkFootprint(px, pz, checkR, maxSl)
       const newOk = curOk ? checkFootprint(newX, newZ, checkR, maxSl) : true // escape mode
