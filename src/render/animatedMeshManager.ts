@@ -385,9 +385,11 @@ export class AnimatedMeshManager {
     })
 
     for (const mesh of meshes) {
-      // Get world position of this part
+      // Get world transform of this part
       const worldPos = new THREE.Vector3()
-      mesh.getWorldPosition(worldPos)
+      const worldQuat = new THREE.Quaternion()
+      const worldScale = new THREE.Vector3()
+      mesh.matrixWorld.decompose(worldPos, worldQuat, worldScale)
 
       // Clone geometry and material
       const geo = mesh.geometry.clone()
@@ -402,7 +404,8 @@ export class AnimatedMeshManager {
       })
       const piece = new THREE.Mesh(geo, clonedMats.length === 1 ? clonedMats[0] : clonedMats)
       piece.position.copy(worldPos)
-      piece.scale.setScalar(parentScale)
+      piece.quaternion.copy(worldQuat)
+      piece.scale.copy(worldScale)
       piece.castShadow = true
       scene.add(piece)
       pieces.push(piece)
