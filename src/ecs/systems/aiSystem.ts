@@ -26,6 +26,9 @@ const ATTACK_WAVE_INTERVAL = 60 // seconds between attack waves
 let hasBarracks = false
 let hasFactory = false
 
+// Debug info
+export let aiDebugStatus = ''
+
 export function aiSystem(world: IWorld, dt: number) {
   aiTimer += dt
   attackWaveTimer += dt
@@ -66,13 +69,24 @@ export function aiSystem(world: IWorld, dt: number) {
     if (ut === UT_TANK) tankCount++
   }
 
+  // ── Build debug status ───────────────────────────────
+  const waveIn = Math.max(0, Math.ceil(ATTACK_WAVE_INTERVAL - attackWaveTimer))
+  const lines: string[] = [
+    `Workers: ${workerCount} | Marines: ${marineCount} | Tanks: ${tankCount}`,
+    `Buildings: CC:${commandCenter ? 'Y' : 'N'} Barracks:${hasBarracks ? 'Y' : 'N'} Factory:${hasFactory ? 'Y' : 'N'}`,
+    `Minerals: ${Math.floor(res.minerals)} Gas: ${Math.floor(res.gas)} Supply: ${res.supplyCurrent}/${res.supplyMax}`,
+    `Next wave: ${waveIn}s (need ${Math.max(0, 5 - marineCount - tankCount)} more units)`,
+  ]
+  const decisions: string[] = []
+
   // ── Build economy ───────────────────────────────────
   // Produce workers (up to 8)
   if (commandCenter && workerCount < 8 && res.supplyCurrent < res.supplyMax) {
     const def = UNIT_DEFS[UT_WORKER]
     if (gameState.canAfford(FACTION_ENEMY, def.cost)) {
       queueProduction(commandCenter, UT_WORKER)
-    }
+      decisions.push('Producing worker')
+    } else decisions.push('Want worker, no money')
   }
 
   // Build supply if needed
@@ -128,6 +142,11 @@ export function aiSystem(world: IWorld, dt: number) {
   if (attackWaveTimer >= ATTACK_WAVE_INTERVAL && marineCount + tankCount >= 5) {
     attackWaveTimer = 0
     sendAttackWave(world)
+    decisions.push('ATTACK WAVE SENT!')
+  } else if (marineCount + tankCount < 5) {
+    decisions.push('Building army...')
+  } else {
+    decisions.push(`Waiting for wave timer (${waveIn}s)`)
   }
 
   // ── Give AI passive income (simulates worker gathering) ───
@@ -154,6 +173,10 @@ export function aiSystem(world: IWorld, dt: number) {
       MoveTarget.z[eid] = rz
     }
   }
+
+  if (decisions.length > 0) lines.push('Decisions: ' + decisions.join(', '))
+  aiDebugStatus = lines.join('\n')
+  ;(window as any).__aiDebugStatus = aiDebugStatus
 }
 
 function sendAttackWave(world: IWorld) {

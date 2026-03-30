@@ -52,13 +52,36 @@ export function combatSystem(world: IWorld, dt: number) {
         continue
       }
 
-      const tx = Position.x[targetEid]
-      const tz = Position.z[targetEid]
+      // Retarget: if attacking a building/worker, check for higher-priority combat units in range
+      const currentTargetIsBuilding = hasComponent(world, IsBuilding, targetEid)
+      const currentTargetIsWorker = hasComponent(world, WorkerC, targetEid)
+      if (currentTargetIsBuilding || currentTargetIsWorker) {
+        spatialHash.query(px, pz, range, _nearby)
+        for (const other of _nearby) {
+          if (other === eid || other === targetEid) continue
+          if (!hasComponent(world, Faction, other) || Faction.id[other] === myFaction) continue
+          if (hasComponent(world, Dead, other) || !hasComponent(world, Health, other)) continue
+          if (hasComponent(world, IsBuilding, other)) continue // don't switch to another building
+          if (currentTargetIsWorker && hasComponent(world, WorkerC, other)) continue // don't switch worker→worker
+          if (myFaction === FACTION_PLAYER && !isVisibleAt(Position.x[other], Position.z[other])) continue
+          const odx = Position.x[other] - px, odz = Position.z[other] - pz
+          const oDist = Math.sqrt(odx * odx + odz * odz)
+          const oR = hasComponent(world, CollisionRadius, other) ? CollisionRadius.value[other] : 0
+          if (oDist - oR <= range) {
+            // Switch to higher-priority target
+            AttackTarget.eid[eid] = other
+            break
+          }
+        }
+      }
+
+      const actualTarget = AttackTarget.eid[eid]
+      const tx = Position.x[actualTarget]
+      const tz = Position.z[actualTarget]
       const dx = tx - px
       const dz = tz - pz
       const dist = Math.sqrt(dx * dx + dz * dz)
-      // Effective distance = center-to-center minus target's collision radius
-      const targetR = hasComponent(world, CollisionRadius, targetEid) ? CollisionRadius.value[targetEid] : 0
+      const targetR = hasComponent(world, CollisionRadius, actualTarget) ? CollisionRadius.value[actualTarget] : 0
       const effectiveDist = Math.max(0, dist - targetR)
 
       if (effectiveDist <= range) {
@@ -76,14 +99,13 @@ export function combatSystem(world: IWorld, dt: number) {
         if (hasComponent(world, Rotation, eid) && dist > 0.1) {
           Rotation.y[eid] = Math.atan2(dx, dz)
         }
-        tryAttack(world, eid, targetEid, dist)
+        tryAttack(world, eid, actualTarget, dist)
       } else {
         // Chase — move to attack position (within range of target)
         if (!hasComponent(world, IsBuilding, eid) && hasComponent(world, MoveSpeed, eid)) {
-          const targetR = hasComponent(world, CollisionRadius, targetEid) ? CollisionRadius.value[targetEid] : 0
+          const chaseR = hasComponent(world, CollisionRadius, actualTarget) ? CollisionRadius.value[actualTarget] : 0
           const atkRange = AttackC.range[eid]
-          // Move to within attack range of target edge
-          const chaseDist = targetR + Math.max(1.0, atkRange * 0.8)
+          const chaseDist = chaseR + Math.max(1.0, atkRange * 0.8)
           const cdx = px - tx, cdz = pz - tz
           const cd = Math.sqrt(cdx * cdx + cdz * cdz) || 1
           addComponent(world, MoveTarget, eid)

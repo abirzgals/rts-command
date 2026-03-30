@@ -419,4 +419,35 @@ export function updateDebugOverlay(world: IWorld) {
   } else {
     if (unitInfoDiv) unitInfoDiv.style.display = 'none'
   }
+
+  // ── AI Debug Panel ──
+  updateAIDebugPanel()
+}
+
+let aiDebugDiv: HTMLDivElement | null = null
+
+function updateAIDebugPanel() {
+  // Dynamic import to avoid circular deps
+  const mod = (window as any).__aiDebugStatus as string | undefined
+  const aiDebugStatus = mod
+  if (!aiDebugStatus) {
+    if (aiDebugDiv) aiDebugDiv.style.display = 'none'
+    return
+  }
+  if (!aiDebugDiv) {
+    aiDebugDiv = document.createElement('div')
+    aiDebugDiv.id = 'debug-ai'
+    Object.assign(aiDebugDiv.style, {
+      position: 'absolute', bottom: '8px', right: '8px',
+      background: 'rgba(80,0,0,0.85)', color: '#faa',
+      padding: '8px 12px', borderRadius: '6px',
+      fontSize: '11px', lineHeight: '1.5', zIndex: '30',
+      fontFamily: 'monospace', pointerEvents: 'none',
+      maxWidth: '320px', whiteSpace: 'pre-wrap',
+      border: '1px solid #a44',
+    })
+    document.body.appendChild(aiDebugDiv)
+  }
+  aiDebugDiv.innerHTML = '<b style="color:#f88">AI Brain</b>\n' + aiDebugStatus
+  aiDebugDiv.style.display = 'block'
 }
