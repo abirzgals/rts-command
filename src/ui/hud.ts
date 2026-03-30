@@ -176,13 +176,13 @@ function updateActionButtons(world: IWorld, eid: number) {
 
   // ── Unit commands (for all player units) ──
   if (!isBuilding && hasComponent(world, MoveSpeed, eid)) {
-    // Attack / Attack-Move (A) — tap target or ground
-    actionButtonsEl.appendChild(createActionButton('⚔️', 'Attack', 'tap target', () => {
+    // Attack-Move (A) — tap ground = attack-move, tap enemy = attack
+    actionButtonsEl.appendChild(createActionButton('⚔️', 'Attack (A)', 'tap target', () => {
       setForceAttackMode(true)
     }))
 
     // Stop command (S) — stop moving, keep shooting in range
-    actionButtonsEl.appendChild(createActionButton('⏹️', 'Stop', '', () => {
+    actionButtonsEl.appendChild(createActionButton('⏹️', 'Stop (S)', '', () => {
       const sel = selectedQuery(world)
       for (const sid of sel) {
         if (hasComponent(world, MoveTarget, sid)) removeComponent(world, MoveTarget, sid)
@@ -193,8 +193,6 @@ function updateActionButtons(world: IWorld, eid: number) {
         if (hasComponent(world, WorkerC, sid)) WorkerC.state[sid] = 0
       }
     }))
-
-    // Hold button removed — will redesign later
   }
 
   if (hasComponent(world, WorkerC, eid)) {

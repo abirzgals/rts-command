@@ -964,6 +964,9 @@ function cancelLongPress() {
   if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null }
 }
 
+let twoFingerPrevX = 0
+let twoFingerPrevY = 0
+
 function onTouchStart(e: TouchEvent, _world: IWorld) {
   e.preventDefault()
 
@@ -974,40 +977,22 @@ function onTouchStart(e: TouchEvent, _world: IWorld) {
     touchStartTime = performance.now()
     isTouchPanning = false
     isTouchBoxSelecting = false
-
-    // Store world position for pan reference
-    const hit = raycastGround(t.clientX, t.clientY)
-    if (hit) {
-      touchPanStartX = hit.x
-      touchPanStartZ = hit.z
-    }
-
-    // Start long press timer → box selection mode
     cancelLongPress()
-    longPressTimer = setTimeout(() => {
-      longPressTimer = null
-      // Enter box selection mode at current finger position
-      isTouchBoxSelecting = true
-      isTouchPanning = false
-      // Show selection box starting from original touch position
-      dragStartX = touchStartScreenX
-      dragStartY = touchStartScreenY
-      selectionBoxEl.style.display = 'block'
-      selectionBoxEl.style.left = dragStartX + 'px'
-      selectionBoxEl.style.top = dragStartY + 'px'
-      selectionBoxEl.style.width = '0px'
-      selectionBoxEl.style.height = '0px'
-    }, LONG_PRESS_TIME)
   }
 
   if (e.touches.length === 2) {
     cancelLongPress()
-    isTouchBoxSelecting = false
-    selectionBoxEl.style.display = 'none'
-    // Start pinch
+    // Cancel any in-progress box select
+    if (isTouchBoxSelecting) {
+      isTouchBoxSelecting = false
+      selectionBoxEl.style.display = 'none'
+    }
+    // Start pinch + pan
     const dx = e.touches[0].clientX - e.touches[1].clientX
     const dy = e.touches[0].clientY - e.touches[1].clientY
     lastPinchDist = Math.sqrt(dx * dx + dy * dy)
+    twoFingerPrevX = (e.touches[0].clientX + e.touches[1].clientX) / 2
+    twoFingerPrevY = (e.touches[0].clientY + e.touches[1].clientY) / 2
     isTouchPanning = true
   }
 }
@@ -1015,49 +1000,51 @@ function onTouchStart(e: TouchEvent, _world: IWorld) {
 function onTouchMove(e: TouchEvent, _world: IWorld) {
   e.preventDefault()
 
-  if (e.touches.length === 1 && isTouchBoxSelecting) {
-    // Update selection box
+  // ── Single finger: box select ──
+  if (e.touches.length === 1) {
     const t = e.touches[0]
-    const left = Math.min(dragStartX, t.clientX)
-    const top = Math.min(dragStartY, t.clientY)
-    const w = Math.abs(t.clientX - dragStartX)
-    const h = Math.abs(t.clientY - dragStartY)
-    selectionBoxEl.style.left = left + 'px'
-    selectionBoxEl.style.top = top + 'px'
-    selectionBoxEl.style.width = w + 'px'
-    selectionBoxEl.style.height = h + 'px'
-    return
-  }
+    const dx = Math.abs(t.clientX - touchStartScreenX)
+    const dy = Math.abs(t.clientY - touchStartScreenY)
 
-  if (e.touches.length === 1 && !isTouchPanning) {
-    const t = e.touches[0]
-    const dx = t.clientX - touchStartScreenX
-    const dy = t.clientY - touchStartScreenY
+    // Start box selection after small movement
+    if (!isTouchBoxSelecting && (dx > TOUCH_TAP_THRESHOLD || dy > TOUCH_TAP_THRESHOLD)) {
+      isTouchBoxSelecting = true
+      dragStartX = touchStartScreenX
+      dragStartY = touchStartScreenY
+    }
 
-    if (Math.abs(dx) > TOUCH_TAP_THRESHOLD || Math.abs(dy) > TOUCH_TAP_THRESHOLD) {
-      cancelLongPress() // finger moved, not a long press
-      isTouchPanning = true
+    if (isTouchBoxSelecting) {
+      const left = Math.min(dragStartX, t.clientX)
+      const top = Math.min(dragStartY, t.clientY)
+      const w = Math.abs(t.clientX - dragStartX)
+      const h = Math.abs(t.clientY - dragStartY)
+      selectionBoxEl.style.display = 'block'
+      selectionBoxEl.style.left = left + 'px'
+      selectionBoxEl.style.top = top + 'px'
+      selectionBoxEl.style.width = w + 'px'
+      selectionBoxEl.style.height = h + 'px'
     }
   }
 
-  // Single-finger pan: translate camera based on screen delta
-  if (e.touches.length === 1 && isTouchPanning) {
-    const t = e.touches[0]
-    const scale = 0.15
-    setTouchPan(-(t.clientX - touchStartScreenX) * scale, -(t.clientY - touchStartScreenY) * scale)
-    touchStartScreenX = t.clientX
-    touchStartScreenY = t.clientY
-  }
-
-  // Two-finger pinch zoom
+  // ── Two fingers: pan + pinch zoom ──
   if (e.touches.length === 2) {
+    const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2
+    const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2
+
+    // Pan camera from midpoint movement
+    const panDx = midX - twoFingerPrevX
+    const panDy = midY - twoFingerPrevY
+    setTouchPan(-panDx * 0.2, -panDy * 0.2)
+    twoFingerPrevX = midX
+    twoFingerPrevY = midY
+
+    // Pinch zoom
     const dx = e.touches[0].clientX - e.touches[1].clientX
     const dy = e.touches[0].clientY - e.touches[1].clientY
     const dist = Math.sqrt(dx * dx + dy * dy)
 
     if (lastPinchDist > 0) {
       const delta = lastPinchDist - dist
-      // Dispatch synthetic wheel event for camera zoom
       const canvas = document.getElementById('game-canvas')!
       canvas.dispatchEvent(new WheelEvent('wheel', {
         deltaY: delta * 1.5,
@@ -1094,38 +1081,35 @@ function onTouchEnd(e: TouchEvent, world: IWorld) {
     return
   }
 
-  const elapsed = performance.now() - touchStartTime
+  // Two-finger pan finished
+  if (isTouchPanning) {
+    isTouchPanning = false
+    setTouchPan(0, 0)
+    return
+  }
 
-  if (!isTouchPanning && elapsed < TOUCH_TAP_TIME) {
-    // It's a tap
-    if (gameState.buildMode !== null) {
-      const def = BUILDING_DEFS[gameState.buildMode]
-      if (def && !gameState.canAfford(FACTION_PLAYER, def.cost)) {
-        gameState.buildMode = null
-        buildModeEl.style.display = 'none'
-        removeBuildPreview()
-      } else {
-        const hit = raycastGround(sx, sy)
-        if (hit) {
-          mouseWorldX = hit.x
-          mouseWorldZ = hit.z
-          updateBuildPreview()
-          // Show confirm/cancel buttons for mobile
-          showMobileBuildConfirm(world)
-        }
-      }
-    } else if (rallyMode) {
-      setRallyFromClick(world, sx, sy)
-    } else if (forceAttackMode) {
-      forceAttackTarget(world, sx, sy)
-    } else if (isMoveMode) {
-      handleRightClick(world, sx, sy)
-      isMoveMode = false
-      const moveBtn = document.getElementById('touch-move-btn')
-      if (moveBtn) moveBtn.classList.remove('active')
+  // Single tap (no drag, no pan)
+  if (gameState.buildMode !== null) {
+    const def = BUILDING_DEFS[gameState.buildMode]
+    if (def && !gameState.canAfford(FACTION_PLAYER, def.cost)) {
+      gameState.buildMode = null
+      buildModeEl.style.display = 'none'
+      removeBuildPreview()
     } else {
-      handleTouchTap(world, sx, sy)
+      const hit = raycastGround(sx, sy)
+      if (hit) {
+        mouseWorldX = hit.x
+        mouseWorldZ = hit.z
+        updateBuildPreview()
+        showMobileBuildConfirm(world)
+      }
     }
+  } else if (rallyMode) {
+    setRallyFromClick(world, sx, sy)
+  } else if (forceAttackMode) {
+    forceAttackTarget(world, sx, sy)
+  } else {
+    handleTouchTap(world, sx, sy)
   }
 
   isTouchPanning = false
