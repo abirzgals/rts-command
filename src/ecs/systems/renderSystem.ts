@@ -11,6 +11,7 @@ import { FACTION_PLAYER } from '../../game/config'
 // Carry visual: small crystal for workers carrying resources
 const carryGeo = new THREE.OctahedronGeometry(0.15, 0)
 const carryMatMineral = new THREE.MeshBasicMaterial({ color: 0x44ccff, transparent: true, opacity: 0.9 })
+const carryMatGas = new THREE.MeshBasicMaterial({ color: 0x44ff66, transparent: true, opacity: 0.9 })
 const carryMeshes = new Map<number, THREE.Mesh>()
 
 const renderQuery = defineQuery([Position, MeshRef])
@@ -79,8 +80,9 @@ export function renderSystem(world: IWorld, dt: number) {
     const carrying = WorkerC.carryAmount[eid] > 0
 
     if (carrying && !carryMeshes.has(eid)) {
-      // Create carry crystal — add to unit's mesh parent (already in scene)
-      const crystal = new THREE.Mesh(carryGeo, carryMatMineral)
+      // Create carry crystal — blue for minerals, green for gas
+      const mat = WorkerC.carryType[eid] === 1 ? carryMatGas : carryMatMineral
+      const crystal = new THREE.Mesh(carryGeo, mat)
       crystal.renderOrder = 10
       const mgr = getAnimManager(MeshRef.poolId[eid])
       if (mgr && mgr.has(eid)) {

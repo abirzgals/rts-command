@@ -244,8 +244,10 @@ function initRallyPoints(world: IWorld) {
     for (const r of nearby) {
       if (!hc2(world, ResourceNode, r)) continue
       if (hc2(world, Dead, r)) continue
+      // Prioritize minerals (type 0) over gas (type 1)
+      const isMinerals = ResourceNode.type[r] === 0
       const dx = EcsPosition.x[r] - bx, dz = EcsPosition.z[r] - bz
-      const dist = dx * dx + dz * dz
+      const dist = dx * dx + dz * dz + (isMinerals ? 0 : 10000)
       if (dist < bestDist) { bestDist = dist; bestEid = r }
     }
     if (bestEid > 0) {
