@@ -10,7 +10,7 @@ import {
   BT_COMMAND_CENTER, BT_SUPPLY_DEPOT, BT_BARRACKS, BT_FACTORY,
 } from '../game/config'
 import { gameState } from '../game/state'
-import { queueProduction, setForceAttackMode, setRallyMode } from '../input/input'
+import { queueProduction, setForceAttackMode, setRallyMode, enterBuildMode, cancelBuildMode } from '../input/input'
 import { clearQueue } from '../ecs/commandQueue'
 import { removePath } from '../pathfinding/pathStore'
 import { removeComponent, addComponent } from 'bitecs'
@@ -245,12 +245,7 @@ function updateActionButtons(world: IWorld, eid: number) {
         opt.icon,
         `${bdef.name} (${opt.key})`,
         `${bdef.cost.minerals}m ${bdef.cost.gas > 0 ? bdef.cost.gas + 'g' : ''}`,
-        () => {
-          gameState.buildMode = opt.type
-          const el = document.getElementById('build-mode')!
-          el.textContent = `Building: ${bdef.name} — Click to place, ESC to cancel`
-          el.style.display = 'block'
-        },
+        () => enterBuildMode(opt.type),
       )
       actionButtonsEl.appendChild(btn)
     }

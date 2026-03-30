@@ -973,20 +973,35 @@ function showMobileBuildConfirm(world: IWorld) {
   })
 }
 
-function enterBuildMode(buildingType: number) {
+export function cancelBuildMode() {
+  gameState.buildMode = null
+  buildModeEl.style.display = 'none'
+  removeBuildPreview()
+  // Restore action buttons
+  const actionEl = document.getElementById('action-buttons')
+  if (actionEl) actionEl.innerHTML = ''
+}
+
+export function enterBuildMode(buildingType: number) {
   const def = BUILDING_DEFS[buildingType]
   if (!def) return
   if (!gameState.canAfford(FACTION_PLAYER, def.cost)) return
 
   gameState.buildMode = buildingType
-  buildModeEl.innerHTML = `Building: ${def.name} — Click to place <button onclick="this.parentElement.style.display='none'" style="margin-left:12px;padding:2px 10px;border:1px solid #fff;border-radius:3px;background:rgba(0,0,0,0.5);color:#fff;cursor:pointer">Cancel</button>`
-  buildModeEl.querySelector('button')?.addEventListener('click', () => {
-    gameState.buildMode = null
-    buildModeEl.style.display = 'none'
-    removeBuildPreview()
-  })
+  buildModeEl.textContent = `Building: ${def.name} — Click to place, ESC to cancel`
   buildModeEl.style.display = 'block'
   createBuildPreview(def.radius, def.meshPool)
+
+  // Show Cancel button in action panel
+  const actionEl = document.getElementById('action-buttons')
+  if (actionEl) {
+    actionEl.innerHTML = ''
+    const cancelBtn = document.createElement('div')
+    cancelBtn.className = 'action-btn'
+    cancelBtn.innerHTML = '<span class="icon">❌</span><span class="label">Cancel</span>'
+    cancelBtn.addEventListener('click', (e) => { e.stopPropagation(); cancelBuildMode() })
+    actionEl.appendChild(cancelBtn)
+  }
 }
 
 export function queueProduction(buildingEid: number, unitType: number) {
