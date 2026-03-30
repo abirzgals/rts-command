@@ -188,19 +188,6 @@ export class RTSCamera {
     if (this.keys.has('ArrowLeft'))  panX -= 1
     if (this.keys.has('ArrowRight')) panX += 1
 
-    // Edge scrolling — pan when mouse is near screen edges (desktop only)
-    const isMobile = 'ontouchstart' in window
-    if (!isMobile) {
-      const w = window.innerWidth
-      const h = window.innerHeight
-      const mx = this.lastMouseX
-      const my = this.lastMouseY
-      if (mx < this.edgeMargin)      panX -= 1
-      if (mx > w - this.edgeMargin)  panX += 1
-      if (my < this.edgeMargin)      panZ -= 1
-      if (my > h - this.edgeMargin)  panZ += 1
-    }
-
     const speed = this.keys.has('ShiftLeft') ? this.panSpeed * 2 : this.panSpeed
     // Rotate pan direction by camera yaw
     const cosY = Math.cos(this.yaw)
