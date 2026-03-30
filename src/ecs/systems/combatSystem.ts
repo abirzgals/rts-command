@@ -3,7 +3,7 @@ import type { IWorld } from 'bitecs'
 import {
   Position, Rotation, Faction, Health, AttackC, AttackTarget, MoveTarget,
   Dead, IsBuilding, MoveSpeed, Armor, PathFollower, Velocity, AttackMove,
-  CollisionRadius, UnitMode, MODE_ATTACK_MOVE,
+  CollisionRadius, UnitMode, MODE_ATTACK_MOVE, WorkerC,
 } from '../components'
 import { removePath } from '../../pathfinding/pathStore'
 import { spawnProjectile, spawnArcProjectile, projectileEffects } from '../archetypes'
@@ -102,6 +102,7 @@ export function combatSystem(world: IWorld, dt: number) {
     spatialHash.query(px, pz, range, _nearby)
     let bestTarget = -1
     let bestDist = Infinity
+    let bestPriority = 99 // lower = higher priority: 0=combat, 1=worker, 2=building
 
     for (const other of _nearby) {
       if (other === eid) continue
@@ -109,7 +110,6 @@ export function combatSystem(world: IWorld, dt: number) {
       if (Faction.id[other] === myFaction) continue
       if (hasComponent(world, Dead, other)) continue
       if (!hasComponent(world, Health, other)) continue
-      // Player units can only auto-acquire visible enemies (not in fog)
       if (myFaction === FACTION_PLAYER && !isVisibleAt(Position.x[other], Position.z[other])) continue
 
       const dx = Position.x[other] - px
@@ -117,8 +117,15 @@ export function combatSystem(world: IWorld, dt: number) {
       const dist = Math.sqrt(dx * dx + dz * dz)
       const otherR = hasComponent(world, CollisionRadius, other) ? CollisionRadius.value[other] : 0
       const eDist = Math.max(0, dist - otherR)
+      if (eDist > range) continue
 
-      if (eDist <= range && eDist < bestDist) {
+      // Priority: combat units (0) > workers (1) > buildings (2)
+      const isOtherBuilding = hasComponent(world, IsBuilding, other)
+      const isOtherWorker = hasComponent(world, WorkerC, other)
+      const priority = isOtherBuilding ? 2 : isOtherWorker ? 1 : 0
+
+      if (priority < bestPriority || (priority === bestPriority && eDist < bestDist)) {
+        bestPriority = priority
         bestDist = eDist
         bestTarget = other
       }
