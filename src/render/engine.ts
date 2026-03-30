@@ -103,15 +103,19 @@ export class RTSCamera {
   private lmb = false  // left mouse button held
   private rmb = false  // right mouse button held
   private mmb = false  // middle mouse button held (pan)
+  private rmbPanning = false // right-click drag passed threshold
   private dragPrevX = 0
   private dragPrevY = 0
+  private rmbStartX = 0
+  private rmbStartY = 0
+  private readonly PAN_THRESHOLD = 8
 
   constructor() {
     window.addEventListener('keydown', (e) => this.keys.add(e.code))
     window.addEventListener('keyup', (e) => this.keys.delete(e.code))
     window.addEventListener('mousedown', (e) => {
       if (e.button === 0) this.lmb = true
-      if (e.button === 2) { this.rmb = true; this.dragPrevX = e.clientX; this.dragPrevY = e.clientY }
+      if (e.button === 2) { this.rmb = true; this.rmbPanning = false; this.rmbStartX = e.clientX; this.rmbStartY = e.clientY; this.dragPrevX = e.clientX; this.dragPrevY = e.clientY }
       if (e.button === 1) { this.mmb = true; this.dragPrevX = e.clientX; this.dragPrevY = e.clientY; e.preventDefault() }
       // Track drag start for both-button rotate
       if ((e.button === 0 && this.rmb) || (e.button === 2 && this.lmb)) {
@@ -120,7 +124,7 @@ export class RTSCamera {
     })
     window.addEventListener('mouseup', (e) => {
       if (e.button === 0) this.lmb = false
-      if (e.button === 2) this.rmb = false
+      if (e.button === 2) { this.rmb = false; this.rmbPanning = false }
       if (e.button === 1) this.mmb = false
     })
     window.addEventListener('mousemove', (e) => {
@@ -137,8 +141,19 @@ export class RTSCamera {
         this.pitch = Math.max(0.3, Math.min(1.5, this.pitch + dy * 0.005))
       }
 
+      // Right-click drag threshold check
+      if (this.rmb && !this.lmb && !this.rmbPanning) {
+        const tdx = Math.abs(e.clientX - this.rmbStartX)
+        const tdy = Math.abs(e.clientY - this.rmbStartY)
+        if (tdx > this.PAN_THRESHOLD || tdy > this.PAN_THRESHOLD) {
+          this.rmbPanning = true
+          this.dragPrevX = e.clientX
+          this.dragPrevY = e.clientY
+        }
+      }
+
       // Middle-click or right-click drag → pan camera (not when both held = rotate)
-      const panning = this.mmb || (this.rmb && !this.lmb)
+      const panning = this.mmb || (this.rmbPanning && !this.lmb)
       if (panning) {
         const dx = e.clientX - this.dragPrevX
         const dy = e.clientY - this.dragPrevY
