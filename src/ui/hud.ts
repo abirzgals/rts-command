@@ -173,13 +173,13 @@ function updateActionButtons(world: IWorld, eid: number) {
 
   // ── Unit commands (for all player units) ──
   if (!isBuilding && hasComponent(world, MoveSpeed, eid)) {
-    // Attack command (A) — force attack mode
-    actionButtonsEl.appendChild(createActionButton('⚔️', 'Attack (A)', '', () => {
+    // Attack / Attack-Move (A) — tap target or ground
+    actionButtonsEl.appendChild(createActionButton('⚔️', 'Attack', 'tap target', () => {
       setForceAttackMode(true)
     }))
 
-    // Stop command (S) — halt movement and cancel orders
-    actionButtonsEl.appendChild(createActionButton('⏹️', 'Stop (S)', '', () => {
+    // Stop command (S)
+    actionButtonsEl.appendChild(createActionButton('⏹️', 'Stop', '', () => {
       const sel = selectedQuery(world)
       for (const sid of sel) {
         if (hasComponent(world, MoveTarget, sid)) removeComponent(world, MoveTarget, sid)
@@ -188,8 +188,8 @@ function updateActionButtons(world: IWorld, eid: number) {
       }
     }))
 
-    // Hold Position (H) — stop and don't auto-acquire
-    actionButtonsEl.appendChild(createActionButton('🛡️', 'Hold (H)', '', () => {
+    // Hold Position (H)
+    actionButtonsEl.appendChild(createActionButton('🛡️', 'Hold', '', () => {
       const sel = selectedQuery(world)
       for (const sid of sel) {
         if (hasComponent(world, MoveTarget, sid)) removeComponent(world, MoveTarget, sid)
