@@ -3,6 +3,7 @@ import type { IWorld } from 'bitecs'
 import {
   Position, Rotation, Faction, Health, AttackC, AttackTarget, MoveTarget,
   Dead, IsBuilding, MoveSpeed, Armor, PathFollower, Velocity, AttackMove,
+  CollisionRadius,
 } from '../components'
 import { removePath } from '../../pathfinding/pathStore'
 import { spawnProjectile, spawnArcProjectile } from '../archetypes'
@@ -55,8 +56,11 @@ export function combatSystem(world: IWorld, dt: number) {
       const dx = tx - px
       const dz = tz - pz
       const dist = Math.sqrt(dx * dx + dz * dz)
+      // Effective distance = center-to-center minus target's collision radius
+      const targetR = hasComponent(world, CollisionRadius, targetEid) ? CollisionRadius.value[targetEid] : 0
+      const effectiveDist = Math.max(0, dist - targetR)
 
-      if (dist <= range) {
+      if (effectiveDist <= range) {
         // In range — stop and attack
         if (!hasComponent(world, IsBuilding, eid)) {
           if (hasComponent(world, MoveTarget, eid)) removeComponent(world, MoveTarget, eid)
@@ -101,9 +105,11 @@ export function combatSystem(world: IWorld, dt: number) {
       const dx = Position.x[other] - px
       const dz = Position.z[other] - pz
       const dist = Math.sqrt(dx * dx + dz * dz)
+      const otherR = hasComponent(world, CollisionRadius, other) ? CollisionRadius.value[other] : 0
+      const eDist = Math.max(0, dist - otherR)
 
-      if (dist <= range && dist < bestDist) {
-        bestDist = dist
+      if (eDist <= range && eDist < bestDist) {
+        bestDist = eDist
         bestTarget = other
       }
     }

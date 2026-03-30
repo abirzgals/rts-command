@@ -38,7 +38,7 @@ import { initHPBars, updateHPBars } from './render/hpBars'
 
 // UI
 import { updateHUD } from './ui/hud'
-import { initFogOfWar, updateFogOfWar, fogTexture } from './render/fogOfWar'
+import { initFogOfWar, updateFogOfWar, renderFogOverlay, fogTexture } from './render/fogOfWar'
 import { setTerrainFogMap } from './terrain/terrainMesh'
 import { updateMinimap } from './ui/minimap'
 import { initSharedButtons } from './ui/sharedButtons'
@@ -403,6 +403,7 @@ function gameLoop(time: number) {
   updateDebugOverlay(world)
 
   renderer.render(scene, camera)
+  renderFogOverlay(renderer, camera)
 
   updateHPBars(world)
   updateHUD(world, dt, time)

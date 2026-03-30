@@ -39,6 +39,11 @@ export let fogTexture: THREE.DataTexture
 const sightQuery = defineQuery([Position, SightRadius])
 const enemyQuery = defineQuery([Position, Faction, MeshRef])
 
+// ── Fog overlay (fullscreen quad darkens everything) ────────
+export let fogOverlayScene: THREE.Scene
+export let fogOverlayCamera: THREE.OrthographicCamera
+let fogOverlayMaterial: THREE.ShaderMaterial
+
 export function initFogOfWar() {
   fogTexture = new THREE.DataTexture(
     texPixels,
@@ -51,6 +56,64 @@ export function initFogOfWar() {
   fogTexture.wrapS = THREE.ClampToEdgeWrapping
   fogTexture.wrapT = THREE.ClampToEdgeWrapping
   fogTexture.needsUpdate = true
+
+  // Fullscreen overlay quad
+  fogOverlayScene = new THREE.Scene()
+  fogOverlayCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1)
+
+  fogOverlayMaterial = new THREE.ShaderMaterial({
+    uniforms: {
+      fogMap: { value: fogTexture },
+      invViewProj: { value: new THREE.Matrix4() },
+      mapSize: { value: MAP_SIZE },
+    },
+    vertexShader: /* glsl */ `
+      varying vec2 vUV;
+      void main() {
+        vUV = uv;
+        gl_Position = vec4(position.xy, 0.0, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform sampler2D fogMap;
+      uniform mat4 invViewProj;
+      uniform float mapSize;
+      varying vec2 vUV;
+
+      void main() {
+        // Reconstruct world XZ from screen position via ray-plane intersection
+        vec4 ndc = vec4(vUV * 2.0 - 1.0, -1.0, 1.0);
+        vec4 nearW = invViewProj * ndc;
+        nearW /= nearW.w;
+        vec4 farNdc = vec4(vUV * 2.0 - 1.0, 1.0, 1.0);
+        vec4 farW = invViewProj * farNdc;
+        farW /= farW.w;
+
+        vec3 dir = normalize(farW.xyz - nearW.xyz);
+        // Intersect with Y=0 plane (approximate ground)
+        float t = -nearW.y / dir.y;
+        if (t < 0.0) discard;
+
+        vec3 worldPos = nearW.xyz + dir * t;
+        vec2 fogUV = (worldPos.xz + mapSize * 0.5) / mapSize;
+        fogUV = clamp(fogUV, 0.0, 1.0);
+
+        float fogVal = texture2D(fogMap, fogUV).r;
+        // unexplored: 65% dark, explored: 30% dark, visible: transparent
+        float alpha = fogVal > 0.5 ? 0.0 : fogVal > 0.01 ? 0.30 : 0.65;
+        gl_FragColor = vec4(0.0, 0.0, 0.0, alpha);
+      }
+    `,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+  })
+
+  const quad = new THREE.Mesh(
+    new THREE.PlaneGeometry(2, 2),
+    fogOverlayMaterial,
+  )
+  fogOverlayScene.add(quad)
 }
 
 // ── Coordinate conversion ───────────────────────────────────
@@ -126,6 +189,20 @@ export function updateFogOfWar(world: IWorld) {
 
   // 5. Hide/show enemy entities based on visibility
   updateEnemyVisibility(world)
+}
+
+/** Call after renderer.render(scene, camera) to apply fog overlay */
+export function renderFogOverlay(rendererRef: THREE.WebGLRenderer, cam: THREE.Camera) {
+  if (!fogOverlayMaterial || !fogOverlayScene) return
+
+  // Update inverse view-projection matrix for world reconstruction
+  const vp = new THREE.Matrix4()
+  vp.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse)
+  fogOverlayMaterial.uniforms.invViewProj.value.copy(vp).invert()
+
+  rendererRef.autoClear = false
+  rendererRef.render(fogOverlayScene, fogOverlayCamera)
+  rendererRef.autoClear = true
 }
 
 // ── Enemy visibility culling ────────────────────────────────

@@ -222,8 +222,8 @@ export function createTerrainMesh(): THREE.Mesh {
           vec2 fogUV = (vWorldXZ + mapSize * 0.5) / mapSize;
           fogUV = clamp(fogUV, 0.0, 1.0);
           float fogVal = texture2D(fogMap, fogUV).r;
-          // 0=black(unexplored), ~0.39=dim(explored), 1.0=visible
-          float fogMul = fogVal < 0.01 ? 0.0 : fogVal < 0.5 ? 0.35 : 1.0;
+          // 0=unexplored(35%), ~0.39=explored(70%), 1.0=visible(100%)
+          float fogMul = fogVal < 0.01 ? 0.35 : fogVal < 0.5 ? 0.70 : 1.0;
           col *= fogMul;
         }
 
