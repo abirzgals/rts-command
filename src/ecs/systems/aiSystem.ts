@@ -79,6 +79,12 @@ let scoutWaypointIdx = 0
 let knownPlayerBaseX = NaN
 let knownPlayerBaseZ = NaN
 
+// Suspected enemy base (where scout died)
+let suspectedBaseX = NaN
+let suspectedBaseZ = NaN
+let scoutLastX = NaN
+let scoutLastZ = NaN
+
 // Staging / rally point
 let rallyX = NaN
 let rallyZ = NaN
@@ -228,7 +234,7 @@ export function aiSystem(world: IWorld, dt: number) {
   const lines: string[] = [
     `AI Faction: ${getAIFaction()} | State: ${STATE_NAMES[aiState]}`,
     `Workers:${census.workerCount} Marines:${census.marineCount} Tanks:${census.tankCount} Jeeps:${census.jeepCount} Troopers:${census.trooperCount}`,
-    `Army supply: ${armySupply} | CC:${census.commandCenter ? 'Y' : 'N'} Rax:${hasBarracks ? 'Y' : 'N'} Fac:${hasFactory ? 'Y' : 'N'}`,
+    `Army supply: ${armySupply} | CC:${census.commandCenter !== null ? 'Y' : 'N'} Rax:${hasBarracks ? 'Y' : 'N'} Fac:${hasFactory ? 'Y' : 'N'}`,
     `Min:${Math.floor(res.minerals)} Gas:${Math.floor(res.gas)} Sup:${res.supplyCurrent}/${res.supplyMax}`,
     `Player base: ${hasFoundPlayerBase() ? `(${Math.round(knownPlayerBaseX)}, ${Math.round(knownPlayerBaseZ)})` : 'unknown'} | Attacks: ${attackCount}`,
     knownArmySupply >= 4 ? `Player army: ${knownArmySupply} supply @ (${Math.round(knownArmyX)}, ${Math.round(knownArmyZ)})` : '',
@@ -260,6 +266,10 @@ export function resetAIState(world?: IWorld) {
   scoutWaypointIdx = 0
   knownPlayerBaseX = NaN
   knownPlayerBaseZ = NaN
+  suspectedBaseX = NaN
+  suspectedBaseZ = NaN
+  scoutLastX = NaN
+  scoutLastZ = NaN
   rallyX = NaN
   rallyZ = NaN
   stagingTimer = 0
@@ -339,13 +349,37 @@ function tickScouting(
 
   // Pick or validate scout unit
   if (!isValidScout(world, scoutEid)) {
+    // Scout died or lost — remember last known position as suspected enemy location
+    if (scoutEid !== null && !isNaN(scoutLastX)) {
+      suspectedBaseX = scoutLastX
+      suspectedBaseZ = scoutLastZ
+      decisions.push(`Scout lost near (${Math.round(scoutLastX)}, ${Math.round(scoutLastZ)}) — suspected enemy area`)
+    }
     scoutEid = pickScout(world, census)
   }
 
-  if (!scoutEid) {
-    decisions.push('No scout available')
+  // If we have a suspected base location, send army to investigate first
+  if (!isNaN(suspectedBaseX) && census.armySupply >= 3) {
+    // Send available combat units to check the suspected location
+    for (const eid of census.combatUnits) {
+      if (hasComponent(world, AttackTarget, eid)) continue
+      if (hasComponent(world, MoveTarget, eid)) continue
+      sendAttackMoveTo(world, eid, suspectedBaseX + aiRng() * 6 - 3, suspectedBaseZ + aiRng() * 6 - 3)
+    }
+    decisions.push(`Investigating suspected base @ (${Math.round(suspectedBaseX)}, ${Math.round(suspectedBaseZ)})`)
+    suspectedBaseX = NaN // only send once
+    suspectedBaseZ = NaN
     return
   }
+
+  if (!scoutEid) {
+    decisions.push('No scout available — building army')
+    return
+  }
+
+  // Track scout position for death detection
+  scoutLastX = Position.x[scoutEid]
+  scoutLastZ = Position.z[scoutEid]
 
   // If scout reached waypoint (or is idle/finished attack), send to next
   const hasOrders = hasComponent(world, MoveTarget, scoutEid) || hasComponent(world, PathFollower, scoutEid)
@@ -768,7 +802,7 @@ function tickEconomy(
   decisions: string[],
 ) {
   // ── Workers (up to 8) ──────────────────────────────────────
-  if (census.commandCenter && census.workerCount < 8 && res.supplyCurrent < res.supplyMax) {
+  if (census.commandCenter !== null && census.workerCount < 8 && res.supplyCurrent < res.supplyMax) {
     const def = UNIT_DEFS[UT_WORKER]
     if (gameState.canAfford(getAIFaction(), def.cost)) {
       queueProduction(census.commandCenter, UT_WORKER)
@@ -777,7 +811,7 @@ function tickEconomy(
   }
 
   // ── Supply depots ──────────────────────────────────────────
-  if (res.supplyMax - res.supplyCurrent < 5 && census.commandCenter) {
+  if (res.supplyMax - res.supplyCurrent < 5 && census.commandCenter !== null) {
     const def = BUILDING_DEFS[BT_SUPPLY_DEPOT]
     if (gameState.canAfford(getAIFaction(), def.cost)) {
       const angle = aiRng() * Math.PI * 2
@@ -788,34 +822,36 @@ function tickEconomy(
   }
 
   // ── Barracks ───────────────────────────────────────────────
-  if (!hasBarracks && census.commandCenter) {
+  if (!hasBarracks && census.commandCenter !== null) {
     const def = BUILDING_DEFS[BT_BARRACKS]
     if (gameState.canAfford(getAIFaction(), def.cost)) {
       spawnBuilding(world, BT_BARRACKS, getAIFaction(), homeX + 8, homeZ + 4, true)
       gameState.spend(getAIFaction(), def.cost)
+      decisions.push('+Barracks')
     }
   }
 
   // ── Factory (after some marines) ───────────────────────────
-  if (!hasFactory && hasBarracks && census.marineCount >= 3 && census.commandCenter) {
+  if (!hasFactory && hasBarracks && census.marineCount >= 3 && census.commandCenter !== null) {
     const def = BUILDING_DEFS[BT_FACTORY]
     if (gameState.canAfford(getAIFaction(), def.cost)) {
       spawnBuilding(world, BT_FACTORY, getAIFaction(), homeX - 8, homeZ + 4, true)
       gameState.spend(getAIFaction(), def.cost)
+      decisions.push('+Factory')
     }
   }
 
   // ── Army production ────────────────────────────────────────
   // During ATTACKING state, don't produce (all-in). Otherwise, build army.
   if (aiState !== AIState.ATTACKING) {
-    if (census.barracks && census.marineCount < 15 && res.supplyCurrent < res.supplyMax) {
+    if (census.barracks !== null && census.marineCount < 15 && res.supplyCurrent < res.supplyMax) {
       const def = UNIT_DEFS[UT_MARINE]
       if (gameState.canAfford(getAIFaction(), def.cost)) {
         queueProduction(census.barracks, UT_MARINE)
       }
     }
 
-    if (census.factory && census.tankCount < 5 && res.supplyCurrent < res.supplyMax) {
+    if (census.factory !== null && census.tankCount < 5 && res.supplyCurrent < res.supplyMax) {
       const def = UNIT_DEFS[UT_TANK]
       if (gameState.canAfford(getAIFaction(), def.cost)) {
         queueProduction(census.factory, UT_TANK)
@@ -879,8 +915,8 @@ function selectAttackForce(world: IWorld, census: Census): number[] {
   }
 
   // Sort by distance to home (farthest first = most expendable for attack)
-  const homeX = census.commandCenter ? Position.x[census.commandCenter] : 0
-  const homeZ = census.commandCenter ? Position.z[census.commandCenter] : 0
+  const homeX = census.commandCenter !== null ? Position.x[census.commandCenter] : 0
+  const homeZ = census.commandCenter !== null ? Position.z[census.commandCenter] : 0
 
   const sorted = [...census.combatUnits].sort((a, b) => {
     const dA = (Position.x[a] - homeX) ** 2 + (Position.z[a] - homeZ) ** 2
