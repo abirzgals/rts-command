@@ -7,6 +7,7 @@ import {
 } from '../components'
 import { gameState } from '../../game/state'
 import { BUILDING_DEFS } from '../../game/config'
+import { hasQueuedCommands } from '../commandQueue'
 import { spatialHash } from '../../globals'
 import { removePath } from '../../pathfinding/pathStore'
 
@@ -273,7 +274,13 @@ function returnCargo(world: IWorld, eid: number) {
     gameState.addResources(faction, WorkerC.carryType[eid], WorkerC.carryAmount[eid])
     WorkerC.carryAmount[eid] = 0
 
-    // Go back to gather
+    // If there are queued commands, go idle so the queue system picks them up
+    if (hasQueuedCommands(eid)) {
+      WorkerC.state[eid] = 0
+      return
+    }
+
+    // Otherwise go back to gather the same resource
     const nodeEid = WorkerC.targetNode[eid]
     if (hasComponent(world, ResourceNode, nodeEid) && ResourceNode.amount[nodeEid] > 0 && !hasComponent(world, Dead, nodeEid)) {
       WorkerC.state[eid] = 1
