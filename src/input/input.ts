@@ -242,6 +242,15 @@ export function initInput(world: IWorld) {
     })
   }
 
+  // Deselect button
+  const deselectBtn = document.getElementById('deselect-btn')
+  if (deselectBtn) {
+    deselectBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      clearSelection(world)
+    })
+  }
+
   // Debug toggle button
   const debugBtn = document.getElementById('debug-btn')
   if (debugBtn) {
@@ -1133,10 +1142,16 @@ export function queueProduction(buildingEid: number, unitType: number) {
   if (!def) return
 
   const faction = Faction.id[buildingEid]
-  if (!gameState.canAfford(faction, def.cost)) return
+  if (!gameState.canAfford(faction, def.cost)) {
+    console.log('[PROD] Cannot afford', def.name)
+    return
+  }
 
   const res = gameState.getResources(faction)
-  if (res.supplyCurrent + def.supply > res.supplyMax) return // no supply
+  if (res.supplyCurrent + def.supply > res.supplyMax) {
+    console.log('[PROD] Not enough supply:', res.supplyCurrent, '/', res.supplyMax)
+    return
+  }
 
   gameState.spend(faction, def.cost)
   res.supplyCurrent += def.supply // pre-reserve supply

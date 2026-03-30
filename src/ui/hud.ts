@@ -57,6 +57,10 @@ export function updateHUD(world: IWorld, _dt: number, time: number) {
   const selectionChanged = selected.length !== lastSelectedCount ||
     (selected.length === 1 && selected[0] !== lastSelectedEid)
 
+  // Deselect button visibility
+  const deselectBtn = document.getElementById('deselect-btn')
+  if (deselectBtn) deselectBtn.style.display = selected.length > 0 ? 'block' : 'none'
+
   if (selected.length === 0) {
     if (selectionChanged) {
       selectedNameEl.textContent = 'No selection'
@@ -181,7 +185,10 @@ function updateActionButtons(world: IWorld, eid: number) {
         )
         actionButtonsEl.appendChild(btn)
       }
-      // Rally point: set by left-clicking ground with building selected
+      // Rally point button (for mobile)
+      actionButtonsEl.appendChild(createActionButton('🚩', 'Rally', 'tap ground', () => {
+        setRallyMode(true)
+      }))
     }
   }
 
