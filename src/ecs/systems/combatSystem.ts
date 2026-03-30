@@ -83,7 +83,9 @@ export function combatSystem(world: IWorld, dt: number) {
       continue
     }
 
-    // Auto-acquire: find nearest enemy in range
+    // Auto-acquire: only when idle (no move command) — units on the move don't stop to fight
+    if (hasComponent(world, MoveTarget, eid) || hasComponent(world, PathFollower, eid)) continue
+
     spatialHash.query(px, pz, range, _nearby)
     let bestTarget = -1
     let bestDist = Infinity

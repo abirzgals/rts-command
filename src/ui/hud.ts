@@ -9,7 +9,7 @@ import {
   BT_COMMAND_CENTER, BT_SUPPLY_DEPOT, BT_BARRACKS, BT_FACTORY,
 } from '../game/config'
 import { gameState } from '../game/state'
-import { queueProduction, setForceAttackMode } from '../input/input'
+import { queueProduction, setForceAttackMode, setRallyMode } from '../input/input'
 import { removeComponent, addComponent } from 'bitecs'
 
 const selectedQuery = defineQuery([Selected])
@@ -164,6 +164,10 @@ function updateActionButtons(world: IWorld, eid: number) {
         )
         actionButtonsEl.appendChild(btn)
       }
+      // Rally point button
+      actionButtonsEl.appendChild(createActionButton('🚩', 'Rally Point', '', () => {
+        setRallyMode(true)
+      }))
     }
   }
 

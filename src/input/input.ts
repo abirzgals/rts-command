@@ -34,6 +34,7 @@ let dragStartX = 0
 let dragStartY = 0
 const DRAG_THRESHOLD = 5
 let forceAttackMode = false // when true, next click = attack anything
+let rallyMode = false       // when true, next click = set rally point
 let shiftHeld = false
 let lastClickTime = 0
 let lastClickEid = -1
@@ -49,6 +50,21 @@ export function setForceAttackMode(on: boolean) {
     el.textContent = 'Attack mode — Click target, ESC to cancel'
     el.style.display = 'block'
     el.style.background = 'rgba(255,50,50,0.9)'
+  } else {
+    el.style.display = 'none'
+    el.style.background = ''
+  }
+}
+
+export function setRallyMode(on: boolean) {
+  rallyMode = on
+  const canvas = document.getElementById('game-canvas')
+  if (canvas) canvas.style.cursor = on ? 'crosshair' : ''
+  const el = document.getElementById('build-mode')!
+  if (on) {
+    el.textContent = 'Rally mode — Click to set rally point, ESC to cancel'
+    el.style.display = 'block'
+    el.style.background = 'rgba(255,200,0,0.9)'
   } else {
     el.style.display = 'none'
     el.style.background = ''
@@ -240,6 +256,10 @@ function onMouseDown(e: MouseEvent, world: IWorld) {
     }
     if (forceAttackMode) {
       forceAttackTarget(world, e.clientX, e.clientY)
+      return
+    }
+    if (rallyMode) {
+      setRallyFromClick(world, e.clientX, e.clientY)
       return
     }
     if (gameState.buildMode !== null) {
@@ -684,6 +704,38 @@ function placeBuildingAtCursor(world: IWorld) {
   removeBuildPreview()
 }
 
+function setRallyFromClick(world: IWorld, sx: number, sy: number) {
+  const hit = raycastGround(sx, sy)
+  if (!hit) { setRallyMode(false); return }
+
+  const selected = selectedQuery(world)
+
+  // Check if clicked on a resource
+  const nearbyR: number[] = []
+  spatialHash.query(hit.x, hit.z, 2, nearbyR)
+  let resEid = 0
+  for (const r of nearbyR) {
+    if (hasComponent(world, ResourceNode, r) && !hasComponent(world, Dead, r)) {
+      const dx = Position.x[r] - hit.x, dz = Position.z[r] - hit.z
+      if (dx * dx + dz * dz < 4) { resEid = r; break }
+    }
+  }
+
+  for (const eid of selected) {
+    if (!hasComponent(world, IsBuilding, eid) || !hasComponent(world, Producer, eid)) continue
+    Producer.rallyX[eid] = hit.x
+    Producer.rallyZ[eid] = hit.z
+    Producer.rallyTargetEid[eid] = resEid
+  }
+
+  if (resEid > 0) {
+    const tr = hasComponent(world, Selectable, resEid) ? Selectable.radius[resEid] : 0.8
+    spawnActionIndicator(Position.x[resEid], Position.y[resEid], Position.z[resEid], tr + 0.3, 'gather')
+  }
+  spawnMoveMarker(hit.x, hit.y, hit.z)
+  setRallyMode(false)
+}
+
 function forceAttackTarget(world: IWorld, sx: number, sy: number) {
   const hit = raycastGround(sx, sy)
   if (!hit) { setForceAttackMode(false); return }
@@ -743,6 +795,8 @@ function onKeyDown(e: KeyboardEvent, world: IWorld) {
   if (e.key === 'Escape') {
     if (forceAttackMode) {
       setForceAttackMode(false)
+    } else if (rallyMode) {
+      setRallyMode(false)
     } else if (gameState.buildMode !== null) {
       gameState.buildMode = null
       buildModeEl.style.display = 'none'
@@ -1060,6 +1114,10 @@ function onTouchEnd(e: TouchEvent, world: IWorld) {
           showMobileBuildConfirm(world)
         }
       }
+    } else if (rallyMode) {
+      setRallyFromClick(world, sx, sy)
+    } else if (forceAttackMode) {
+      forceAttackTarget(world, sx, sy)
     } else if (isMoveMode) {
       handleRightClick(world, sx, sy)
       isMoveMode = false
