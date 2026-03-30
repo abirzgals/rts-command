@@ -174,9 +174,27 @@ export function initInput(world: IWorld) {
 
 let rmbStartX = 0
 let rmbStartY = 0
+let rmbHeld = false      // right button currently held
+let wasRotating = false   // both buttons were used for camera rotation
 
 function onMouseDown(e: MouseEvent, world: IWorld) {
+  if (e.button === 2) {
+    rmbHeld = true
+    rmbStartX = e.clientX
+    rmbStartY = e.clientY
+    // If left is already dragging, cancel selection — entering rotate mode
+    if (isDragging) {
+      isDragging = false
+      wasRotating = true
+      selectionBoxEl.style.display = 'none'
+    }
+  }
   if (e.button === 0) { // Left click
+    // If right button is held, this is camera rotate — skip selection
+    if (rmbHeld) {
+      wasRotating = true
+      return
+    }
     if (forceAttackMode) {
       forceAttackTarget(world, e.clientX, e.clientY)
       return
@@ -186,12 +204,9 @@ function onMouseDown(e: MouseEvent, world: IWorld) {
       return
     }
     isDragging = true
+    wasRotating = false
     dragStartX = e.clientX
     dragStartY = e.clientY
-  }
-  if (e.button === 2) { // Track right-button start for pan detection
-    rmbStartX = e.clientX
-    rmbStartY = e.clientY
   }
 }
 
@@ -206,8 +221,8 @@ function onMouseMove(e: MouseEvent, _world: IWorld) {
     updateBuildPreview()
   }
 
-  // Update selection box visual
-  if (isDragging) {
+  // Update selection box visual (suppress if both buttons held = rotating)
+  if (isDragging && !rmbHeld) {
     const dx = Math.abs(e.clientX - dragStartX)
     const dy = Math.abs(e.clientY - dragStartY)
     if (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD) {
@@ -225,26 +240,37 @@ function onMouseMove(e: MouseEvent, _world: IWorld) {
 }
 
 function onMouseUp(e: MouseEvent, world: IWorld) {
-  if (e.button === 0 && isDragging) {
+  if (e.button === 0) {
+    if (isDragging && !wasRotating) {
+      isDragging = false
+      selectionBoxEl.style.display = 'none'
+
+      const dx = Math.abs(e.clientX - dragStartX)
+      const dy = Math.abs(e.clientY - dragStartY)
+
+      if (dx < DRAG_THRESHOLD && dy < DRAG_THRESHOLD) {
+        handleClick(world, e.clientX, e.clientY)
+      } else {
+        handleBoxSelect(world, dragStartX, dragStartY, e.clientX, e.clientY)
+      }
+    }
+    // If was rotating, just clean up
+    if (wasRotating && !rmbHeld) wasRotating = false
     isDragging = false
     selectionBoxEl.style.display = 'none'
-
-    const dx = Math.abs(e.clientX - dragStartX)
-    const dy = Math.abs(e.clientY - dragStartY)
-
-    if (dx < DRAG_THRESHOLD && dy < DRAG_THRESHOLD) {
-      handleClick(world, e.clientX, e.clientY)
-    } else {
-      handleBoxSelect(world, dragStartX, dragStartY, e.clientX, e.clientY)
-    }
   }
 
-  if (e.button === 2) { // Right click — only if not a camera pan drag
-    const rmbDx = Math.abs(e.clientX - rmbStartX)
-    const rmbDy = Math.abs(e.clientY - rmbStartY)
-    if (rmbDx < DRAG_THRESHOLD && rmbDy < DRAG_THRESHOLD) {
-      handleRightClick(world, e.clientX, e.clientY)
+  if (e.button === 2) {
+    rmbHeld = false
+    // Right click command — only if not a camera rotate
+    if (!wasRotating) {
+      const rmbDx = Math.abs(e.clientX - rmbStartX)
+      const rmbDy = Math.abs(e.clientY - rmbStartY)
+      if (rmbDx < DRAG_THRESHOLD && rmbDy < DRAG_THRESHOLD) {
+        handleRightClick(world, e.clientX, e.clientY)
+      }
     }
+    wasRotating = false
   }
 }
 
