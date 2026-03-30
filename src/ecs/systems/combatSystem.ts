@@ -94,10 +94,9 @@ export function combatSystem(world: IWorld, dt: number) {
       continue
     }
 
-    // Auto-acquire: skip if moving, unless unit is in attack-move mode
+    // Auto-acquire: skip if moving, unless unit has AttackMove (one-shot attack-move command)
     const isMoving = hasComponent(world, MoveTarget, eid) || hasComponent(world, PathFollower, eid)
-    const isAttackMoveMode = hasComponent(world, UnitMode, eid) && UnitMode.mode[eid] === MODE_ATTACK_MOVE
-    if (isMoving && !isAttackMoveMode) continue
+    if (isMoving && !hasComponent(world, AttackMove, eid)) continue
 
     spatialHash.query(px, pz, range, _nearby)
     let bestTarget = -1

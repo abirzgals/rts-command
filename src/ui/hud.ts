@@ -138,8 +138,6 @@ export function updateHUD(world: IWorld, _dt: number, time: number) {
   }
 
   // Update mode highlight every frame
-  updateModeHighlight(world, selected)
-
   // Update affordability styling every frame
   updateAffordability()
 
@@ -313,22 +311,6 @@ function updateAffordability() {
   })
 }
 
-function updateModeHighlight(world: IWorld, selected: number[]) {
-  if (selected.length === 0) return
-  const eid = selected[0]
-  if (!hasComponent(world, UnitMode, eid)) return
-  const mode = UnitMode.mode[eid]
-  const btns = actionButtonsEl.querySelectorAll('.action-btn')
-  btns.forEach(btn => {
-    const label = btn.querySelector('.label')?.textContent || ''
-    if (label === 'Move') {
-      btn.classList.toggle('active', mode === MODE_MOVE)
-    } else if (label === 'Attack (A)') {
-      btn.classList.toggle('active', mode === MODE_ATTACK_MOVE)
-    }
-  })
-}
-
 function updateActionButtons(world: IWorld, eid: number) {
   actionButtonsEl.innerHTML = ''
 
@@ -365,32 +347,10 @@ function updateActionButtons(world: IWorld, eid: number) {
 
   // ── Unit commands (for all player units) ──
   if (!isBuilding && hasComponent(world, MoveSpeed, eid)) {
-    // Determine current mode of first selected unit
-    const currentMode = hasComponent(world, UnitMode, eid) ? UnitMode.mode[eid] : MODE_MOVE
-
-    // Move mode button
-    const moveBtn = createActionButton('🏃', 'Move', '', () => {
-      setForceAttackMode(false)
-      const sel = selectedQuery(world)
-      for (const sid of sel) {
-        if (hasComponent(world, UnitMode, sid)) UnitMode.mode[sid] = MODE_MOVE
-      }
-      refreshModeHighlight()
-    })
-    if (currentMode === MODE_MOVE) moveBtn.classList.add('active')
-    actionButtonsEl.appendChild(moveBtn)
-
-    // Attack-Move mode button
-    const atkBtn = createActionButton('⚔️', `Attack (${getBindingLabel('attackMove')})`, '', () => {
-      setForceAttackMode(false)
-      const sel = selectedQuery(world)
-      for (const sid of sel) {
-        if (hasComponent(world, UnitMode, sid)) UnitMode.mode[sid] = MODE_ATTACK_MOVE
-      }
-      refreshModeHighlight()
-    })
-    if (currentMode === MODE_ATTACK_MOVE) atkBtn.classList.add('active')
-    actionButtonsEl.appendChild(atkBtn)
+    // Attack-move action button (one-shot: click then click ground)
+    actionButtonsEl.appendChild(createActionButton('⚔️', `Attack (${getBindingLabel('attackMove')})`, 'tap target', () => {
+      setForceAttackMode(true)
+    }))
 
     // Stop command (S) — stop moving, keep shooting in range
     actionButtonsEl.appendChild(createActionButton('⏹️', `Stop (${getBindingLabel('stop')})`, '', () => {
@@ -424,26 +384,6 @@ function updateActionButtons(world: IWorld, eid: number) {
       )
       actionButtonsEl.appendChild(btn)
     }
-  }
-}
-
-function refreshModeHighlight() {
-  const btns = actionButtonsEl.querySelectorAll('.action-btn')
-  btns.forEach(btn => {
-    const label = btn.querySelector('.label')?.textContent || ''
-    if (label === 'Move' || label === 'Attack (A)') {
-      btn.classList.remove('active')
-    }
-  })
-  // Re-check first selected unit's mode
-  const sel = selectedQuery(lastWorld!)
-  if (sel.length > 0) {
-    const mode = hasComponent(lastWorld!, UnitMode, sel[0]) ? UnitMode.mode[sel[0]] : MODE_MOVE
-    btns.forEach(btn => {
-      const label = btn.querySelector('.label')?.textContent || ''
-      if (label === 'Move' && mode === MODE_MOVE) btn.classList.add('active')
-      if (label === 'Attack (A)' && mode === MODE_ATTACK_MOVE) btn.classList.add('active')
-    })
   }
 }
 

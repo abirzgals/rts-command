@@ -790,8 +790,7 @@ function issueCommand(
       } else if (cmdType === 'build' && closestEid >= 0) {
         pushCommand(eid, { type: 'build', targetEid: closestEid })
       } else {
-        const isAM = hasComponent(world, UnitMode, eid) && UnitMode.mode[eid] === MODE_ATTACK_MOVE
-        pushCommand(eid, { type: isAM ? 'attackMove' : 'move', x: hit.x, z: hit.z })
+        pushCommand(eid, { type: 'move', x: hit.x, z: hit.z })
       }
     }
     return
@@ -904,18 +903,13 @@ function issueCommand(
       MoveTarget.x[eid] = bx + (dx / d) * (bRadius + 1.0)
       MoveTarget.z[eid] = bz + (dz / d) * (bRadius + 1.0)
     } else {
-      // Move to formation slot
+      // Move to formation slot (plain move — no attack-move)
       const slotIdx = assignments?.get(eid) ?? 0
       const slot = slots ? slots[slotIdx] : { x: hit.x, z: hit.z }
       addComponent(world, MoveTarget, eid)
       MoveTarget.x[eid] = slot.x
       MoveTarget.z[eid] = slot.z
-      // If unit is in attack-move mode, mark as attack-move
-      if (hasComponent(world, UnitMode, eid) && UnitMode.mode[eid] === MODE_ATTACK_MOVE) {
-        addComponent(world, AttackMove, eid)
-        AttackMove.destX[eid] = slot.x
-        AttackMove.destZ[eid] = slot.z
-      } else if (hasComponent(world, AttackMove, eid)) {
+      if (hasComponent(world, AttackMove, eid)) {
         removeComponent(world, AttackMove, eid)
       }
     }
@@ -1089,11 +1083,7 @@ function onKeyDown(e: KeyboardEvent, world: IWorld) {
 
   if (matchesAction(e, 'attackMove')) {
     const selected = selectedQuery(world)
-    for (const sid of selected) {
-      if (hasComponent(world, UnitMode, sid)) {
-        UnitMode.mode[sid] = UnitMode.mode[sid] === MODE_ATTACK_MOVE ? MODE_MOVE : MODE_ATTACK_MOVE
-      }
-    }
+    if (selected.length > 0) setForceAttackMode(true)
     return
   }
 
