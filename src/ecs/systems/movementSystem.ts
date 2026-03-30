@@ -96,12 +96,11 @@ function getTerrainRepulsion(x: number, z: number, radius: number, maxSl: number
       || (maxSl < 100 && (() => { const [gx2, gz2] = worldToGrid(sx, sz); return gx2 >= 0 && gx2 < GRID_RES && gz2 >= 0 && gz2 < GRID_RES && slopeData[gz2 * GRID_RES + gx2] > maxSl })())
 
     if (blocked) {
-      // Push away from this blocked point → toward center
+      // Gentle push away from blocked point → toward center
       const dx = x - sx
       const dz = z - sz
-      // Stronger push the closer we are to the edge
-      pushX += dx * 2
-      pushZ += dz * 2
+      pushX += dx * 0.8
+      pushZ += dz * 0.8
     }
   }
   return [pushX, pushZ]
@@ -425,9 +424,11 @@ export function movementSystem(world: IWorld, dt: number) {
     telemetry.set('fullOk', fullOk)
 
     if (!fullOk) {
-      // Normal collision: axis-separated wall slide
-      const xOk = checkFootprint(px + moveX, pz, checkR, maxSl)
-      const zOk = checkFootprint(px, pz + moveZ, checkR, maxSl)
+      // Wall slide: use CENTER-ONLY check (radius=0.2) so corners don't block both axes
+      // Full radius blocks the straight move, but slide should be permissive
+      const slideR = Math.min(checkR, 0.2)
+      const xOk = checkFootprint(px + moveX, pz, slideR, maxSl)
+      const zOk = checkFootprint(px, pz + moveZ, slideR, maxSl)
       telemetry.set('xOnlyOk', xOk)
       telemetry.set('zOnlyOk', zOk)
 
@@ -579,8 +580,9 @@ export function movementSystem(world: IWorld, dt: number) {
       const newOk = curOk ? checkFootprint(newX, newZ, checkR, maxSl)
         : (isWorldWalkable(newX, newZ) && getTerrainTypeAt(newX, newZ) !== T_WATER)
       if (!newOk) {
-        const xOk = checkFootprint(px + moveX, pz, checkR, maxSl)
-        const zOk = checkFootprint(px, pz + moveZ, checkR, maxSl)
+        const slideR = Math.min(checkR, 0.2)
+        const xOk = checkFootprint(px + moveX, pz, slideR, maxSl)
+        const zOk = checkFootprint(px, pz + moveZ, slideR, maxSl)
 
         if (xOk && !zOk) { newX = px + moveX; newZ = pz }
         else if (!xOk && zOk) { newX = px; newZ = pz + moveZ }
