@@ -143,7 +143,11 @@ export function aiSystem(world: IWorld, dt: number) {
 
   // ── Census: count everything ────────────────────────────────
   const census = takeCensus(world)
-  if (!census.commandCenter) return // no CC = no AI
+  if (!census.commandCenter) {
+    aiDebugStatus = `AI Faction: ${getAIFaction()} | NO COMMAND CENTER FOUND`
+    ;(window as any).__aiDebugStatus = aiDebugStatus
+    return
+  }
 
   const res = gameState.getResources(getAIFaction())
   const homeX = Position.x[census.commandCenter]
@@ -222,7 +226,7 @@ export function aiSystem(world: IWorld, dt: number) {
   // ── Debug overlay ──────────────────────────────────────────
   const armySupply = census.armySupply
   const lines: string[] = [
-    `State: ${STATE_NAMES[aiState]}`,
+    `AI Faction: ${getAIFaction()} | State: ${STATE_NAMES[aiState]}`,
     `Workers:${census.workerCount} Marines:${census.marineCount} Tanks:${census.tankCount} Jeeps:${census.jeepCount} Troopers:${census.trooperCount}`,
     `Army supply: ${armySupply} | CC:${census.commandCenter ? 'Y' : 'N'} Rax:${hasBarracks ? 'Y' : 'N'} Fac:${hasFactory ? 'Y' : 'N'}`,
     `Min:${Math.floor(res.minerals)} Gas:${Math.floor(res.gas)} Sup:${res.supplyCurrent}/${res.supplyMax}`,
@@ -282,34 +286,32 @@ export function resetAIState() {
 function analyzeInheritedState(world: IWorld) {
   // 1. Take census of new faction
   const census = takeCensus(world)
+  console.log(`[AI] analyzeInheritedState: faction=${getAIFaction()} CC=${census.commandCenter} army=${census.armySupply} workers=${census.workerCount} rax=${hasBarracks} fac=${hasFactory}`)
+
   if (!census.commandCenter) {
     aiState = AIState.SCOUTING
+    console.log('[AI] No CC found, starting SCOUTING')
     return
   }
 
   // 2. Check if enemy base is already visible/known via fog
   const found = tryDiscoverPlayerBase(world)
+  console.log(`[AI] Enemy base found: ${found} at (${Math.round(knownPlayerBaseX)}, ${Math.round(knownPlayerBaseZ)})`)
 
-  // 3. If we have buildings, update flags
-  // (takeCensus already sets hasBarracks/hasFactory)
-
-  // 4. Decide starting state based on situation
+  // 3. Decide starting state based on situation
   if (found) {
-    // Enemy base known — skip scouting
     if (census.armySupply >= MIN_ATTACK_ARMY) {
-      // Strong army ready — go to staging
       const homeX = Position.x[census.commandCenter]
       const homeZ = Position.z[census.commandCenter]
       computeRallyPoint(world, homeX, homeZ)
       aiState = AIState.STAGING
     } else {
-      // Need more army — build up
       aiState = AIState.BUILDING
     }
   } else {
-    // Enemy base unknown — need to scout
     aiState = AIState.SCOUTING
   }
+  console.log(`[AI] Starting state: ${STATE_NAMES[aiState]}`)
 }
 
 // ═══════════════════════════════════════════════════════════════
