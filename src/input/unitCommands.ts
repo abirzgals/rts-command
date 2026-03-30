@@ -12,6 +12,7 @@ import {
 } from '../ecs/components'
 import { spatialHash } from '../globals'
 import { isWorldWalkable } from '../pathfinding/navGrid'
+import { findPathHierarchical } from '../pathfinding/astar'
 import { spawnMoveMarker } from '../render/effects'
 
 /**
@@ -124,23 +125,34 @@ export function issueCommand(
   const rows = Math.ceil(count / cols)
   const spacing = maxR * 2.8
 
-  // Generate slots, skip blocked cells
+  // Generate slots — must be walkable AND reachable from a unit
+  // Use first unit's position as pathfinding source for reachability check
+  const srcX = Position.x[movable[0]]
+  const srcZ = Position.z[movable[0]]
+
   const slots: { x: number; z: number }[] = []
-  for (let r = 0; r < rows + 5; r++) { // extra rows in case some are blocked
-    for (let c = 0; c < cols; c++) {
-      if (slots.length >= count) break
-      const sx = hitX + (c - (cols - 1) / 2) * spacing
-      const sz = hitZ + (r - (rows - 1) / 2) * spacing
-      if (isWorldWalkable(sx, sz)) {
-        slots.push({ x: sx, z: sz })
+  for (let ring = 0; ring < 8 && slots.length < count; ring++) {
+    const rStart = -Math.floor(rows / 2) - ring
+    const rEnd = Math.ceil(rows / 2) + ring
+    for (let r = rStart; r <= rEnd; r++) {
+      for (let c = 0; c < cols + ring * 2; c++) {
+        if (slots.length >= count) break
+        const sx = hitX + (c - (cols + ring * 2 - 1) / 2) * spacing
+        const sz = hitZ + r * spacing
+        if (!isWorldWalkable(sx, sz)) continue
+        // Quick A* check: can we reach this slot?
+        const path = findPathHierarchical(srcX, srcZ, sx, sz, 0, 100)
+        if (path && path.length >= 0) {
+          slots.push({ x: sx, z: sz })
+        }
       }
+      if (slots.length >= count) break
     }
-    if (slots.length >= count) break
   }
 
-  // Fallback: if not enough walkable slots, fill remaining at target
+  // Fallback: use the target point itself
   while (slots.length < count) {
-    slots.push({ x: hitX + (Math.random() - 0.5) * spacing * 2, z: hitZ + (Math.random() - 0.5) * spacing * 2 })
+    slots.push({ x: hitX, z: hitZ })
   }
 
   // Assign by angle (left units → left slots, no crossing)
