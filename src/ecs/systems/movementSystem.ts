@@ -317,27 +317,29 @@ export function movementSystem(world: IWorld, dt: number) {
 
     // ── Step 3: Turn rate application ────────────────────────
     let facingX: number, facingZ: number, turnSpeedFactor: number
+    let appliedYaw: number, yawDelta: number
 
     if (onBlockedTerrain) {
-      // ESCAPE: move directly toward target, ignore turn rate
       Rotation.y[eid] = desiredYaw
       facingX = desiredDirX
       facingZ = desiredDirZ
-      turnSpeedFactor = 1.0 // full speed
+      turnSpeedFactor = 1.0
+      appliedYaw = desiredYaw
+      yawDelta = 0
     } else {
       const turnRate = hasComponent(world, TurnRate, eid) ? TurnRate.value[eid] : 5.0
       const currentYaw = Rotation.y[eid]
-      const delta = angleDiff(desiredYaw, currentYaw)
+      yawDelta = angleDiff(desiredYaw, currentYaw)
       const maxTurn = turnRate * dt
-      const newYaw = currentYaw + Math.max(-maxTurn, Math.min(maxTurn, delta))
-      Rotation.y[eid] = newYaw
-      facingX = Math.sin(newYaw)
-      facingZ = Math.cos(newYaw)
+      appliedYaw = currentYaw + Math.max(-maxTurn, Math.min(maxTurn, yawDelta))
+      Rotation.y[eid] = appliedYaw
+      facingX = Math.sin(appliedYaw)
+      facingZ = Math.cos(appliedYaw)
       const facingDot = facingX * desiredDirX + facingZ * desiredDirZ
       turnSpeedFactor = 0.2 + 0.8 * Math.max(0.0, facingDot)
     }
-    telemetry.set('yaw', newYaw)
-    telemetry.set('yawDelta', delta)
+    telemetry.set('yaw', appliedYaw)
+    telemetry.set('yawDelta', yawDelta)
     telemetry.set('turnSpeedFactor', turnSpeedFactor)
 
     // ── Step 4: Acceleration / deceleration ──────────────────
