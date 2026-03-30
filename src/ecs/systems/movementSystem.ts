@@ -79,6 +79,34 @@ function checkFootprint(x: number, z: number, radius: number, maxSl: number): bo
   return true
 }
 
+/** Compute repulsion force from nearby blocked cells.
+ *  Samples 8 points around the unit at its radius. For each point on a blocked cell,
+ *  adds a push force from that cell toward the unit center. */
+function getTerrainRepulsion(x: number, z: number, radius: number, maxSl: number): [number, number] {
+  let pushX = 0, pushZ = 0
+  const samples = 8
+  for (let i = 0; i < samples; i++) {
+    const angle = (i / samples) * Math.PI * 2
+    const sx = x + Math.cos(angle) * radius
+    const sz = z + Math.sin(angle) * radius
+
+    // Check if this edge point is on blocked terrain
+    const blocked = !isWorldWalkable(sx, sz)
+      || getTerrainTypeAt(sx, sz) === T_WATER
+      || (maxSl < 100 && (() => { const [gx2, gz2] = worldToGrid(sx, sz); return gx2 >= 0 && gx2 < GRID_RES && gz2 >= 0 && gz2 < GRID_RES && slopeData[gz2 * GRID_RES + gx2] > maxSl })())
+
+    if (blocked) {
+      // Push away from this blocked point → toward center
+      const dx = x - sx
+      const dz = z - sz
+      // Stronger push the closer we are to the edge
+      pushX += dx * 2
+      pushZ += dz * 2
+    }
+  }
+  return [pushX, pushZ]
+}
+
 // ── Main movement system ─────────────────────────────────────
 export function movementSystem(world: IWorld, dt: number) {
 
@@ -166,11 +194,17 @@ export function movementSystem(world: IWorld, dt: number) {
       }
     }
 
+    // Terrain repulsion: push away from nearby blocked cells
+    const [tRepX, tRepZ] = getTerrainRepulsion(px, pz, myRadius, maxSl)
+    sepX += tRepX
+    sepZ += tRepZ
+
     if (sepX !== 0 || sepZ !== 0) {
       telemetry.recordSeparation(eid, sepX, sepZ)
       const newX = px + sepX * dt
       const newZ = pz + sepZ * dt
-      if (checkFootprint(newX, newZ, myRadius * 0.5, maxSl)) {
+      // Only apply if center stays on walkable ground
+      if (isWorldWalkable(newX, newZ) && getTerrainTypeAt(newX, newZ) !== T_WATER) {
         Position.x[eid] = newX
         Position.z[eid] = newZ
         Position.y[eid] = getTerrainHeight(newX, newZ)
