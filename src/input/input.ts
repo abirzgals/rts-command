@@ -607,6 +607,10 @@ function issueBuildingCommand(
 }
 
 function handleRightClick(world: IWorld, _sx: number, _sy: number) {
+  if (gameState.buildMode !== null) {
+    cancelBuildMode()
+    return
+  }
   clearSelection(world)
 }
 
