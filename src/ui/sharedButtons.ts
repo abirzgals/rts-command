@@ -6,6 +6,8 @@ import { toggleDebug, isDebugEnabled } from '../render/debugOverlay'
 import { telemetry } from '../debug/movementTelemetry'
 import { Selected } from '../ecs/components'
 import { defineQuery } from 'bitecs'
+import { gameState } from '../game/state'
+import { FACTION_PLAYER } from '../game/config'
 
 const selectedQuery = defineQuery([Selected])
 
@@ -36,9 +38,18 @@ export function initSharedButtons() {
     { id: 'sb-debug', icon: '\u{1F41B}', title: 'Toggle Debug (F1)', right: 16,
       onClick: () => {
         toggleDebug()
+        const dbg = isDebugEnabled()
         const btn = document.getElementById('sb-debug')
-        if (btn) btn.style.background = isDebugEnabled()
+        if (btn) btn.style.background = dbg
           ? 'rgba(50,200,100,0.7)' : 'rgba(80,80,80,0.7)'
+        const moneyBtn = document.getElementById('sb-money')
+        if (moneyBtn) moneyBtn.style.display = dbg ? 'flex' : 'none'
+      }},
+    { id: 'sb-money', icon: '💰', title: '+1000 minerals & gas', right: 16,
+      onClick: () => {
+        const res = gameState.getResources(FACTION_PLAYER)
+        res.minerals += 1000
+        res.gas += 1000
       }},
   ]
 
@@ -67,7 +78,9 @@ export function initSharedButtons() {
     el.id = def.id
     el.title = def.title
     el.innerHTML = def.icon
-    el.setAttribute('style', BUTTON_STYLE + `top:50px; right:${def.right}px;`)
+    const top = def.id === 'sb-money' ? 96 : 50
+    const hidden = def.id === 'sb-money' ? 'display:none;' : ''
+    el.setAttribute('style', BUTTON_STYLE + `top:${top}px; right:${def.right}px;` + hidden)
 
     if (def.href) (el as HTMLAnchorElement).href = def.href
     if (def.onClick) el.addEventListener('click', def.onClick)
