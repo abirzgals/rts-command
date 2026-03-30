@@ -1014,11 +1014,15 @@ function forceAttackTarget(world: IWorld, sx: number, sy: number) {
   const nearby: number[] = []
   spatialHash.query(hit.x, hit.z, 3, nearby)
 
+  const selected = selectedQuery(world)
+  const selectedSet = new Set(selected)
+
   let targetEid = -1
   let targetDist = Infinity
 
   for (const eid of nearby) {
     if (!hasComponent(world, Position, eid)) continue
+    if (selectedSet.has(eid)) continue // don't target yourself
     const dx = Position.x[eid] - hit.x
     const dz = Position.z[eid] - hit.z
     const dist = Math.sqrt(dx * dx + dz * dz)
@@ -1027,8 +1031,6 @@ function forceAttackTarget(world: IWorld, sx: number, sy: number) {
       targetDist = dist
     }
   }
-
-  const selected = selectedQuery(world)
   if (targetEid >= 0) {
     const tr = hasComponent(world, Selectable, targetEid) ? Selectable.radius[targetEid] : 0.8
     spawnActionIndicator(Position.x[targetEid], Position.y[targetEid], Position.z[targetEid], tr + 0.3, 'attack')
