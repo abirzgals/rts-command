@@ -5,7 +5,8 @@
 import {
   ALL_ACTIONS, ACTION_LABELS, PRESETS,
   getBinding, getPresetName, applyPreset, rebindAction,
-  saveBindings, getMouseMode, type GameAction,
+  saveBindings, saveBindingsToServer, loadBindingsFromServer, listServerPresets,
+  getMouseMode, type GameAction,
 } from '../input/keybindings'
 
 let overlay: HTMLDivElement | null = null
@@ -29,7 +30,6 @@ export function openSettingsUI() {
     padding: '24px', minWidth: '380px', maxWidth: '500px',
   })
 
-  // Build preset options
   const presetOptions = PRESETS.map(p =>
     `<option value="${p.name}" ${p.name === getPresetName() ? 'selected' : ''}>${p.name}</option>`
   ).join('') + `<option value="Custom" ${getPresetName() === 'Custom' ? 'selected' : ''}>Custom</option>`
@@ -38,21 +38,29 @@ export function openSettingsUI() {
     ? 'Left click = select & command, Right click = deselect'
     : 'Left click = select, Right click = command'
 
+  const inputStyle = 'width:100%;padding:6px;border:1px solid #444;border-radius:4px;background:#1a1a2e;color:#fff;font-size:13px'
+
   box.innerHTML = `
     <h2 style="color:#8af;font-size:18px;margin:0 0 16px">Controls Settings</h2>
-    <div style="margin-bottom:16px">
+    <div style="margin-bottom:12px">
       <span style="color:#888;font-size:12px">PRESET</span>
-      <select id="settings-preset" style="
-        width:100%;padding:8px;margin-top:4px;border:1px solid #444;border-radius:4px;
-        background:#1a1a2e;color:#fff;font-size:14px
-      ">${presetOptions}</select>
+      <select id="settings-preset" style="${inputStyle};margin-top:4px">${presetOptions}</select>
       <div id="settings-mouse-info" style="color:#666;font-size:11px;margin-top:4px">${mouseInfo}</div>
     </div>
     <div style="color:#888;font-size:12px;margin-bottom:8px">KEY BINDINGS</div>
-    <div id="settings-bindings" style="max-height:300px;overflow-y:auto"></div>
-    <div style="display:flex;gap:8px;margin-top:16px">
-      <button id="settings-save" style="flex:1;padding:8px;border:1px solid #4a8a4a;border-radius:4px;background:#2a5a2a;color:#fff;cursor:pointer;font-size:14px">Save</button>
-      <button id="settings-close" style="flex:1;padding:8px;border:1px solid #666;border-radius:4px;background:#333;color:#fff;cursor:pointer;font-size:14px">Close</button>
+    <div id="settings-bindings" style="max-height:220px;overflow-y:auto"></div>
+    <div style="margin-top:12px;padding:10px;background:#1a1a2a;border:1px solid #333;border-radius:6px">
+      <span style="color:#888;font-size:12px">SAVE / LOAD PRESET</span>
+      <div style="display:flex;gap:6px;margin-top:6px">
+        <input id="settings-name" type="text" placeholder="Preset name..." style="${inputStyle};flex:1">
+        <button id="settings-save-server" style="padding:6px 12px;border:1px solid #4a8a4a;border-radius:4px;background:#2a5a2a;color:#fff;cursor:pointer;font-size:12px;white-space:nowrap">Save</button>
+      </div>
+      <div id="settings-server-presets" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px"></div>
+      <div id="settings-status" style="color:#6a6;font-size:11px;margin-top:4px"></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button id="settings-apply" style="flex:1;padding:8px;border:1px solid #4a8a4a;border-radius:4px;background:#2a5a2a;color:#fff;cursor:pointer;font-size:14px">Apply & Close</button>
+      <button id="settings-close" style="flex:1;padding:8px;border:1px solid #666;border-radius:4px;background:#333;color:#fff;cursor:pointer;font-size:14px">Cancel</button>
     </div>
   `
 
@@ -60,6 +68,7 @@ export function openSettingsUI() {
   document.body.appendChild(overlay)
 
   buildBindingRows()
+  loadServerPresets()
 
   // Preset change
   document.getElementById('settings-preset')!.addEventListener('change', (e) => {
@@ -72,8 +81,18 @@ export function openSettingsUI() {
     }
   })
 
-  // Save
-  document.getElementById('settings-save')!.addEventListener('click', () => {
+  // Save to server
+  document.getElementById('settings-save-server')!.addEventListener('click', async () => {
+    const nameEl = document.getElementById('settings-name') as HTMLInputElement
+    const name = nameEl.value.trim()
+    if (!name) { setStatus('Enter a name'); return }
+    const ok = await saveBindingsToServer(name)
+    setStatus(ok ? `Saved "${name}" to server` : `Saved "${name}" locally`)
+    loadServerPresets()
+  })
+
+  // Apply & Close
+  document.getElementById('settings-apply')!.addEventListener('click', () => {
     saveBindings()
     closeSettingsUI()
   })
@@ -143,6 +162,45 @@ function buildBindingRows() {
     row.appendChild(label)
     row.appendChild(keyBtn)
     container.appendChild(row)
+  }
+}
+
+function setStatus(msg: string) {
+  const el = document.getElementById('settings-status')
+  if (el) el.textContent = msg
+}
+
+async function loadServerPresets() {
+  const container = document.getElementById('settings-server-presets')
+  if (!container) return
+  const presets = await listServerPresets()
+  if (presets.length === 0) {
+    container.innerHTML = '<span style="color:#555;font-size:11px">No saved presets</span>'
+    return
+  }
+  container.innerHTML = ''
+  for (const name of presets) {
+    const btn = document.createElement('button')
+    Object.assign(btn.style, {
+      padding: '4px 10px', border: '1px solid #444', borderRadius: '3px',
+      background: '#252535', color: '#aaf', cursor: 'pointer', fontSize: '12px',
+    })
+    btn.textContent = name
+    btn.addEventListener('click', async () => {
+      const ok = await loadBindingsFromServer(name)
+      if (ok) {
+        buildBindingRows()
+        updateMouseInfo()
+        const presetSelect = document.getElementById('settings-preset') as HTMLSelectElement
+        if (presetSelect) presetSelect.value = getPresetName()
+        setStatus(`Loaded "${name}"`)
+        const nameEl = document.getElementById('settings-name') as HTMLInputElement
+        if (nameEl) nameEl.value = name
+      } else {
+        setStatus(`Failed to load "${name}"`)
+      }
+    })
+    container.appendChild(btn)
   }
 }
 

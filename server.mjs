@@ -106,6 +106,37 @@ app.get('/api/textures', (req, res) => {
   res.json({ data: files })
 })
 
+// GET /api/keybindings — list saved presets
+app.get('/api/keybindings', (req, res) => {
+  const dir = path.join(DATA_DIR, 'keybindings')
+  if (!fs.existsSync(dir)) { fs.mkdirSync(dir, { recursive: true }); return res.json({ data: [] }) }
+  const files = fs.readdirSync(dir).filter(f => f.endsWith('.json')).map(f => f.replace('.json', ''))
+  res.json({ data: files })
+})
+
+// GET /api/keybindings/:name — load a preset
+app.get('/api/keybindings/:name', (req, res) => {
+  const file = path.join(DATA_DIR, 'keybindings', req.params.name + '.json')
+  if (!fs.existsSync(file)) return res.status(404).json({ error: 'Not found' })
+  res.json({ data: JSON.parse(fs.readFileSync(file, 'utf-8')) })
+})
+
+// POST /api/keybindings/:name — save a preset
+app.post('/api/keybindings/:name', (req, res) => {
+  const dir = path.join(DATA_DIR, 'keybindings')
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+  const file = path.join(dir, req.params.name + '.json')
+  fs.writeFileSync(file, JSON.stringify(req.body, null, 2))
+  res.json({ ok: true })
+})
+
+// DELETE /api/keybindings/:name — delete a preset
+app.delete('/api/keybindings/:name', (req, res) => {
+  const file = path.join(DATA_DIR, 'keybindings', req.params.name + '.json')
+  if (fs.existsSync(file)) fs.unlinkSync(file)
+  res.json({ ok: true })
+})
+
 // ─── SPA fallback (Express 5 syntax) ──────────────────────────────────
 app.get('/{*path}', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'))

@@ -125,6 +125,50 @@ export function saveBindings() {
   localStorage.setItem('rts-keybindings', JSON.stringify(data))
 }
 
+/** Save to server with a name */
+export async function saveBindingsToServer(name: string): Promise<boolean> {
+  const data = { mouseMode: currentMouseMode, bindings }
+  try {
+    const res = await fetch(`/api/keybindings/${encodeURIComponent(name)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+    const result = await res.json()
+    if (result.ok) {
+      localStorage.setItem('rts-keybindings', JSON.stringify(data))
+      return true
+    }
+  } catch { /* server unavailable */ }
+  localStorage.setItem('rts-keybindings', JSON.stringify(data))
+  return false
+}
+
+/** Load a named preset from server */
+export async function loadBindingsFromServer(name: string): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/keybindings/${encodeURIComponent(name)}`)
+    if (!res.ok) return false
+    const result = await res.json()
+    if (result.data) {
+      if (result.data.mouseMode) currentMouseMode = result.data.mouseMode
+      if (result.data.bindings) bindings = { ...SUPCOM_BINDINGS, ...result.data.bindings }
+      localStorage.setItem('rts-keybindings', JSON.stringify({ mouseMode: currentMouseMode, bindings }))
+      return true
+    }
+  } catch { /* server unavailable */ }
+  return false
+}
+
+/** List saved presets from server */
+export async function listServerPresets(): Promise<string[]> {
+  try {
+    const res = await fetch('/api/keybindings')
+    const result = await res.json()
+    return result.data || []
+  } catch { return [] }
+}
+
 /** Load from localStorage, fallback to SupCom preset */
 export function loadBindings() {
   try {
@@ -133,7 +177,6 @@ export function loadBindings() {
       const data = JSON.parse(raw)
       if (data.mouseMode) currentMouseMode = data.mouseMode
       if (data.bindings) {
-        // Merge with defaults so new actions get default bindings
         bindings = { ...SUPCOM_BINDINGS, ...data.bindings }
       }
     }
