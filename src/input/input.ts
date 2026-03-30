@@ -448,6 +448,11 @@ function handleRightClick(world: IWorld, sx: number, sy: number) {
   }
 
   // Issue commands
+  console.log(`[FORMATION] ${count} units, ${slots.length} slots, targetEid=${targetEid}, spacing=${spacing.toFixed(1)}`)
+  for (let si = 0; si < Math.min(3, slots.length); si++) {
+    console.log(`  slot[${si}]: (${slots[si].x.toFixed(1)}, ${slots[si].z.toFixed(1)})`)
+  }
+
   for (const eid of movableUnits) {
     // Clear existing commands
     if (hasComponent(world, AttackTarget, eid)) removeComponent(world, AttackTarget, eid)
