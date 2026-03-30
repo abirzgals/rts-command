@@ -21,7 +21,7 @@ import { getTerrainHeight } from '../terrain/heightmap'
 import { isWorldWalkable } from '../pathfinding/navGrid'
 import { findPathHierarchical } from '../pathfinding/astar'
 import { removePath } from '../pathfinding/pathStore'
-import { pushCommand, clearQueue, type Command } from '../ecs/commandQueue'
+import { pushCommand, clearQueue, getQueue, type Command } from '../ecs/commandQueue'
 
 const _vec3 = new THREE.Vector3()
 
@@ -800,31 +800,36 @@ function placeBuildingAtCursor(world: IWorld) {
     BuildProgress.spent[buildingEid] = 0
   }
 
-  // Send selected workers to build
+  // Send a worker to build — with shift, distribute round-robin across selected workers
   const selected = selectedQuery(world)
-  for (const eid of selected) {
-    if (!hasComponent(world, WorkerC, eid)) continue
-    if (Faction.id[eid] !== FACTION_PLAYER) continue
+  const workers = selected.filter(eid =>
+    hasComponent(world, WorkerC, eid) && Faction.id[eid] === FACTION_PLAYER
+  )
 
+  if (workers.length > 0) {
     if (shiftHeld) {
-      // Queue the build command — worker will build after current task
-      pushCommand(eid, { type: 'build', targetEid: buildingEid })
+      // Round-robin: assign to the worker with the fewest queued commands
+      const worker = workers.reduce((best, eid) => {
+        const bestQ = getQueue(best).length
+        const thisQ = getQueue(eid).length
+        return thisQ < bestQ ? eid : best
+      })
+      pushCommand(worker, { type: 'build', targetEid: buildingEid })
     } else {
-      // Immediate: send worker now
-      WorkerC.state[eid] = 4 // movingToBuild
-      WorkerC.buildTarget[eid] = buildingEid
-      const wx = Position.x[eid], wz = Position.z[eid]
+      // Immediate: send first worker
+      const worker = workers[0]
+      WorkerC.state[worker] = 4
+      WorkerC.buildTarget[worker] = buildingEid
+      const wx = Position.x[worker], wz = Position.z[worker]
       const dx = wx - sx, dz = wz - sz
       const d = Math.sqrt(dx * dx + dz * dz) || 1
-      addComponent(world, MoveTarget, eid)
-      MoveTarget.x[eid] = sx + (dx / d) * (def.radius + 1.0)
-      MoveTarget.z[eid] = sz + (dz / d) * (def.radius + 1.0)
+      addComponent(world, MoveTarget, worker)
+      MoveTarget.x[worker] = sx + (dx / d) * (def.radius + 1.0)
+      MoveTarget.z[worker] = sz + (dz / d) * (def.radius + 1.0)
     }
-    break
   }
 
   if (shiftHeld) {
-    // Stay in build mode for more placements
     spawnMoveMarker(sx, getTerrainHeight(sx, sz), sz)
   } else {
     gameState.buildMode = null
