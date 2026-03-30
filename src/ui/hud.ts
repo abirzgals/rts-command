@@ -3,6 +3,7 @@ import type { IWorld } from 'bitecs'
 import {
   Selected, Position, Faction, Health, UnitTypeC,
   IsBuilding, WorkerC, Producer, AttackC, MoveSpeed, Armor, MoveTarget, Velocity,
+  AttackTarget, AttackMove, PathFollower,
 } from '../ecs/components'
 import {
   FACTION_PLAYER, UNIT_DEFS, BUILDING_DEFS,
@@ -10,6 +11,8 @@ import {
 } from '../game/config'
 import { gameState } from '../game/state'
 import { queueProduction, setForceAttackMode, setRallyMode } from '../input/input'
+import { clearQueue } from '../ecs/commandQueue'
+import { removePath } from '../pathfinding/pathStore'
 import { removeComponent, addComponent } from 'bitecs'
 
 const selectedQuery = defineQuery([Selected])
@@ -178,22 +181,30 @@ function updateActionButtons(world: IWorld, eid: number) {
       setForceAttackMode(true)
     }))
 
-    // Stop command (S)
+    // Stop command (S) — cancel everything
     actionButtonsEl.appendChild(createActionButton('⏹️', 'Stop', '', () => {
       const sel = selectedQuery(world)
       for (const sid of sel) {
         if (hasComponent(world, MoveTarget, sid)) removeComponent(world, MoveTarget, sid)
+        if (hasComponent(world, AttackTarget, sid)) removeComponent(world, AttackTarget, sid)
+        if (hasComponent(world, AttackMove, sid)) removeComponent(world, AttackMove, sid)
+        if (hasComponent(world, PathFollower, sid)) { removePath(PathFollower.pathId[sid]); removeComponent(world, PathFollower, sid) }
         Velocity.x[sid] = 0; Velocity.z[sid] = 0
+        clearQueue(sid)
         if (hasComponent(world, WorkerC, sid)) WorkerC.state[sid] = 0
       }
     }))
 
-    // Hold Position (H)
+    // Hold Position (H) — stop and cancel attack
     actionButtonsEl.appendChild(createActionButton('🛡️', 'Hold', '', () => {
       const sel = selectedQuery(world)
       for (const sid of sel) {
         if (hasComponent(world, MoveTarget, sid)) removeComponent(world, MoveTarget, sid)
+        if (hasComponent(world, AttackTarget, sid)) removeComponent(world, AttackTarget, sid)
+        if (hasComponent(world, AttackMove, sid)) removeComponent(world, AttackMove, sid)
+        if (hasComponent(world, PathFollower, sid)) { removePath(PathFollower.pathId[sid]); removeComponent(world, PathFollower, sid) }
         Velocity.x[sid] = 0; Velocity.z[sid] = 0
+        clearQueue(sid)
       }
     }))
   }
