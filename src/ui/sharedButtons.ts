@@ -5,14 +5,17 @@
 import { toggleDebug, isDebugEnabled } from '../render/debugOverlay'
 import { telemetry } from '../debug/movementTelemetry'
 import { Selected } from '../ecs/components'
-import { defineQuery } from 'bitecs'
+import { defineQuery, removeComponent } from 'bitecs'
 import { gameState } from '../game/state'
 import { openSettingsUI } from './settingsUI'
-import { FACTION_PLAYER, UT_WORKER, UT_MARINE, UT_TANK, UT_JEEP, UT_ROCKET, UNIT_DEFS, BT_COMMAND_CENTER, BT_SUPPLY_DEPOT, BT_BARRACKS, BT_FACTORY, BUILDING_DEFS } from '../game/config'
+import { FACTION_PLAYER, FACTION_ENEMY, UT_WORKER, UT_MARINE, UT_TANK, UT_JEEP, UT_ROCKET, UNIT_DEFS, BT_COMMAND_CENTER, BT_SUPPLY_DEPOT, BT_BARRACKS, BT_FACTORY, BUILDING_DEFS } from '../game/config'
 import { spawnUnit, spawnBuilding } from '../ecs/archetypes'
 import { mouseWorldX, mouseWorldZ } from '../input/input'
+import { Faction } from '../ecs/components'
+import { resetAIState } from '../ecs/systems/aiSystem'
 
 const selectedQuery = defineQuery([Selected])
+const factionQuery = defineQuery([Faction])
 
 const BUTTON_STYLE = `
   position:fixed; width:40px; height:40px; border-radius:50%;
@@ -47,6 +50,8 @@ export function initSharedButtons() {
           ? 'rgba(50,200,100,0.7)' : 'rgba(80,80,80,0.7)'
         const moneyBtn = document.getElementById('sb-money')
         if (moneyBtn) moneyBtn.style.display = dbg ? 'flex' : 'none'
+        const swapBtn = document.getElementById('sb-swap')
+        if (swapBtn) swapBtn.style.display = dbg ? 'flex' : 'none'
       }},
     { id: 'sb-money', icon: '💰', title: '+1000 minerals & gas', right: 16,
       onClick: () => {
@@ -54,6 +59,8 @@ export function initSharedButtons() {
         res.minerals += 1000
         res.gas += 1000
       }},
+    { id: 'sb-swap', icon: '🔄', title: 'Swap Teams (T)', right: 16,
+      onClick: () => swapTeams() },
     { id: 'sb-settings', icon: '\u2699\uFE0F', title: 'Controls Settings', right: 64,
       onClick: () => openSettingsUI() },
   ]
@@ -83,8 +90,8 @@ export function initSharedButtons() {
     el.id = def.id
     el.title = def.title
     el.innerHTML = def.icon
-    const top = def.id === 'sb-money' ? 96 : 50
-    const hidden = def.id === 'sb-money' ? 'display:none;' : ''
+    const top = def.id === 'sb-money' ? 96 : def.id === 'sb-swap' ? 142 : 50
+    const hidden = (def.id === 'sb-money' || def.id === 'sb-swap') ? 'display:none;' : ''
     el.setAttribute('style', BUTTON_STYLE + `top:${top}px; right:${def.right}px;` + hidden)
 
     if (def.href) (el as HTMLAnchorElement).href = def.href
@@ -142,6 +149,12 @@ export function initSharedButtons() {
       }
     }
 
+    // T: swap teams
+    if (isDebugEnabled() && (e.key === 't' || e.key === 'T') && !e.ctrlKey && !e.altKey) {
+      e.preventDefault()
+      swapTeams()
+    }
+
     // Debug spawn: number keys 1-9 spawn units/buildings at cursor
     if (isDebugEnabled() && e.key >= '1' && e.key <= '9' && !e.ctrlKey && !e.altKey) {
       const w = (window as any).__ecsWorld
@@ -170,4 +183,42 @@ export function initSharedButtons() {
       }
     }
   })
+}
+
+function swapTeams() {
+  const w = (window as any).__ecsWorld
+  if (!w) return
+
+  // 1. Swap faction on all entities
+  const entities = factionQuery(w)
+  for (const eid of entities) {
+    Faction.id[eid] = Faction.id[eid] === FACTION_PLAYER ? FACTION_ENEMY : FACTION_PLAYER
+  }
+
+  // 2. Swap resources between factions
+  const playerRes = gameState.getResources(FACTION_PLAYER)
+  const enemyRes = gameState.getResources(FACTION_ENEMY)
+  const tmpMin = playerRes.minerals
+  const tmpGas = playerRes.gas
+  const tmpSupCur = playerRes.supplyCurrent
+  const tmpSupMax = playerRes.supplyMax
+  playerRes.minerals = enemyRes.minerals
+  playerRes.gas = enemyRes.gas
+  playerRes.supplyCurrent = enemyRes.supplyCurrent
+  playerRes.supplyMax = enemyRes.supplyMax
+  enemyRes.minerals = tmpMin
+  enemyRes.gas = tmpGas
+  enemyRes.supplyCurrent = tmpSupCur
+  enemyRes.supplyMax = tmpSupMax
+
+  // 3. Clear player selection
+  const selected = selectedQuery(w)
+  for (const eid of selected) {
+    removeComponent(w, Selected, eid)
+  }
+
+  // 4. Reset AI state so it re-evaluates with new units
+  resetAIState()
+
+  console.log(`[DEBUG] Teams swapped! ${entities.length} entities affected`)
 }

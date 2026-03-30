@@ -15,6 +15,9 @@ import { spawnBuilding } from '../archetypes'
 import { queueProduction } from '../../input/input'
 import { spatialHash } from '../../globals'
 import { isVisibleAt } from '../../render/fogOfWar'
+import { isWorldWalkable } from '../../pathfinding/navGrid'
+import { worldToGrid } from '../../terrain/heightmap'
+import { sectorId, findSectorPath } from '../../pathfinding/sectorGraph'
 
 // ═══════════════════════════════════════════════════════════════
 //  AI State Machine
@@ -41,6 +44,7 @@ const DEFENSE_RADIUS  = 20    // how far from CC to detect threats
 const DEFENSE_GUARD   = 2     // minimum combat units kept at home
 const STAGING_TIMEOUT = 45    // seconds: max wait at staging point
 const REGROUP_RADIUS  = 15    // units further than this from centroid need to regroup
+const ASSIST_RADIUS   = 18    // idle units within this radius of a fighting ally will join
 const MAP_HALF        = MAP_SIZE / 2
 
 // ── Queries ─────────────────────────────────────────────────
@@ -84,18 +88,27 @@ export let aiDebugStatus = ''
 // ═══════════════════════════════════════════════════════════════
 
 function generateScoutWaypoints(homeX: number, homeZ: number): { x: number; z: number }[] {
+  const [hgx, hgz] = worldToGrid(homeX, homeZ)
+  const homeSector = sectorId(hgx, hgz)
+
   const pts: { x: number; z: number }[] = []
-  // Build a grid of points covering the map
+  // Build a grid of points — only walkable AND reachable from home via pathfinding
   for (let x = -MAP_HALF + SCOUT_GRID_STEP / 2; x < MAP_HALF; x += SCOUT_GRID_STEP) {
     for (let z = -MAP_HALF + SCOUT_GRID_STEP / 2; z < MAP_HALF; z += SCOUT_GRID_STEP) {
+      if (!isWorldWalkable(x, z)) continue
+      // Check sector-level reachability (fast — only 169 sectors)
+      const [gx, gz] = worldToGrid(x, z)
+      const wpSector = sectorId(gx, gz)
+      if (wpSector !== homeSector && !findSectorPath(homeSector, wpSector)) continue
       pts.push({ x, z })
     }
   }
-  // Sort by distance from home -- explore far side first (player is likely opposite corner)
+
+  // Sort: nearest first, then expand outward (explore nearby before far)
   pts.sort((a, b) => {
     const dA = (a.x - homeX) ** 2 + (a.z - homeZ) ** 2
     const dB = (b.x - homeX) ** 2 + (b.z - homeZ) ** 2
-    return dB - dA // farthest first
+    return dA - dB // nearest first
   })
   return pts
 }
@@ -181,6 +194,9 @@ export function aiSystem(world: IWorld, dt: number) {
     }
   }
 
+  // Nearby assist: idle AI units join when a nearby ally is fighting
+  tickNearbyAssist(world, census)
+
   // Worker self-defense
   tickWorkerDefense(world, census, homeX, homeZ, decisions)
 
@@ -210,6 +226,23 @@ function transitionTo(state: AIState) {
 
 function hasFoundPlayerBase(): boolean {
   return !isNaN(knownPlayerBaseX)
+}
+
+/** Reset AI state — call after team swap so AI re-evaluates from scratch */
+export function resetAIState() {
+  aiState = AIState.SCOUTING
+  aiTimer = 0
+  scoutEid = null
+  scoutWaypoints = []
+  scoutWaypointIdx = 0
+  knownPlayerBaseX = NaN
+  knownPlayerBaseZ = NaN
+  rallyX = NaN
+  rallyZ = NaN
+  stagingTimer = 0
+  attackOrderIssued = false
+  hasBarracks = false
+  hasFactory = false
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -244,24 +277,18 @@ function tickScouting(
 
   if (!scoutEid) {
     decisions.push('No scout available')
-    // Even without a scout, keep building. Transition to building anyway
-    // after a while -- we'll find the base through combat contact.
-    if (census.armySupply >= MIN_ATTACK_ARMY) {
-      transitionTo(AIState.BUILDING)
-    }
     return
   }
 
-  // If scout reached waypoint (or is idle), send to next
-  const sx = Position.x[scoutEid]
-  const sz = Position.z[scoutEid]
+  // If scout reached waypoint (or is idle/finished attack), send to next
   const hasOrders = hasComponent(world, MoveTarget, scoutEid) || hasComponent(world, PathFollower, scoutEid)
+    || hasComponent(world, AttackTarget, scoutEid)
 
   if (!hasOrders && scoutWaypointIdx < scoutWaypoints.length) {
     const wp = scoutWaypoints[scoutWaypointIdx]
     scoutWaypointIdx++
-    sendMoveTo(world, scoutEid, wp.x, wp.z)
-    decisions.push(`Scout → (${Math.round(wp.x)}, ${Math.round(wp.z)}) [${scoutWaypointIdx}/${scoutWaypoints.length}]`)
+    sendAttackMoveTo(world, scoutEid, wp.x, wp.z)
+    decisions.push(`Scout A-move → (${Math.round(wp.x)}, ${Math.round(wp.z)}) [${scoutWaypointIdx}/${scoutWaypoints.length}]`)
   } else if (scoutWaypointIdx >= scoutWaypoints.length) {
     // Exhausted all waypoints without finding base -- reset and try again
     scoutWaypointIdx = 0
@@ -471,16 +498,40 @@ function tickDefending(
   const threat = assessThreatAtBase(world, homeX, homeZ)
   if (threat === 0) return
 
+  // Find the centroid of enemy threats at base to send defenders there
+  const _near: number[] = []
+  spatialHash.query(homeX, homeZ, DEFENSE_RADIUS, _near)
+  let threatX = 0, threatZ = 0, threatCount = 0
+  for (const eid of _near) {
+    if (!hasComponent(world, Faction, eid) || Faction.id[eid] !== FACTION_PLAYER) continue
+    if (hasComponent(world, Dead, eid)) continue
+    if (hasComponent(world, IsBuilding, eid)) continue
+    threatX += Position.x[eid]
+    threatZ += Position.z[eid]
+    threatCount++
+  }
+  if (threatCount > 0) {
+    threatX /= threatCount
+    threatZ /= threatCount
+  } else {
+    threatX = homeX; threatZ = homeZ
+  }
+
   // Send only enough to counter: threat * 1.5 supply worth of units
   const neededSupply = Math.ceil(threat * 1.5)
 
-  // Count how much supply is already defending at home
+  // Combat units at home: actively attack-move toward the threat
   let homeDefenseSupply = 0
   for (const eid of census.combatUnits) {
     const d = Math.sqrt((Position.x[eid] - homeX) ** 2 + (Position.z[eid] - homeZ) ** 2)
     if (d < DEFENSE_RADIUS) {
       const ut = hasComponent(world, UnitTypeC, eid) ? UnitTypeC.id[eid] : -1
       homeDefenseSupply += ut === UT_TANK ? 3 : (ut === UT_JEEP || ut === UT_TROOPER) ? 2 : 1
+
+      // If idle (no attack target), send to fight
+      if (!hasComponent(world, AttackTarget, eid)) {
+        sendAttackMoveTo(world, eid, threatX + (Math.random() - 0.5) * 4, threatZ + (Math.random() - 0.5) * 4)
+      }
     }
   }
 
@@ -490,12 +541,11 @@ function tickDefending(
     return
   }
 
-  // Recall closest units until we have enough
+  // Recall closest away units until we have enough
   const deficit = neededSupply - homeDefenseSupply
   let recalled = 0
   let recalledSupply = 0
 
-  // Sort by distance to home (closest first — they arrive faster)
   const awayUnits = census.combatUnits
     .filter(eid => {
       const d = Math.sqrt((Position.x[eid] - homeX) ** 2 + (Position.z[eid] - homeZ) ** 2)
@@ -510,9 +560,8 @@ function tickDefending(
   for (const eid of awayUnits) {
     if (recalledSupply >= deficit) break
 
-    const hasOrders = hasComponent(world, AttackTarget, eid)
-    if (!hasOrders) {
-      sendAttackMoveTo(world, eid, homeX + (Math.random() - 0.5) * 8, homeZ + (Math.random() - 0.5) * 8)
+    if (!hasComponent(world, AttackTarget, eid)) {
+      sendAttackMoveTo(world, eid, threatX + (Math.random() - 0.5) * 6, threatZ + (Math.random() - 0.5) * 6)
     }
 
     const ut = hasComponent(world, UnitTypeC, eid) ? UnitTypeC.id[eid] : -1
@@ -775,6 +824,48 @@ const WORKER_THREAT_RADIUS = 8   // detect threats this close to each worker
 const WORKER_FIGHT_MULTIPLIER = 1.5  // workers fight if workerHP >= enemyHP * this
 const WORKER_FLEE_DIST = 15      // how far workers run when fleeing
 
+// ═══════════════════════════════════════════════════════════════
+//  Nearby assist: idle AI units join when an ally is fighting
+// ═══════════════════════════════════════════════════════════════
+function tickNearbyAssist(world: IWorld, census: Census) {
+  // Collect fighting units (have an AttackTarget)
+  const fighters: number[] = []
+  for (const eid of census.combatUnits) {
+    if (hasComponent(world, AttackTarget, eid) && !hasComponent(world, Dead, eid)) {
+      fighters.push(eid)
+    }
+  }
+  if (fighters.length === 0) return
+
+  // For each idle combat unit, check if any fighting ally is nearby
+  for (const eid of census.combatUnits) {
+    if (hasComponent(world, Dead, eid)) continue
+    if (hasComponent(world, AttackTarget, eid)) continue // already fighting
+    if (hasComponent(world, WorkerC, eid)) continue // workers handled separately
+
+    const ex = Position.x[eid], ez = Position.z[eid]
+
+    for (const fighter of fighters) {
+      const fx = Position.x[fighter], fz = Position.z[fighter]
+      const dx = fx - ex, dz = fz - ez
+      const dist = Math.sqrt(dx * dx + dz * dz)
+      if (dist > ASSIST_RADIUS) continue
+
+      // Ally is fighting nearby — attack-move to the fight
+      const targetEid = AttackTarget.eid[fighter]
+      if (!hasComponent(world, Position, targetEid)) continue
+      const tx = Position.x[targetEid], tz = Position.z[targetEid]
+      addComponent(world, MoveTarget, eid)
+      MoveTarget.x[eid] = tx
+      MoveTarget.z[eid] = tz
+      addComponent(world, AttackMove, eid)
+      AttackMove.destX[eid] = tx
+      AttackMove.destZ[eid] = tz
+      break // one assist order per tick is enough
+    }
+  }
+}
+
 let workerFleeTimer = 0  // cooldown to avoid spamming flee commands
 
 function tickWorkerDefense(world: IWorld, census: Census, homeX: number, homeZ: number, decisions: string[]) {
@@ -820,22 +911,71 @@ function tickWorkerDefense(world: IWorld, census: Census, homeX: number, homeZ: 
 
   if (threatenedWorkers.length === 0 || nearbyEnemies.size === 0) return
 
-  // Calculate combat strength
+  // Check if any workers are being directly attacked by the enemy
+  let workersUnderAttack = false
+  for (const wid of threatenedWorkers) {
+    // A worker is "under attack" if an enemy has it as AttackTarget
+    for (const enemy of nearbyEnemies) {
+      if (hasComponent(world, AttackTarget, enemy) && AttackTarget.eid[enemy] === wid) {
+        workersUnderAttack = true
+        break
+      }
+    }
+    if (workersUnderAttack) break
+  }
+
+  // Count nearby friendly combat units (non-workers) that can handle the threat
+  let nearbyCombatHP = 0
+  for (const eid of census.combatUnits) {
+    if (hasComponent(world, Dead, eid)) continue
+    if (hasComponent(world, WorkerC, eid)) continue // don't count workers
+    // Check if combat unit is near the threatened area
+    for (const wid of threatenedWorkers) {
+      const dx = Position.x[eid] - Position.x[wid], dz = Position.z[eid] - Position.z[wid]
+      if (dx * dx + dz * dz < DEFENSE_RADIUS * DEFENSE_RADIUS) {
+        if (hasComponent(world, Health, eid)) nearbyCombatHP += Health.current[eid]
+        break
+      }
+    }
+  }
+
+  // Calculate enemy strength
   let enemyHP = 0
-  let enemyDMG = 0
   for (const eid of nearbyEnemies) {
     if (hasComponent(world, Health, eid)) enemyHP += Health.current[eid]
-    if (hasComponent(world, AttackC, eid)) enemyDMG += AttackC.damage[eid]
   }
 
-  let workerHP = 0
-  for (const wid of threatenedWorkers) {
-    if (hasComponent(world, Health, wid)) workerHP += Health.current[wid]
-  }
-
-  const shouldFight = workerHP >= enemyHP * WORKER_FIGHT_MULTIPLIER
+  // Workers only fight if:
+  // 1. Workers are being directly attacked, OR
+  // 2. Not enough combat units to handle the threat (combat HP < enemy HP)
+  const combatCanHandle = nearbyCombatHP >= enemyHP
+  const shouldFight = workersUnderAttack || !combatCanHandle
 
   if (shouldFight) {
+    let workerHP = 0
+    for (const wid of threatenedWorkers) {
+      if (hasComponent(world, Health, wid)) workerHP += Health.current[wid]
+    }
+
+    // Even when fighting, if workers are massively outgunned, flee instead
+    const totalFriendlyHP = workerHP + nearbyCombatHP
+    if (totalFriendlyHP < enemyHP * 0.5) {
+      // Totally outmatched — flee
+      if (workerFleeTimer <= 0) {
+        workerFleeTimer = 6
+        for (const wid of threatenedWorkers) {
+          if (hasComponent(world, WorkerC, wid)) WorkerC.state[wid] = 0
+          if (hasComponent(world, AttackTarget, wid)) removeComponent(world, AttackTarget, wid)
+          const wx = Position.x[wid], wz = Position.z[wid]
+          const dx = homeX - wx, dz = homeZ - wz
+          const d = Math.sqrt(dx * dx + dz * dz) || 1
+          sendMoveTo(world, wid, wx + (dx / d) * WORKER_FLEE_DIST, wz + (dz / d) * WORKER_FLEE_DIST)
+        }
+        decisions.push(`Workers FLEE! (${threatenedWorkers.length}w vs ${nearbyEnemies.size}e, outmatched)`)
+      }
+      return
+    }
+
     // Workers attack! Focus on the closest enemy
     let closestEnemy = -1
     let closestDist = Infinity
@@ -850,33 +990,22 @@ function tickWorkerDefense(world: IWorld, census: Census, homeX: number, homeZ: 
 
     if (closestEnemy >= 0) {
       for (const wid of threatenedWorkers) {
-        // Only command idle workers or workers gathering (not already fighting)
         if (hasComponent(world, AttackTarget, wid)) continue
         addComponent(world, AttackTarget, wid)
         AttackTarget.eid[wid] = closestEnemy
       }
-      decisions.push(`Workers FIGHT! (${threatenedWorkers.length}w vs ${nearbyEnemies.size}e)`)
+      decisions.push(`Workers FIGHT! (${threatenedWorkers.length}w vs ${nearbyEnemies.size}e, ${workersUnderAttack ? 'under attack' : 'no combat cover'})`)
     }
   } else {
-    // Workers flee! Run away from enemies toward home base
-    if (workerFleeTimer <= 0) {
-      workerFleeTimer = 6 // don't spam flee commands
-
-      for (const wid of threatenedWorkers) {
-        // Clear gathering state so they actually run
-        if (hasComponent(world, WorkerC, wid)) WorkerC.state[wid] = 0
-        if (hasComponent(world, AttackTarget, wid)) removeComponent(world, AttackTarget, wid)
-
-        // Flee toward home base
-        const wx = Position.x[wid], wz = Position.z[wid]
-        const dx = homeX - wx, dz = homeZ - wz
-        const d = Math.sqrt(dx * dx + dz * dz) || 1
-        const fleeX = wx + (dx / d) * WORKER_FLEE_DIST
-        const fleeZ = wz + (dz / d) * WORKER_FLEE_DIST
-        sendMoveTo(world, wid, fleeX, fleeZ)
+    // Combat units are handling it — workers stay out of the fight
+    // But stop any workers that were previously fighting
+    for (const wid of threatenedWorkers) {
+      if (hasComponent(world, AttackTarget, wid)) {
+        removeComponent(world, AttackTarget, wid)
+        WorkerC.state[wid] = 0 // reset to idle so they resume gathering
       }
-      decisions.push(`Workers FLEE! (${threatenedWorkers.length}w vs ${nearbyEnemies.size}e)`)
     }
+    decisions.push(`Workers STAND DOWN (combat handling ${nearbyEnemies.size}e)`)
   }
 }
 

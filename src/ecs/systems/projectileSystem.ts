@@ -36,7 +36,8 @@ export function projectileSystem(world: IWorld, dt: number) {
     const dist = Math.sqrt(dx * dx + dy * dy + dz * dz)
 
     if (dist < HIT_DIST) {
-      applyDamage(world, targetEid, Projectile.damage[eid])
+      // Pass projectile position as attack source direction (points back toward attacker)
+      applyDamage(world, targetEid, Projectile.damage[eid], Position.x[eid], Position.z[eid])
       const fx = projectileEffects.get(eid)
       spawnImpact(Position.x[eid], Position.y[eid], Position.z[eid], fx?.impact)
       projectileEffects.delete(eid)
@@ -100,7 +101,8 @@ export function projectileSystem(world: IWorld, dt: number) {
 
       // Apply splash damage to all nearby enemies
       const targetEid = ArcProjectile.targetEid[eid]
-      const attackerFaction = -1 // damage everything near impact
+      const srcX = ArcProjectile.startX[eid]
+      const srcZ = ArcProjectile.startZ[eid]
 
       if (splash > 0) {
         const nearby: number[] = []
@@ -114,13 +116,13 @@ export function projectileSystem(world: IWorld, dt: number) {
           if (dist <= splash) {
             // Damage falloff with distance
             const falloff = 1 - (dist / splash) * 0.5
-            applyDamage(world, other, damage * falloff)
+            applyDamage(world, other, damage * falloff, srcX, srcZ)
           }
         }
       } else {
         // Direct hit on target
         if (hasComponent(world, Health, targetEid) && !hasComponent(world, Dead, targetEid)) {
-          applyDamage(world, targetEid, damage)
+          applyDamage(world, targetEid, damage, srcX, srcZ)
         }
       }
 

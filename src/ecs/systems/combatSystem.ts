@@ -3,7 +3,7 @@ import type { IWorld } from 'bitecs'
 import {
   Position, Rotation, Faction, Health, AttackC, AttackTarget, MoveTarget,
   Dead, IsBuilding, MoveSpeed, Armor, PathFollower, Velocity, AttackMove,
-  CollisionRadius, UnitMode, MODE_ATTACK_MOVE, WorkerC,
+  CollisionRadius, UnitMode, MODE_ATTACK_MOVE, WorkerC, SightRadius,
 } from '../components'
 import { removePath } from '../../pathfinding/pathStore'
 import { spawnProjectile, spawnArcProjectile, projectileEffects } from '../archetypes'
@@ -276,11 +276,11 @@ function tryAttack(world: IWorld, attacker: number, target: number, dist: number
     projectileEffects.set(projEid, { impact: impactCfg, explosion: explosionCfg, smoke: smokeCfg })
   } else {
     // Melee: direct damage
-    applyDamage(world, target, damage)
+    applyDamage(world, target, damage, Position.x[attacker], Position.z[attacker])
   }
 }
 
-export function applyDamage(world: IWorld, target: number, damage: number) {
+export function applyDamage(world: IWorld, target: number, damage: number, fromX?: number, fromZ?: number) {
   if (!hasComponent(world, Health, target)) return
 
   const armor = hasComponent(world, Armor, target) ? Armor.value[target] : 0
@@ -290,5 +290,31 @@ export function applyDamage(world: IWorld, target: number, damage: number) {
 
   if (Health.current[target] <= 0) {
     addComponent(world, Dead, target)
+    return
+  }
+
+  // Retaliation: if unit has no attack target and attacker is outside sight, attack-move toward source
+  if (fromX !== undefined && fromZ !== undefined
+    && !hasComponent(world, AttackTarget, target)
+    && !hasComponent(world, IsBuilding, target)
+    && hasComponent(world, AttackC, target)
+    && hasComponent(world, MoveSpeed, target)
+  ) {
+    const sight = hasComponent(world, SightRadius, target) ? SightRadius.value[target] : 0
+    const tx = Position.x[target], tz = Position.z[target]
+    const dx = fromX - tx, dz = fromZ - tz
+    const dist = Math.sqrt(dx * dx + dz * dz)
+    // Attacker is outside vision range — retaliate toward source
+    if (dist > sight) {
+      addComponent(world, AttackTarget, target)
+      // No specific target eid — use attack-move toward attacker position
+      removeComponent(world, AttackTarget, target)
+      addComponent(world, MoveTarget, target)
+      MoveTarget.x[target] = fromX
+      MoveTarget.z[target] = fromZ
+      addComponent(world, AttackMove, target)
+      AttackMove.destX[target] = fromX
+      AttackMove.destZ[target] = fromZ
+    }
   }
 }
