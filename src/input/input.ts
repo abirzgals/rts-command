@@ -30,6 +30,7 @@ export let mouseX = 0
 export let mouseY = 0
 export let mouseWorldX = 0
 export let mouseWorldZ = 0
+export let hoverEid = -1 // entity under mouse cursor
 let isDragging = false
 let dragStartX = 0
 let dragStartY = 0
@@ -283,6 +284,26 @@ function onMouseMove(e: MouseEvent, _world: IWorld) {
     mouseWorldX = hit.x
     mouseWorldZ = hit.z
     updateBuildPreview()
+
+    // Find entity under cursor for hover highlight
+    const nearby: number[] = []
+    spatialHash.query(hit.x, hit.z, 3, nearby)
+    hoverEid = -1
+    let bestDist = Infinity
+    for (const eid of nearby) {
+      if (!hasComponent(_world, Selectable, eid)) continue
+      if (hasComponent(_world, Dead, eid)) continue
+      const dx = Position.x[eid] - hit.x
+      const dz = Position.z[eid] - hit.z
+      const dist = Math.sqrt(dx * dx + dz * dz)
+      const radius = Selectable.radius[eid]
+      if (dist < radius + 1 && dist < bestDist) {
+        bestDist = dist
+        hoverEid = eid
+      }
+    }
+  } else {
+    hoverEid = -1
   }
 
   // Update selection box visual (suppress if both buttons held = rotating)

@@ -11,10 +11,40 @@ import { scene } from '../../render/engine'
 import { getPath } from '../../pathfinding/pathStore'
 import { getQueue, type Command } from '../commandQueue'
 import { FACTION_PLAYER } from '../../game/config'
+import { hoverEid } from '../../input/input'
 
 const selectedQuery = defineQuery([Selected, Position])
 
 const _positions: { x: number; y: number; z: number; radius: number }[] = []
+
+// ── Hover highlight ring ────────────────────────────────────
+let hoverRing: THREE.Line | null = null
+let lastHoverEid = -1
+
+function ensureHoverRing() {
+  if (hoverRing) return
+  const segments = 48
+  const points: THREE.Vector3[] = []
+  for (let i = 0; i <= segments; i++) {
+    const angle = (i / segments) * Math.PI * 2
+    points.push(new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle)))
+  }
+  const geo = new THREE.BufferGeometry().setFromPoints(points)
+  const mat = new THREE.LineDashedMaterial({
+    color: 0xffffff,
+    dashSize: 0.3,
+    gapSize: 0.2,
+    transparent: true,
+    opacity: 0.6,
+    depthTest: false,
+  })
+  hoverRing = new THREE.Line(geo, mat)
+  hoverRing.computeLineDistances()
+  hoverRing.frustumCulled = false
+  hoverRing.renderOrder = 89
+  hoverRing.visible = false
+  scene.add(hoverRing)
+}
 
 // Rally point line
 let rallyLine: THREE.Line | null = null
@@ -44,6 +74,26 @@ function ensureRallyVisuals() {
 }
 
 export function selectionVisualSystem(world: IWorld, _dt: number) {
+  // ── Hover highlight ──
+  ensureHoverRing()
+  if (hoverEid >= 0 && hasComponent(world, Position, hoverEid) && !hasComponent(world, Dead, hoverEid)) {
+    const r = hasComponent(world, Selectable, hoverEid) ? Selectable.radius[hoverEid] : 0.5
+    const hx = Position.x[hoverEid]
+    const hz = Position.z[hoverEid]
+    const hy = getTerrainHeight(hx, hz)
+    hoverRing!.position.set(hx, hy + 0.15, hz)
+    hoverRing!.scale.setScalar(r + 0.2)
+    hoverRing!.visible = true
+    // Re-compute line distances when scale changes
+    if (lastHoverEid !== hoverEid) {
+      hoverRing!.computeLineDistances()
+      lastHoverEid = hoverEid
+    }
+  } else {
+    hoverRing!.visible = false
+    lastHoverEid = -1
+  }
+
   const selected = selectedQuery(world)
   _positions.length = 0
 
