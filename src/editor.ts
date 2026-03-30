@@ -36,6 +36,8 @@ interface ModelConfig {
   acceleration?: number  // units/sec²
   maxSlope?: number      // max height delta per cell
   visionRadius?: number  // fog of war sight range
+  burstSize?: number     // shots per burst (1 = single shot)
+  burstDelay?: number    // seconds between shots in burst
 }
 
 interface EffectsConfig {
@@ -55,7 +57,7 @@ const ALL_MODELS: ModelConfig[] = [
     hp: 40, speed: 3.5, armor: 0, damage: 5, range: 1.2, cooldown: 1.5, splash: 0, selectionRadius: 0.4, collisionRadius: 0.4,
     turnRate: 6.0, acceleration: 8.0, maxSlope: 2.0, visionRadius: 8 },
   { key: 'marine', name: 'Marine', category: 'units', modelUrl: '/models/marine.glb', scale: 1.0, rotationOffset: 0, icon: '\u2694',
-    hp: 55, speed: 3.0, armor: 0, damage: 8, range: 6, cooldown: 0.8, splash: 0, selectionRadius: 0.4, collisionRadius: 0.4,
+    hp: 55, speed: 3.0, armor: 0, damage: 8, range: 6, cooldown: 1.5, burstSize: 3, burstDelay: 0.15, splash: 0, selectionRadius: 0.4, collisionRadius: 0.4,
     turnRate: 5.0, acceleration: 7.0, maxSlope: 2.5, visionRadius: 10 },
   { key: 'tank', name: 'Tank', category: 'units', modelUrl: '/models/tank-v3.glb', scale: 0.55, rotationOffset: Math.PI, icon: '\u2617',
     hp: 160, speed: 2.0, armor: 2, damage: 30, range: 8, cooldown: 2.5, splash: 1.5, selectionRadius: 1.2, collisionRadius: 1.2,
@@ -225,7 +227,9 @@ const STAT_DEFS: StatDef[] = [
   { key: 'armor', label: 'Armor', min: 0, max: 10, step: 1 },
   { key: 'damage', label: 'Damage', min: 1, max: 100, step: 1 },
   { key: 'range', label: 'Range', min: 0.5, max: 20, step: 0.5 },
-  { key: 'cooldown', label: 'Cooldown', min: 0.1, max: 5, step: 0.1, suffix: 's' },
+  { key: 'cooldown', label: 'Reload', min: 0.1, max: 10, step: 0.1, suffix: 's' },
+  { key: 'burstSize', label: 'Burst', min: 1, max: 10, step: 1, suffix: ' shots' },
+  { key: 'burstDelay', label: 'Burst Rate', min: 0.05, max: 1, step: 0.05, suffix: 's' },
   { key: 'splash', label: 'Splash', min: 0, max: 5, step: 0.1 },
   { key: 'selectionRadius', label: 'Sel. Radius', min: 0.1, max: 3, step: 0.05 },
   { key: 'collisionRadius', label: 'Col. Radius', min: 0.1, max: 3, step: 0.05 },
@@ -2268,7 +2272,7 @@ function buildExportJSON(): string {
 
   // Add stats if they exist
   const stats: Record<string, any> = {}
-  for (const k of ['hp', 'speed', 'armor', 'damage', 'range', 'cooldown', 'splash', 'visionRadius'] as const) {
+  for (const k of ['hp', 'speed', 'armor', 'damage', 'range', 'cooldown', 'splash', 'visionRadius', 'burstSize', 'burstDelay'] as const) {
     if ((config as any)[k] !== undefined) stats[k] = (config as any)[k]
   }
   if (Object.keys(stats).length > 0) modelConfig.stats = stats
@@ -2325,11 +2329,11 @@ function buildFullConfigJSON(): string {
       entry.scale = config.scale
       entry.rotationOffset = config.rotationOffset
       entry.rotationOffsetDeg = Math.round(config.rotationOffset * 180 / Math.PI)
-      for (const k of ['hp', 'speed', 'armor', 'damage', 'range', 'cooldown', 'splash', 'selectionRadius', 'collisionRadius', 'turnRate', 'acceleration', 'maxSlope', 'visionRadius'] as const) {
+      for (const k of ['hp', 'speed', 'armor', 'damage', 'range', 'cooldown', 'splash', 'selectionRadius', 'collisionRadius', 'turnRate', 'acceleration', 'maxSlope', 'visionRadius', 'burstSize', 'burstDelay'] as const) {
         if ((config as any)[k] !== undefined) entry[k] = (config as any)[k]
       }
     } else {
-      for (const k of ['hp', 'speed', 'armor', 'damage', 'range', 'cooldown', 'splash', 'selectionRadius', 'collisionRadius', 'turnRate', 'acceleration', 'maxSlope', 'visionRadius'] as const) {
+      for (const k of ['hp', 'speed', 'armor', 'damage', 'range', 'cooldown', 'splash', 'selectionRadius', 'collisionRadius', 'turnRate', 'acceleration', 'maxSlope', 'visionRadius', 'burstSize', 'burstDelay'] as const) {
         if ((m as any)[k] !== undefined) entry[k] = (m as any)[k]
       }
     }
@@ -2425,6 +2429,8 @@ function applyLoadedConfig(data: Record<string, any>) {
     if (saved.acceleration !== undefined) m.acceleration = saved.acceleration
     if (saved.maxSlope !== undefined) m.maxSlope = saved.maxSlope
     if (saved.visionRadius !== undefined) m.visionRadius = saved.visionRadius
+    if (saved.burstSize !== undefined) m.burstSize = saved.burstSize
+    if (saved.burstDelay !== undefined) m.burstDelay = saved.burstDelay
 
     // Restore effects
     if (saved.firePoint || saved.muzzle || saved.projectile) {

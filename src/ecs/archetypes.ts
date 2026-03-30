@@ -116,6 +116,10 @@ export function spawnUnit(
     AttackC.cooldown[eid] = cfgStat(def, 'cooldown') ?? def.attack.cooldown
     AttackC.timer[eid] = 0
     AttackC.splash[eid] = cfgStat(def, 'splash') ?? def.attack.splash ?? 0
+    const burst = cfgStat(def, 'burstSize') ?? 1
+    AttackC.burstSize[eid] = burst
+    AttackC.burstDelay[eid] = cfgStat(def, 'burstDelay') ?? 0.2
+    AttackC.burstRemaining[eid] = burst
   }
 
   if (unitType === UT_WORKER) {

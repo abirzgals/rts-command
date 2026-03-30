@@ -182,7 +182,22 @@ function tryAttack(world: IWorld, attacker: number, target: number, dist: number
 
   const damage = AttackC.damage[attacker]
   const range = AttackC.range[attacker]
-  AttackC.timer[attacker] = AttackC.cooldown[attacker]
+  const burstSize = AttackC.burstSize[attacker] || 1
+
+  // Burst fire: use burstDelay between shots, full cooldown after last shot
+  if (burstSize > 1) {
+    AttackC.burstRemaining[attacker]--
+    if (AttackC.burstRemaining[attacker] <= 0) {
+      // Burst finished — full reload
+      AttackC.timer[attacker] = AttackC.cooldown[attacker]
+      AttackC.burstRemaining[attacker] = burstSize
+    } else {
+      // Next shot in burst
+      AttackC.timer[attacker] = AttackC.burstDelay[attacker]
+    }
+  } else {
+    AttackC.timer[attacker] = AttackC.cooldown[attacker]
+  }
 
   if (range > 2) {
     const px = Position.x[attacker]

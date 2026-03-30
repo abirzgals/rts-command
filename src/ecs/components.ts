@@ -35,9 +35,12 @@ export const Health = defineComponent({
 export const AttackC = defineComponent({
   damage: Types.f32,
   range: Types.f32,
-  cooldown: Types.f32, // seconds between attacks
-  timer: Types.f32,    // time until next attack
+  cooldown: Types.f32, // reload time after burst (seconds)
+  timer: Types.f32,    // time until next shot/reload
   splash: Types.f32,   // splash radius (0 = single target)
+  burstSize: Types.ui8,   // shots per burst (0 or 1 = single shot)
+  burstDelay: Types.f32,  // time between shots in a burst (seconds)
+  burstRemaining: Types.ui8, // shots left in current burst
 })
 
 export const MoveSpeed = defineComponent({
