@@ -314,9 +314,9 @@ export function createGasGeyserGeometry(): THREE.BufferGeometry {
 
 export function createProjectileGeometry(): THREE.BufferGeometry {
   return merge(
-    part(_sphere, 0, 0, 0, 0, 0, 0, 0.08, 0.08, 0.08),
+    part(_sphere, 0, 0, 0, 0, 0, 0, 0.2, 0.2, 0.2),
     // Trail
-    part(_cone, 0, 0, -0.12, Math.PI / 2, 0, 0, 0.04, 0.16, 0.04),
+    part(_cone, 0, 0, -0.25, Math.PI / 2, 0, 0, 0.1, 0.4, 0.1),
   )
 }
 

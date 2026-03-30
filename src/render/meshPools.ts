@@ -367,7 +367,7 @@ export async function createMeshPools() {
   // ── Projectiles (ID 30 = bullets, ID 31 = tank shells) ──
   registerPool(30, new MeshPool(
     createProjectileGeometry(),
-    new THREE.MeshBasicMaterial({ color: 0xffee44, transparent: true, opacity: 0.9 }),
+    new THREE.MeshBasicMaterial({ color: 0xffee44 }),
     MAX_PROJECTILES,
   ))
 
