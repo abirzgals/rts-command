@@ -56,6 +56,7 @@ const buildModeEl = document.getElementById('build-mode')!
 // ── Build preview ghost ──────────────────────────────────────
 let buildPreview: THREE.Mesh | null = null
 let buildPreviewRadius = 0
+let buildPreviewOwnsGeo = false
 const GRID_SNAP = 2 // snap to 2-unit grid for buildings
 
 function snapToGrid(v: number): number {
@@ -68,8 +69,9 @@ function createBuildPreview(radius: number, meshPoolId: number) {
   // Try to clone the actual building model from its mesh pool
   const pool = getPool(meshPoolId)
   if (pool) {
-    const srcGeo = pool.mesh.geometry
-    const ghostMat = new THREE.MeshPhongMaterial({
+    const srcGeo = pool.mesh.geometry.clone()
+    srcGeo.computeBoundingSphere()
+    const ghostMat = new THREE.MeshBasicMaterial({
       color: 0x44ff88,
       transparent: true,
       opacity: 0.4,
@@ -77,6 +79,7 @@ function createBuildPreview(radius: number, meshPoolId: number) {
       side: THREE.DoubleSide,
     })
     buildPreview = new THREE.Mesh(srcGeo, ghostMat)
+    buildPreviewOwnsGeo = true
   } else {
     // Fallback: flat cylinder
     const geo = new THREE.CylinderGeometry(radius, radius, 0.3, 24)
@@ -85,8 +88,10 @@ function createBuildPreview(radius: number, meshPoolId: number) {
       side: THREE.DoubleSide, depthWrite: false,
     })
     buildPreview = new THREE.Mesh(geo, mat)
+    buildPreviewOwnsGeo = true
   }
 
+  buildPreview.frustumCulled = false
   buildPreview.renderOrder = 50
   buildPreviewRadius = radius
 
@@ -107,7 +112,7 @@ function createBuildPreview(radius: number, meshPoolId: number) {
 function removeBuildPreview() {
   if (buildPreview) {
     scene.remove(buildPreview)
-    // Only dispose material (geometry is shared from the pool)
+    if (buildPreviewOwnsGeo) buildPreview.geometry.dispose()
     ;(buildPreview.material as THREE.Material).dispose()
     buildPreview.children.forEach(c => {
       const m = c as THREE.Mesh
@@ -115,6 +120,7 @@ function removeBuildPreview() {
       ;(m.material as THREE.Material).dispose()
     })
     buildPreview = null
+    buildPreviewOwnsGeo = false
   }
 }
 
@@ -761,6 +767,20 @@ function onKeyDown(e: KeyboardEvent, world: IWorld) {
   }
 }
 
+function showMobileBuildConfirm(world: IWorld) {
+  buildModeEl.innerHTML = `Tap to reposition | <button id="build-confirm-btn" style="margin:0 6px;padding:4px 16px;border:1px solid #0f0;border-radius:4px;background:rgba(0,120,0,0.8);color:#fff;cursor:pointer;font-size:14px">Build</button><button id="build-cancel-btn" style="padding:4px 12px;border:1px solid #f44;border-radius:4px;background:rgba(120,0,0,0.8);color:#fff;cursor:pointer;font-size:14px">Cancel</button>`
+  document.getElementById('build-confirm-btn')?.addEventListener('click', (e) => {
+    e.stopPropagation()
+    placeBuildingAtCursor(world)
+  })
+  document.getElementById('build-cancel-btn')?.addEventListener('click', (e) => {
+    e.stopPropagation()
+    gameState.buildMode = null
+    buildModeEl.style.display = 'none'
+    removeBuildPreview()
+  })
+}
+
 function enterBuildMode(buildingType: number) {
   const def = BUILDING_DEFS[buildingType]
   if (!def) return
@@ -999,7 +1019,6 @@ function onTouchEnd(e: TouchEvent, world: IWorld) {
     if (gameState.buildMode !== null) {
       const def = BUILDING_DEFS[gameState.buildMode]
       if (def && !gameState.canAfford(FACTION_PLAYER, def.cost)) {
-        // Can't afford — cancel build mode
         gameState.buildMode = null
         buildModeEl.style.display = 'none'
         removeBuildPreview()
@@ -1008,7 +1027,9 @@ function onTouchEnd(e: TouchEvent, world: IWorld) {
         if (hit) {
           mouseWorldX = hit.x
           mouseWorldZ = hit.z
-          placeBuildingAtCursor(world)
+          updateBuildPreview()
+          // Show confirm/cancel buttons for mobile
+          showMobileBuildConfirm(world)
         }
       }
     } else if (isMoveMode) {
