@@ -168,6 +168,19 @@ export function aiSystem(world: IWorld, dt: number) {
   // Economy runs in every state (except maybe during all-in attack)
   tickEconomy(world, census, res, homeX, homeZ, decisions)
 
+  // Clear stale movement for idle units at home so they can auto-acquire
+  for (const eid of census.combatUnits) {
+    const d = Math.sqrt((Position.x[eid] - homeX) ** 2 + (Position.z[eid] - homeZ) ** 2)
+    if (d < DEFENSE_RADIUS && !hasComponent(world, AttackTarget, eid)) {
+      // At home and idle — clear MoveTarget so combat auto-acquire works
+      if (hasComponent(world, MoveTarget, eid)) {
+        const mx = MoveTarget.x[eid], mz = MoveTarget.z[eid]
+        const dToMoveTarget = Math.sqrt((mx - Position.x[eid]) ** 2 + (mz - Position.z[eid]) ** 2)
+        if (dToMoveTarget < 3) removeComponent(world, MoveTarget, eid) // arrived, clear
+      }
+    }
+  }
+
   // Worker self-defense
   tickWorkerDefense(world, census, homeX, homeZ, decisions)
 
@@ -768,14 +781,28 @@ function tickWorkerDefense(world: IWorld, census: Census, homeX: number, homeZ: 
   workerFleeTimer = Math.max(0, workerFleeTimer - AI_TICK)
   if (census.workers.length === 0) return
 
-  // Find threats near any worker
+  // First: recall workers that chased too far from home
+  for (const wid of census.workers) {
+    if (hasComponent(world, Dead, wid)) continue
+    const wx = Position.x[wid], wz = Position.z[wid]
+    const dHome = Math.sqrt((wx - homeX) ** 2 + (wz - homeZ) ** 2)
+    // If worker is far from home AND fighting, pull them back
+    if (dHome > DEFENSE_RADIUS + 10 && hasComponent(world, AttackTarget, wid)) {
+      removeComponent(world, AttackTarget, wid)
+      WorkerC.state[wid] = 0
+      sendMoveTo(world, wid, homeX + (Math.random() - 0.5) * 6, homeZ + (Math.random() - 0.5) * 6)
+    }
+  }
+
+  // Find threats near home base only (not far away workers)
   const threatenedWorkers: number[] = []
   const nearbyEnemies = new Set<number>()
 
   for (const wid of census.workers) {
     if (hasComponent(world, Dead, wid)) continue
-    const wx = Position.x[wid]
-    const wz = Position.z[wid]
+    const wx = Position.x[wid], wz = Position.z[wid]
+    // Only consider workers near home
+    if (Math.sqrt((wx - homeX) ** 2 + (wz - homeZ) ** 2) > DEFENSE_RADIUS + 5) continue
 
     const _near: number[] = []
     spatialHash.query(wx, wz, WORKER_THREAT_RADIUS, _near)

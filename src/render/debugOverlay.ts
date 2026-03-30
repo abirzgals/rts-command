@@ -76,6 +76,7 @@ export function toggleDebug() {
   }
   if (navGridMesh) navGridMesh.visible = enabled
   if (!enabled && unitInfoDiv) unitInfoDiv.style.display = 'none'
+  if (!enabled && aiDebugDiv) aiDebugDiv.style.display = 'none'
 
   // Show/hide legend
   let legend = document.getElementById('debug-legend')

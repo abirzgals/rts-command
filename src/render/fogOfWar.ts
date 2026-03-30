@@ -230,6 +230,9 @@ export function renderFogOverlay(rendererRef: THREE.WebGLRenderer, cam: THREE.Ca
 
 // ── Enemy visibility culling ────────────────────────────────
 
+// Track which enemy buildings have been "seen" by the player
+const seenBuildings = new Set<number>()
+
 // Snapshots: enemy buildings last seen in fog — kept visible until re-explored
 interface FogSnapshot {
   poolId: number
@@ -282,9 +285,14 @@ function updateEnemyVisibility(world: IWorld) {
     // Instanced mesh pools (buildings, resources)
     const pool = getPool(poolId)
     if (pool) {
-      // Buildings: show if explored (snapshot behavior)
-      // Units/resources: show only if currently visible
-      const show = isBuilding ? explored : visible
+      let show = false
+      if (isBuilding) {
+        // Buildings: show if currently visible OR if previously seen (snapshot)
+        if (visible) { seenBuildings.add(eid); show = true }
+        else if (seenBuildings.has(eid) && explored) { show = true }
+      } else {
+        show = visible
+      }
 
       if (!show) {
         pool.updateTransform(eid, 0, -9999, 0, 0)
