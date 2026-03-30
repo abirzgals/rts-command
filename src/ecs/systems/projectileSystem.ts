@@ -6,7 +6,7 @@ import { getPool } from '../../render/meshPools'
 import { projectileMeshes, removeProjectileMesh } from '../archetypes'
 import { getTerrainHeight } from '../../terrain/heightmap'
 import { spatialHash } from '../../globals'
-import { spawnExplosion, spawnSmoke, spawnMuzzleFlash } from '../../render/effects'
+import { spawnExplosion, spawnSmoke, spawnMuzzleFlash, spawnRocketTrail, spawnFireExplosion } from '../../render/effects'
 
 const projectileQuery = defineQuery([Projectile, Position])
 const arcQuery = defineQuery([ArcProjectile, Position])
@@ -66,8 +66,13 @@ export function projectileSystem(world: IWorld, dt: number) {
       const splash = ArcProjectile.splash[eid]
       const damage = ArcProjectile.damage[eid]
 
-      // Explosion effect
-      spawnExplosion(tx, ty, tz, splash)
+      // Explosion effect — fire explosion for rockets (low arc), normal for shells
+      const arcH = ArcProjectile.arcHeight[eid]
+      if (arcH <= 3) {
+        spawnFireExplosion(tx, ty, tz, splash + 1)
+      } else {
+        spawnExplosion(tx, ty, tz, splash)
+      }
 
       // Apply splash damage to all nearby enemies
       const targetEid = ArcProjectile.targetEid[eid]
@@ -117,8 +122,12 @@ export function projectileSystem(world: IWorld, dt: number) {
     Position.y[eid] = y
     Position.z[eid] = z
 
-    // Spawn smoke trail every few frames
-    if (Math.random() < 0.4) {
+    // Smoke trail for all arc projectiles; thick rocket trail for low arcHeight
+    if (arcH <= 3) {
+      // Rocket: thick fire + smoke trail every frame
+      spawnRocketTrail(x, y - 0.2, z)
+    } else if (Math.random() < 0.4) {
+      // Shell: occasional smoke puff
       spawnSmoke(x, y - 0.3, z, 1)
     }
   }

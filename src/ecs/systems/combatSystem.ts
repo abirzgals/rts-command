@@ -8,7 +8,7 @@ import { removePath } from '../../pathfinding/pathStore'
 import { spawnProjectile, spawnArcProjectile } from '../archetypes'
 import { UnitTypeC } from '../components'
 import { UT_TANK, UT_JEEP, UT_ROCKET } from '../../game/config'
-import { spawnMuzzleFlash } from '../../render/effects'
+import { spawnMuzzleFlash, spawnRocketTrail, spawnFireExplosion, spawnSmoke } from '../../render/effects'
 import { spatialHash } from '../../globals'
 import { editorConfig } from '../../render/meshPools'
 import { getAnimManager } from '../../render/animatedMeshManager'
@@ -183,14 +183,20 @@ function tryAttack(world: IWorld, attacker: number, target: number, dist: number
     const projCfg = key ? editorConfig?.[key]?.projectile : null
     const useShell = projCfg?.type === 'shell' && splash > 0
 
-    const projSpeed = projCfg?.speed ?? (useShell ? 15 : 25)
+    const projType = projCfg?.type ?? (splash > 0 ? 'shell' : 'bullet')
+    const projSpeed = projCfg?.speed ?? (projType === 'shell' ? 15 : projType === 'rocket' ? 8 : 25)
 
-    if (useShell) {
+    if (projType === 'shell') {
       spawnArcProjectile(world, fp.x, fp.z, target, damage, splash, projCfg?.arcHeight)
       spawnMuzzleFlash(fp.x, fp.y, fp.z, muzzleCfg)
       const poolId = MeshRef.poolId[attacker]
       const animMgr = getAnimManager(poolId)
       if (animMgr) animMgr.triggerRecoil(attacker)
+    } else if (projType === 'rocket') {
+      // Rocket: slower, arc trajectory, smoke trail + fire explosion
+      spawnArcProjectile(world, fp.x, fp.z, target, damage, splash, projCfg?.arcHeight ?? 2)
+      spawnMuzzleFlash(fp.x, fp.y, fp.z, muzzleCfg)
+      spawnSmoke(fp.x, fp.y, fp.z, 5)
     } else {
       spawnProjectile(world, fp.x, fp.z, target, damage, projSpeed, projCfg)
       spawnMuzzleFlash(fp.x, fp.y, fp.z, muzzleCfg)

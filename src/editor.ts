@@ -40,7 +40,7 @@ interface ModelConfig {
 interface EffectsConfig {
   firePoint: { x: number; y: number; z: number; boneName?: string; normalX?: number; normalY?: number; normalZ?: number }
   muzzle: { color: string; intensity: number; range: number; duration: number }
-  projectile: { type: 'bullet' | 'shell'; color: string; size: number; speed: number; arcHeight: number }
+  projectile: { type: 'bullet' | 'shell' | 'rocket'; color: string; size: number; speed: number; arcHeight: number }
   impact: { type: 'sparks' | 'fire' | 'dust' | 'explosion'; color: string; size: number; particles: number; lifetime: number }
   explosion: { colors: string[]; radius: number; particles: number }
   smoke: { color: string; opacity: number; lifetime: number; count: number }
@@ -1214,7 +1214,7 @@ function wireEffectControls() {
   // ── Projectile ──
   const projType = document.getElementById('proj-type') as HTMLSelectElement
   projType.addEventListener('change', () => {
-    effects.projectile.type = projType.value as 'bullet' | 'shell'
+    effects.projectile.type = projType.value as 'bullet' | 'shell' | 'rocket'
     updateProjDefaults()
   })
 

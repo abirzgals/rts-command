@@ -306,10 +306,133 @@ export function updateEffects(dt: number) {
   }
 
   // ── Resource effects (crystals + gas) ─────────────────────
+  updateFireParticles(dt)
   updateResourceEffects(dt)
 }
 
 // ═══════════════════════════════════════════════════════════════
+// ── Rocket smoke trail ──────────────────────────────────────
+// Spawned every frame while rocket is in flight
+
+const rocketTrailGeo = new THREE.SphereGeometry(0.2, 4, 4)
+
+export function spawnRocketTrail(x: number, y: number, z: number) {
+  for (let i = 0; i < 3; i++) {
+    const mat = smokeMat.clone()
+    mat.color.setHex(i === 0 ? 0xff6600 : 0x888888) // first = fire, rest = smoke
+    mat.opacity = i === 0 ? 0.8 : 0.5
+    const mesh = new THREE.Mesh(rocketTrailGeo, mat)
+    mesh.position.set(
+      x + (Math.random() - 0.5) * 0.2,
+      y + (Math.random() - 0.5) * 0.2,
+      z + (Math.random() - 0.5) * 0.2,
+    )
+    scene.add(mesh)
+    smokeParticles.push({
+      mesh,
+      life: 0,
+      maxLife: 0.8 + Math.random() * 0.6,
+      vx: (Math.random() - 0.5) * 0.5,
+      vy: 0.5 + Math.random() * 1.0,
+      vz: (Math.random() - 0.5) * 0.5,
+    })
+  }
+}
+
+// ── Fire explosion with long-living fire particles ──────────
+
+interface FireParticle {
+  mesh: THREE.Mesh
+  life: number
+  maxLife: number
+  vx: number; vy: number; vz: number
+}
+
+const fireParticles: FireParticle[] = []
+const fireGeo = new THREE.SphereGeometry(0.25, 4, 4)
+
+export function spawnFireExplosion(x: number, y: number, z: number, radius = 3.0) {
+  // Big central explosion
+  spawnExplosion(x, y, z, radius)
+
+  // Fire flash light
+  const light = new THREE.PointLight(0xff4400, 15, 20)
+  light.position.set(x, y + 1.5, z)
+  scene.add(light)
+  muzzleFlashes.push({ light, life: 0.3 })
+
+  // Long-living fire particles that linger on the ground
+  const FIRE_COUNT = 15
+  for (let i = 0; i < FIRE_COUNT; i++) {
+    const angle = Math.random() * Math.PI * 2
+    const dist = Math.random() * radius * 0.8
+    const fx = x + Math.cos(angle) * dist
+    const fz = z + Math.sin(angle) * dist
+
+    const fireMat = new THREE.MeshBasicMaterial({
+      color: 0xff6600,
+      transparent: true,
+      opacity: 0.9,
+      depthWrite: false,
+    })
+    const mesh = new THREE.Mesh(fireGeo, fireMat)
+    mesh.position.set(fx, y + 0.3 + Math.random() * 0.5, fz)
+    mesh.scale.setScalar(0.3 + Math.random() * 0.5)
+    scene.add(mesh)
+
+    fireParticles.push({
+      mesh,
+      life: 0,
+      maxLife: 2.0 + Math.random() * 3.0, // 2-5 seconds of fire
+      vx: (Math.random() - 0.5) * 0.3,
+      vy: 0.3 + Math.random() * 0.8,
+      vz: (Math.random() - 0.5) * 0.3,
+    })
+  }
+
+  // Heavy smoke
+  spawnSmoke(x, y + 0.5, z, 15)
+}
+
+function updateFireParticles(dt: number) {
+  for (let i = fireParticles.length - 1; i >= 0; i--) {
+    const p = fireParticles[i]
+    p.life += dt
+
+    if (p.life >= p.maxLife) {
+      scene.remove(p.mesh)
+      ;(p.mesh.material as THREE.Material).dispose()
+      fireParticles.splice(i, 1)
+      continue
+    }
+
+    const t = p.life / p.maxLife
+
+    // Rise slowly, flicker
+    p.mesh.position.x += p.vx * dt
+    p.mesh.position.y += p.vy * dt
+    p.mesh.position.z += p.vz * dt
+
+    // Color transition: orange → red → dark
+    const mat = p.mesh.material as THREE.MeshBasicMaterial
+    if (t < 0.3) {
+      mat.color.setHex(0xff6600) // orange
+    } else if (t < 0.6) {
+      mat.color.setHex(0xff2200) // red
+    } else {
+      mat.color.setHex(0x441100) // dark ember
+    }
+
+    // Flicker size
+    const flicker = 0.8 + Math.sin(p.life * 15) * 0.2
+    const scale = (1 - t * 0.5) * flicker
+    p.mesh.scale.setScalar(scale * 0.5)
+
+    // Fade out
+    mat.opacity = (1 - t) * 0.8
+  }
+}
+
 // Resource node ambient effects
 // ═══════════════════════════════════════════════════════════════
 
