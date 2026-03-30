@@ -251,7 +251,7 @@ function hasFoundPlayerBase(): boolean {
 /** Reset AI state — call after team swap so AI re-evaluates from scratch */
 export function resetAIState() {
   aiState = AIState.SCOUTING
-  aiTimer = 0
+  aiTimer = AI_TICK // tick immediately on next frame
   scoutEid = null
   scoutWaypoints = []
   scoutWaypointIdx = 0

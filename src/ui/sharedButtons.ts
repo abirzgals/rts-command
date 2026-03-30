@@ -12,8 +12,10 @@ import { UT_WORKER, UT_MARINE, UT_TANK, UT_JEEP, UT_ROCKET, UNIT_DEFS, BT_COMMAN
 import { getPlayerFaction, swapPlayerFaction } from '../game/factions'
 import { spawnUnit, spawnBuilding } from '../ecs/archetypes'
 import { mouseWorldX, mouseWorldZ } from '../input/input'
-import { Faction } from '../ecs/components'
+import { Faction, MoveTarget, AttackTarget, AttackMove, PathFollower, Velocity } from '../ecs/components'
+import { hasComponent } from 'bitecs'
 import { resetAIState } from '../ecs/systems/aiSystem'
+import { removePath } from '../pathfinding/pathStore'
 import { setFogViewFaction } from '../render/fogOfWar'
 
 const selectedQuery = defineQuery([Selected])
@@ -200,10 +202,27 @@ function swapTeams() {
     removeComponent(w, Selected, eid)
   }
 
-  // 3. Update fog view to new player faction
+  // 3. Clear stale commands on new AI faction's units (they had player commands)
+  const aiFaction = getPlayerFaction() === 0 ? 1 : 0
+  const allUnits = factionQuery(w)
+  for (const eid of allUnits) {
+    if (Faction.id[eid] !== aiFaction) continue
+    // Clear player-issued commands so AI can take over
+    if (hasComponent(w, MoveTarget, eid)) removeComponent(w, MoveTarget, eid)
+    if (hasComponent(w, AttackTarget, eid)) removeComponent(w, AttackTarget, eid)
+    if (hasComponent(w, AttackMove, eid)) removeComponent(w, AttackMove, eid)
+    if (hasComponent(w, PathFollower, eid)) {
+      removePath(PathFollower.pathId[eid])
+      removeComponent(w, PathFollower, eid)
+    }
+    Velocity.x[eid] = 0
+    Velocity.z[eid] = 0
+  }
+
+  // 4. Update fog view to new player faction
   setFogViewFaction(getPlayerFaction())
 
-  // 4. Reset AI state so it re-evaluates with its new faction
+  // 5. Reset AI state so it re-evaluates with its new faction
   resetAIState()
 
   console.log(`[DEBUG] Teams swapped! Now controlling faction ${getPlayerFaction()}`)
