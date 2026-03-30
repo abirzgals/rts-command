@@ -22,6 +22,7 @@ import { isWorldWalkable } from '../pathfinding/navGrid'
 import { findPathHierarchical } from '../pathfinding/astar'
 import { removePath } from '../pathfinding/pathStore'
 import { pushCommand, clearQueue, getQueue, type Command } from '../ecs/commandQueue'
+import { matchesAction, getMouseMode, loadBindings, getBindingLabel } from './keybindings'
 
 const _vec3 = new THREE.Vector3()
 
@@ -213,6 +214,7 @@ import { setTouchPan } from '../globals'
 
 export function initInput(world: IWorld) {
   currentWorld = world
+  loadBindings()
   selectableQuery = defineQuery([Selectable, Position, Faction])
   selectedQuery = defineQuery([Selected])
   playerUnitQuery = defineQuery([Position, Faction, Selectable])
@@ -548,6 +550,13 @@ function handleClick(world: IWorld, sx: number, sy: number) {
     return
   }
 
+  // In Starcraft mode, left click only selects — commands go via right click
+  if (getMouseMode() === 'starcraft') {
+    // Left click on empty ground with units selected = deselect
+    if (closestEid < 0) clearSelection(world)
+    return
+  }
+
   issueCommand(world, movableUnits, hit, closestEid, clickedEnemy, clickedResource, clickedBuildSite, shiftHeld, clickedDamagedBuilding)
 }
 
@@ -660,12 +669,84 @@ function findWalkableSpotAround(cx: number, cz: number, dist: number, fromX: num
   return { x: cx + Math.sin(baseAngle) * dist, z: cz + Math.cos(baseAngle) * dist }
 }
 
-function handleRightClick(world: IWorld, _sx: number, _sy: number) {
+function handleRightClick(world: IWorld, sx: number, sy: number) {
   if (gameState.buildMode !== null) {
     cancelBuildMode()
     return
   }
+  if (getMouseMode() === 'starcraft') {
+    // Starcraft: right click = issue command to selected units
+    issueCommandFromClick(world, sx, sy)
+    return
+  }
   clearSelection(world)
+}
+
+/** Issue a command from a click position — used by Starcraft right-click */
+function issueCommandFromClick(world: IWorld, sx: number, sy: number) {
+  const hit = raycastGround(sx, sy)
+  if (!hit) return
+
+  const selected = selectedQuery(world)
+  if (selected.length === 0) return
+
+  // Find closest entity near click (same priority as handleClick)
+  const nearby: number[] = []
+  spatialHash.query(hit.x, hit.z, 3, nearby)
+
+  let closestEid = -1
+  let bestEnemy = -1, bestEnemyDist = Infinity
+  let bestRes = -1, bestResDist = Infinity
+
+  for (const eid of nearby) {
+    if (!hasComponent(world, Selectable, eid)) continue
+    if (hasComponent(world, Dead, eid)) continue
+    const dx = Position.x[eid] - hit.x
+    const dz = Position.z[eid] - hit.z
+    const dist = Math.sqrt(dx * dx + dz * dz)
+    if (dist > Selectable.radius[eid]) continue
+
+    const hasFaction = hasComponent(world, Faction, eid)
+    if (hasFaction && Faction.id[eid] !== FACTION_PLAYER && dist < bestEnemyDist) {
+      bestEnemyDist = dist; bestEnemy = eid
+    } else if ((hasComponent(world, ResourceNode, eid) || hasComponent(world, BuildProgress, eid)) && dist < bestResDist) {
+      bestResDist = dist; bestRes = eid
+    }
+  }
+  if (bestEnemy >= 0) closestEid = bestEnemy
+  else if (bestRes >= 0) closestEid = bestRes
+
+  const clickedEnemy = closestEid >= 0 && hasComponent(world, Faction, closestEid) &&
+    Faction.id[closestEid] !== FACTION_PLAYER
+  const clickedResource = closestEid >= 0 && hasComponent(world, ResourceNode, closestEid)
+  const clickedBuildSite = closestEid >= 0 && hasComponent(world, BuildProgress, closestEid) &&
+    hasComponent(world, Faction, closestEid) && Faction.id[closestEid] === FACTION_PLAYER
+  const clickedDamagedBuilding = closestEid >= 0 && hasComponent(world, Faction, closestEid) &&
+    Faction.id[closestEid] === FACTION_PLAYER && hasComponent(world, IsBuilding, closestEid) &&
+    !hasComponent(world, BuildProgress, closestEid) && hasComponent(world, Health, closestEid) &&
+    Health.current[closestEid] < Health.max[closestEid]
+
+  // Producer buildings: set rally
+  const producerBuildings = selected.filter(eid =>
+    hasComponent(world, IsBuilding, eid) && hasComponent(world, Producer, eid) &&
+    Faction.id[eid] === FACTION_PLAYER
+  )
+  const movableUnits = selected.filter(eid =>
+    Faction.id[eid] === FACTION_PLAYER && !hasComponent(world, IsBuilding, eid)
+  )
+
+  if (movableUnits.length === 0 && producerBuildings.length > 0) {
+    issueBuildingCommand(world, producerBuildings, hit, closestEid, clickedEnemy, clickedResource, shiftHeld)
+    return
+  }
+
+  if (movableUnits.length > 0) {
+    issueCommand(world, movableUnits, hit, closestEid, clickedEnemy, clickedResource, clickedBuildSite, shiftHeld, clickedDamagedBuilding)
+  }
+
+  if (!clickedEnemy && !clickedResource && !clickedBuildSite && !clickedDamagedBuilding) {
+    spawnMoveMarker(hit.x, hit.y, hit.z)
+  }
 }
 
 // ── Unified command issuing (used by left-click with selection) ──
@@ -992,7 +1073,7 @@ function forceAttackTarget(world: IWorld, sx: number, sy: number) {
 function onKeyDown(e: KeyboardEvent, world: IWorld) {
   // F1 handled by sharedButtons.ts
 
-  if (e.key === 'Escape') {
+  if (matchesAction(e, 'cancel')) {
     if (forceAttackMode) {
       setForceAttackMode(false)
     } else if (rallyMode) {
@@ -1007,8 +1088,7 @@ function onKeyDown(e: KeyboardEvent, world: IWorld) {
     return
   }
 
-  // Attack-move mode hotkey (A) — toggle unit mode
-  if (e.key === 'a' || e.key === 'A') {
+  if (matchesAction(e, 'attackMove')) {
     const selected = selectedQuery(world)
     for (const sid of selected) {
       if (hasComponent(world, UnitMode, sid)) {
@@ -1018,52 +1098,31 @@ function onKeyDown(e: KeyboardEvent, world: IWorld) {
     return
   }
 
-  // Stop hotkey (S) — stop moving, keep shooting in range
-  if (e.key === 's' || e.key === 'S') {
-    if (!e.ctrlKey) {
-      const selected = selectedQuery(world)
-      for (const eid of selected) {
-        if (hasComponent(world, MoveTarget, eid)) removeComponent(world, MoveTarget, eid)
-        if (hasComponent(world, AttackMove, eid)) removeComponent(world, AttackMove, eid)
-        if (hasComponent(world, PathFollower, eid)) { removePath(PathFollower.pathId[eid]); removeComponent(world, PathFollower, eid) }
-        Velocity.x[eid] = 0; Velocity.z[eid] = 0
-        clearQueue(eid)
-        if (hasComponent(world, WorkerC, eid)) WorkerC.state[eid] = 0
-      }
+  if (matchesAction(e, 'stop') && !e.ctrlKey) {
+    const selected = selectedQuery(world)
+    for (const eid of selected) {
+      if (hasComponent(world, MoveTarget, eid)) removeComponent(world, MoveTarget, eid)
+      if (hasComponent(world, AttackMove, eid)) removeComponent(world, AttackMove, eid)
+      if (hasComponent(world, PathFollower, eid)) { removePath(PathFollower.pathId[eid]); removeComponent(world, PathFollower, eid) }
+      Velocity.x[eid] = 0; Velocity.z[eid] = 0
+      clearQueue(eid)
+      if (hasComponent(world, WorkerC, eid)) WorkerC.state[eid] = 0
     }
     return
   }
 
-  // Hold hotkey (H) — disabled, will redesign later
-
-  // Hotkeys for building
-  if (e.key === 'b' || e.key === 'B') {
-    // Check if a worker is selected
+  if (matchesAction(e, 'buildBarracks')) {
     const selected = selectedQuery(world)
-    const hasWorker = selected.some(eid =>
-      hasComponent(world, WorkerC, eid) && Faction.id[eid] === FACTION_PLAYER
-    )
-    if (hasWorker) {
-      // Show build options — cycle through: B for barracks
+    if (selected.some(eid => hasComponent(world, WorkerC, eid) && Faction.id[eid] === FACTION_PLAYER)) {
       enterBuildMode(BT_BARRACKS)
     }
     return
   }
-  if (e.key === 'v' || e.key === 'V') {
-    enterBuildMode(BT_SUPPLY_DEPOT)
-    return
-  }
-  if (e.key === 'f' || e.key === 'F') {
-    enterBuildMode(BT_FACTORY)
-    return
-  }
-  if (e.key === 'c' || e.key === 'C') {
-    enterBuildMode(BT_COMMAND_CENTER)
-    return
-  }
+  if (matchesAction(e, 'buildSupplyDepot')) { enterBuildMode(BT_SUPPLY_DEPOT); return }
+  if (matchesAction(e, 'buildFactory')) { enterBuildMode(BT_FACTORY); return }
+  if (matchesAction(e, 'buildCommandCenter')) { enterBuildMode(BT_COMMAND_CENTER); return }
 
-  // Production hotkeys
-  if (e.key === 'q' || e.key === 'Q') {
+  if (matchesAction(e, 'produce')) {
     // Produce first available unit
     const selected = selectedQuery(world)
     for (const eid of selected) {

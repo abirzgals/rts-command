@@ -7,6 +7,7 @@ import { telemetry } from '../debug/movementTelemetry'
 import { Selected } from '../ecs/components'
 import { defineQuery } from 'bitecs'
 import { gameState } from '../game/state'
+import { openSettingsUI } from './settingsUI'
 import { FACTION_PLAYER, UT_WORKER, UT_MARINE, UT_TANK, UT_JEEP, UT_ROCKET, UNIT_DEFS, BT_COMMAND_CENTER, BT_SUPPLY_DEPOT, BT_BARRACKS, BT_FACTORY, BUILDING_DEFS } from '../game/config'
 import { spawnUnit, spawnBuilding } from '../ecs/archetypes'
 import { mouseWorldX, mouseWorldZ } from '../input/input'
@@ -53,6 +54,8 @@ export function initSharedButtons() {
         res.minerals += 1000
         res.gas += 1000
       }},
+    { id: 'sb-settings', icon: '\u2699\uFE0F', title: 'Controls Settings', right: 64,
+      onClick: () => openSettingsUI() },
   ]
 
   // Navigation links — skip the one for the current page

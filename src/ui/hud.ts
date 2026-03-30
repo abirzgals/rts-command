@@ -11,6 +11,7 @@ import {
 } from '../game/config'
 import { gameState } from '../game/state'
 import { queueProduction, setForceAttackMode, setRallyMode, enterBuildMode, cancelBuildMode } from '../input/input'
+import { getBindingLabel } from '../input/keybindings'
 import { clearQueue } from '../ecs/commandQueue'
 import { removePath } from '../pathfinding/pathStore'
 import { removeComponent, addComponent } from 'bitecs'
@@ -231,7 +232,7 @@ function updateActionButtons(world: IWorld, eid: number) {
     actionButtonsEl.appendChild(moveBtn)
 
     // Attack-Move mode button
-    const atkBtn = createActionButton('⚔️', 'Attack (A)', '', () => {
+    const atkBtn = createActionButton('⚔️', `Attack (${getBindingLabel('attackMove')})`, '', () => {
       setForceAttackMode(false)
       const sel = selectedQuery(world)
       for (const sid of sel) {
@@ -243,7 +244,7 @@ function updateActionButtons(world: IWorld, eid: number) {
     actionButtonsEl.appendChild(atkBtn)
 
     // Stop command (S) — stop moving, keep shooting in range
-    actionButtonsEl.appendChild(createActionButton('⏹️', 'Stop (S)', '', () => {
+    actionButtonsEl.appendChild(createActionButton('⏹️', `Stop (${getBindingLabel('stop')})`, '', () => {
       const sel = selectedQuery(world)
       for (const sid of sel) {
         if (hasComponent(world, MoveTarget, sid)) removeComponent(world, MoveTarget, sid)
