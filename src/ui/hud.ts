@@ -1,7 +1,7 @@
 import { defineQuery, hasComponent } from 'bitecs'
 import type { IWorld } from 'bitecs'
 import {
-  Selected, Position, Faction, Health, UnitTypeC,
+  Selected, Position, Faction, Health, UnitTypeC, Dead,
   IsBuilding, WorkerC, Producer, AttackC, MoveSpeed, Armor, MoveTarget, Velocity,
   AttackTarget, AttackMove, PathFollower, UnitMode, MODE_MOVE, MODE_ATTACK_MOVE,
 } from '../ecs/components'
@@ -123,14 +123,31 @@ export function updateHUD(world: IWorld, _dt: number, time: number) {
       lastSelectedCount = 1
     }
   } else {
-    // Multiple selected
-    selectedNameEl.textContent = `${selected.length} units selected`
-    selectedStatsEl.textContent = ''
+    // Multiple selected — show unit type icons with counts
     hpBarContainer.style.display = 'none'
     selectedCountEl.textContent = ''
+
+    // Count units by type
+    const typeCounts = new Map<number, number>()
+    for (const eid of selected) {
+      if (hasComponent(world, Dead, eid)) continue
+      const ut = hasComponent(world, UnitTypeC, eid) ? UnitTypeC.id[eid] : -1
+      typeCounts.set(ut, (typeCounts.get(ut) || 0) + 1)
+    }
+
+    selectedNameEl.textContent = `${selected.length} units`
+    // Build icon summary
+    const parts: string[] = []
+    for (const [ut, count] of typeCounts) {
+      const icon = UNIT_ICONS[ut] || '?'
+      const def = UNIT_DEFS[ut]
+      const name = def?.name || '?'
+      parts.push(`${icon} ${name}: ${count}`)
+    }
+    selectedStatsEl.innerHTML = parts.join(' &nbsp; ')
+
     if (selectionChanged) {
       actionButtonsEl.innerHTML = ''
-      // Use first unit's mode for highlight
       updateActionButtons(world, selected[0])
       lastSelectedEid = -1
       lastSelectedCount = selected.length
