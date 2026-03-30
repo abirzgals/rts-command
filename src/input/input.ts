@@ -12,6 +12,7 @@ import {
 } from '../game/config'
 import { gameState } from '../game/state'
 import { raycastGround, camera, scene } from '../render/engine'
+import { getPool } from '../render/meshPools'
 import { toggleDebug } from '../render/debugOverlay'
 import { spawnMoveMarker, spawnActionIndicator } from '../render/effects'
 import { spawnBuilding } from '../ecs/archetypes'
@@ -61,18 +62,35 @@ function snapToGrid(v: number): number {
   return Math.round(v / GRID_SNAP) * GRID_SNAP
 }
 
-function createBuildPreview(radius: number) {
+function createBuildPreview(radius: number, meshPoolId: number) {
   removeBuildPreview()
-  const geo = new THREE.CylinderGeometry(radius, radius, 0.3, 24)
-  const mat = new THREE.MeshBasicMaterial({
-    color: 0x44ff88, transparent: true, opacity: 0.35,
-    side: THREE.DoubleSide, depthWrite: false,
-  })
-  buildPreview = new THREE.Mesh(geo, mat)
+
+  // Try to clone the actual building model from its mesh pool
+  const pool = getPool(meshPoolId)
+  if (pool) {
+    const srcGeo = pool.mesh.geometry
+    const ghostMat = new THREE.MeshPhongMaterial({
+      color: 0x44ff88,
+      transparent: true,
+      opacity: 0.4,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    })
+    buildPreview = new THREE.Mesh(srcGeo, ghostMat)
+  } else {
+    // Fallback: flat cylinder
+    const geo = new THREE.CylinderGeometry(radius, radius, 0.3, 24)
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0x44ff88, transparent: true, opacity: 0.35,
+      side: THREE.DoubleSide, depthWrite: false,
+    })
+    buildPreview = new THREE.Mesh(geo, mat)
+  }
+
   buildPreview.renderOrder = 50
   buildPreviewRadius = radius
 
-  // Add range ring
+  // Add range ring on the ground
   const ringGeo = new THREE.RingGeometry(radius - 0.05, radius + 0.05, 32)
   ringGeo.rotateX(-Math.PI / 2)
   const ringMat = new THREE.MeshBasicMaterial({
@@ -89,7 +107,7 @@ function createBuildPreview(radius: number) {
 function removeBuildPreview() {
   if (buildPreview) {
     scene.remove(buildPreview)
-    buildPreview.geometry.dispose()
+    // Only dispose material (geometry is shared from the pool)
     ;(buildPreview.material as THREE.Material).dispose()
     buildPreview.children.forEach(c => {
       const m = c as THREE.Mesh
@@ -105,7 +123,20 @@ function updateBuildPreview() {
   const sx = snapToGrid(mouseWorldX)
   const sz = snapToGrid(mouseWorldZ)
   const y = getTerrainHeight(sx, sz)
-  buildPreview.position.set(sx, y + buildPreviewRadius * 0.5, sz)
+  buildPreview.position.set(sx, y, sz)
+
+  // Tint red if can't afford or blocked
+  const def = BUILDING_DEFS[gameState.buildMode]
+  const canAfford = def ? gameState.canAfford(FACTION_PLAYER, def.cost) : true
+  const walkable = isWorldWalkable(sx, sz)
+  const mat = buildPreview.material as THREE.MeshPhongMaterial | THREE.MeshBasicMaterial
+  if (!canAfford || !walkable) {
+    mat.color.setHex(0xff4444)
+    mat.opacity = 0.35
+  } else {
+    mat.color.setHex(0x44ff88)
+    mat.opacity = 0.4
+  }
 }
 
 // Queries
@@ -743,7 +774,7 @@ function enterBuildMode(buildingType: number) {
     removeBuildPreview()
   })
   buildModeEl.style.display = 'block'
-  createBuildPreview(def.radius)
+  createBuildPreview(def.radius, def.meshPool)
 }
 
 export function queueProduction(buildingEid: number, unitType: number) {
