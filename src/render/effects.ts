@@ -781,3 +781,86 @@ function updateResourceEffects(dt: number) {
     mat.opacity = isMinerals ? 0.7 + pulse * 0.3 : 0.4 + pulse * 0.2
   }
 }
+
+// ── Wreckage falling pieces ─────────────────────────────────
+interface FallingPiece {
+  mesh: THREE.Mesh
+  vy: number        // vertical velocity
+  vx: number        // horizontal drift
+  vz: number
+  rotSpeed: THREE.Vector3 // tumble rotation
+  groundY: number
+  life: number
+  sinkTimer: number  // time before sinking starts
+}
+
+const fallingPieces: FallingPiece[] = []
+const GRAVITY = -15
+const SINK_SPEED = 1.5
+
+export function spawnFallingPieces(pieces: THREE.Mesh[], groundY: number) {
+  for (const mesh of pieces) {
+    fallingPieces.push({
+      mesh,
+      vy: Math.random() * 3 + 1,       // slight upward pop
+      vx: (Math.random() - 0.5) * 2,   // gentle sideways drift
+      vz: (Math.random() - 0.5) * 2,
+      rotSpeed: new THREE.Vector3(
+        (Math.random() - 0.5) * 3,
+        (Math.random() - 0.5) * 2,
+        (Math.random() - 0.5) * 3,
+      ),
+      groundY,
+      life: 0,
+      sinkTimer: 3.0,  // seconds before sinking
+    })
+  }
+}
+
+export function updateFallingPieces(dt: number) {
+  for (let i = fallingPieces.length - 1; i >= 0; i--) {
+    const p = fallingPieces[i]
+    p.life += dt
+
+    if (p.sinkTimer > 0) {
+      // Phase 1: Falling + settling
+      p.vy += GRAVITY * dt
+      p.mesh.position.x += p.vx * dt
+      p.mesh.position.y += p.vy * dt
+      p.mesh.position.z += p.vz * dt
+
+      // Tumble
+      p.mesh.rotation.x += p.rotSpeed.x * dt
+      p.mesh.rotation.y += p.rotSpeed.y * dt
+      p.mesh.rotation.z += p.rotSpeed.z * dt
+
+      // Ground collision
+      if (p.mesh.position.y <= p.groundY) {
+        p.mesh.position.y = p.groundY
+        p.vy = Math.abs(p.vy) * 0.2 // tiny bounce
+        if (Math.abs(p.vy) < 0.5) p.vy = 0
+        // Reduce drift and spin on ground
+        p.vx *= 0.8
+        p.vz *= 0.8
+        p.rotSpeed.multiplyScalar(0.8)
+      }
+
+      // Count down sink timer only after on ground
+      if (p.mesh.position.y <= p.groundY + 0.1 && p.vy === 0) {
+        p.sinkTimer -= dt
+      }
+    } else {
+      // Phase 2: Sinking into ground
+      p.mesh.position.y -= SINK_SPEED * dt
+
+      // Remove when fully underground
+      if (p.mesh.position.y < p.groundY - 3) {
+        scene.remove(p.mesh)
+        const mats = Array.isArray(p.mesh.material) ? p.mesh.material : [p.mesh.material]
+        for (const m of mats) (m as THREE.Material).dispose()
+        p.mesh.geometry.dispose()
+        fallingPieces.splice(i, 1)
+      }
+    }
+  }
+}

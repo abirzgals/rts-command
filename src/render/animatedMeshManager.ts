@@ -365,6 +365,56 @@ export class AnimatedMeshManager {
     if (entry.mixer) entry.mixer.stopAllAction()
   }
 
+  /**
+   * Break apart the model: detach all mesh children into separate falling pieces.
+   * Hides the original, returns individual meshes with world positions.
+   */
+  breakApart(eid: number, scene: THREE.Scene): THREE.Mesh[] {
+    const entry = this.units.get(eid)
+    if (!entry) return []
+
+    const pieces: THREE.Mesh[] = []
+    const parentWorldPos = new THREE.Vector3()
+    entry.mesh.getWorldPosition(parentWorldPos)
+    const parentScale = entry.mesh.scale.x
+
+    // Collect all mesh children
+    const meshes: THREE.Mesh[] = []
+    entry.mesh.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) meshes.push(child as THREE.Mesh)
+    })
+
+    for (const mesh of meshes) {
+      // Get world position of this part
+      const worldPos = new THREE.Vector3()
+      mesh.getWorldPosition(worldPos)
+
+      // Clone geometry and material
+      const geo = mesh.geometry.clone()
+      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+      const clonedMats = mats.map(m => {
+        const c = (m as THREE.MeshStandardMaterial).clone()
+        c.color.multiplyScalar(0.15)
+        c.emissive.set(0x110500)
+        c.metalness = 0.8
+        c.roughness = 1.0
+        return c
+      })
+      const piece = new THREE.Mesh(geo, clonedMats.length === 1 ? clonedMats[0] : clonedMats)
+      piece.position.copy(worldPos)
+      piece.scale.setScalar(parentScale)
+      piece.castShadow = true
+      scene.add(piece)
+      pieces.push(piece)
+    }
+
+    // Hide original mesh
+    entry.mesh.visible = false
+    if (entry.mixer) entry.mixer.stopAllAction()
+
+    return pieces
+  }
+
   /** Get the mesh Object3D for an entity (for position updates like sinking) */
   getMesh(eid: number): THREE.Object3D | null {
     const entry = this.units.get(eid)

@@ -33,7 +33,7 @@ import { animationSystem } from './ecs/systems/animationSystem'
 import { commandQueueSystem } from './ecs/systems/commandQueueSystem'
 import { updateAllAnimations } from './render/animatedMeshManager'
 import { initDebugOverlay, updateDebugOverlay } from './render/debugOverlay'
-import { updateEffects } from './render/effects'
+import { updateEffects, updateFallingPieces } from './render/effects'
 import { initHPBars, updateHPBars } from './render/hpBars'
 import { initNotifications } from './ui/notifications'
 
@@ -535,6 +535,7 @@ function gameLoop(time: number) {
   renderSystem(world, dt)
   updateAllAnimations(dt)
   updateEffects(dt)
+  updateFallingPieces(dt)
   updateWater(dt)
   selectionVisualSystem(world, dt)
   updateFogOfWar(world)

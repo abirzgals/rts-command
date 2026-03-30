@@ -17,7 +17,8 @@ import { getPlayerFaction } from '../../game/factions'
 import { unblockCells } from '../../pathfinding/navGrid'
 import { BUILDING_DEFS, UT_TANK, UT_JEEP, UT_ROCKET } from '../../game/config'
 import { removePath } from '../../pathfinding/pathStore'
-import { spawnTankDeathExplosion } from '../../render/effects'
+import { spawnTankDeathExplosion, spawnFallingPieces } from '../../render/effects'
+import { scene } from '../../render/engine'
 
 const deadQuery = defineQuery([Dead])
 const DEATH_ANIM_DURATION = 2.0 // seconds to play death animation
@@ -29,7 +30,6 @@ export function deathSystem(world: IWorld, dt: number) {
     // ── Phase 1: First frame of death — start animation, clean up gameplay state ──
     if (!hasComponent(world, DeathTimer, eid)) {
       addComponent(world, DeathTimer, eid)
-      let isVehicleWreck = false
 
       // Stop all movement/combat
       if (hasComponent(world, MoveTarget, eid)) removeComponent(world, MoveTarget, eid)
@@ -70,18 +70,18 @@ export function deathSystem(world: IWorld, dt: number) {
       if (hasComponent(world, UnitTypeC, eid)) {
         const utId = UnitTypeC.id[eid]
         if (utId === UT_TANK || utId === UT_JEEP || utId === UT_ROCKET) {
-          spawnTankDeathExplosion(Position.x[eid], Position.y[eid], Position.z[eid])
-          // Apply burnt wreckage look instead of hiding
+          const vx = Position.x[eid], vy = Position.y[eid], vz = Position.z[eid]
+          spawnTankDeathExplosion(vx, vy, vz)
+          // Break model apart into falling pieces
           const poolId2 = MeshRef.poolId[eid]
           const animMgr2 = getAnimManager(poolId2)
-          if (animMgr2) animMgr2.applyWreckageLook(eid)
-          // Set up wreckage sinking phase
-          addComponent(world, Wreckage, eid)
-          Wreckage.sinkTimer[eid] = 3.0
-          Wreckage.groundY[eid] = Position.y[eid]
-          DeathTimer.remaining[eid] = 4.0 // 3s wreckage visible + 1s sinking buffer
-          // Keep in spatial hash as obstacle during wreckage
-          isVehicleWreck = true
+          if (animMgr2) {
+            const pieces = animMgr2.breakApart(eid, scene)
+            if (pieces.length > 0) {
+              spawnFallingPieces(pieces, vy)
+            }
+          }
+          DeathTimer.remaining[eid] = 0.1 // entity removed quickly, pieces handle visuals
         }
       }
 
@@ -91,39 +91,15 @@ export function deathSystem(world: IWorld, dt: number) {
         onEnemyBuildingDeath(eid, world)
       }
 
-      // Remove from spatial hash (unless vehicle wreckage — keeps collider)
-      if (!isVehicleWreck) spatialHash.remove(eid)
+      // Remove from spatial hash
+      spatialHash.remove(eid)
       removeFromQueues(eid)
       continue
     }
 
     // ── Phase 2: Count down timer ──
     DeathTimer.remaining[eid] -= dt
-
-    // ── Wreckage sinking phase ──
-    if (hasComponent(world, Wreckage, eid)) {
-      Wreckage.sinkTimer[eid] -= dt
-      if (Wreckage.sinkTimer[eid] <= 0) {
-        // Start sinking: move mesh downward gradually
-        const poolId = hasComponent(world, MeshRef, eid) ? MeshRef.poolId[eid] : -1
-        const animMgr = getAnimManager(poolId)
-        if (animMgr) {
-          const mesh = animMgr.getMesh(eid)
-          if (mesh) mesh.position.y -= dt * 1.5 // sink speed
-        }
-      }
-      // Remove from spatial hash once sinking starts
-      if (Wreckage.sinkTimer[eid] <= 0 && Wreckage.sinkTimer[eid] > -dt * 2) {
-        spatialHash.remove(eid)
-      }
-    }
-
     if (DeathTimer.remaining[eid] > 0) continue
-
-    // ── Remove entity ──
-    if (hasComponent(world, Wreckage, eid)) {
-      spatialHash.remove(eid) // ensure removed even if not yet
-    }
 
     if (hasComponent(world, MeshRef, eid)) {
       const poolId = MeshRef.poolId[eid]
