@@ -306,36 +306,89 @@ export function updateEffects(dt: number) {
   }
 
   // ── Resource effects (crystals + gas) ─────────────────────
+  updateTrailParticles(dt)
   updateFireParticles(dt)
   updateResourceEffects(dt)
 }
 
 // ═══════════════════════════════════════════════════════════════
-// ── Rocket smoke trail ──────────────────────────────────────
-// Spawned every frame while rocket is in flight
+// ── Rocket trail — fire + smoke behind flying projectile ─────
+// Spawned every frame while projectile is in flight
 
-const rocketTrailGeo = new THREE.SphereGeometry(0.2, 4, 4)
+interface TrailParticle {
+  mesh: THREE.Mesh
+  life: number
+  maxLife: number
+  vx: number; vy: number; vz: number
+  isFire: boolean
+}
+
+const trailParticles: TrailParticle[] = []
+const trailFireGeo = new THREE.SphereGeometry(0.3, 5, 5)
+const trailSmokeGeo = new THREE.SphereGeometry(0.4, 4, 4)
 
 export function spawnRocketTrail(x: number, y: number, z: number, count = 3) {
   for (let i = 0; i < count; i++) {
-    const mat = smokeMat.clone()
-    mat.color.setHex(i === 0 ? 0xff6600 : 0x888888) // first = fire, rest = smoke
-    mat.opacity = i === 0 ? 0.8 : 0.5
-    const mesh = new THREE.Mesh(rocketTrailGeo, mat)
+    const isFire = i < Math.ceil(count * 0.6)
+    const geo = isFire ? trailFireGeo : trailSmokeGeo
+    const mat = new THREE.MeshBasicMaterial({
+      color: isFire ? (Math.random() > 0.5 ? 0xff6600 : 0xff2200) : 0x999999,
+      transparent: true,
+      opacity: isFire ? 0.9 : 0.6,
+      depthWrite: false,
+    })
+    const mesh = new THREE.Mesh(geo, mat)
     mesh.position.set(
-      x + (Math.random() - 0.5) * 0.2,
-      y + (Math.random() - 0.5) * 0.2,
-      z + (Math.random() - 0.5) * 0.2,
+      x + (Math.random() - 0.5) * 0.3,
+      y + (Math.random() - 0.5) * 0.3,
+      z + (Math.random() - 0.5) * 0.3,
     )
     scene.add(mesh)
-    smokeParticles.push({
+
+    trailParticles.push({
       mesh,
       life: 0,
-      maxLife: 0.8 + Math.random() * 0.6,
-      vx: (Math.random() - 0.5) * 0.5,
-      vy: 0.5 + Math.random() * 1.0,
-      vz: (Math.random() - 0.5) * 0.5,
+      maxLife: isFire ? 0.4 + Math.random() * 0.4 : 0.8 + Math.random() * 1.0,
+      vx: (Math.random() - 0.5) * 1.0,
+      vy: 0.5 + Math.random() * 1.5,
+      vz: (Math.random() - 0.5) * 1.0,
+      isFire,
     })
+  }
+}
+
+function updateTrailParticles(dt: number) {
+  for (let i = trailParticles.length - 1; i >= 0; i--) {
+    const p = trailParticles[i]
+    p.life += dt
+
+    if (p.life >= p.maxLife) {
+      scene.remove(p.mesh)
+      ;(p.mesh.material as THREE.Material).dispose()
+      trailParticles.splice(i, 1)
+      continue
+    }
+
+    const t = p.life / p.maxLife
+    p.mesh.position.x += p.vx * dt
+    p.mesh.position.y += p.vy * dt
+    p.mesh.position.z += p.vz * dt
+
+    const mat = p.mesh.material as THREE.MeshBasicMaterial
+
+    if (p.isFire) {
+      // Fire: bright start, flicker, shrink
+      const flicker = 0.8 + Math.sin(p.life * 20) * 0.2
+      const scale = (1.0 - t * 0.7) * flicker
+      p.mesh.scale.setScalar(scale)
+      mat.color.setHex(t < 0.3 ? 0xff6600 : t < 0.6 ? 0xff2200 : 0x881100)
+      mat.opacity = (1 - t) * 0.9
+    } else {
+      // Smoke: grow and fade
+      const scale = 0.5 + t * 2.0
+      p.mesh.scale.setScalar(scale)
+      mat.opacity = 0.5 * (1 - t)
+    }
   }
 }
 
