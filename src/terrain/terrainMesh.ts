@@ -150,7 +150,6 @@ export function createTerrainMesh(): THREE.Mesh {
       varying vec2 vTileUV;
       varying vec3 vNorm;
       varying float vHeight;
-      varying vec2 vWorldXZ;
 
       #include <common>
       #include <shadowmap_pars_vertex>
@@ -160,7 +159,6 @@ export function createTerrainMesh(): THREE.Mesh {
         vec4 worldPosition = modelMatrix * vec4(position, 1.0);
         vTileUV = worldPosition.xz * 0.1;
         vHeight = worldPosition.y;
-        vWorldXZ = worldPosition.xz;
         vNorm = normalize((modelMatrix * vec4(normal, 0.0)).xyz);
 
         gl_Position = projectionMatrix * viewMatrix * worldPosition;
@@ -171,15 +169,12 @@ export function createTerrainMesh(): THREE.Mesh {
     `,
     fragmentShader: /* glsl */ `
       uniform sampler2D texGrass, texDirt, texRock, texCliff;
-      uniform sampler2D fogMap;
-      uniform float mapSize;
       uniform vec3 sunDir;
 
       varying vec4 vSplat;
       varying vec2 vTileUV;
       varying vec3 vNorm;
       varying float vHeight;
-      varying vec2 vWorldXZ;
 
       #include <common>
       #include <packing>
@@ -216,17 +211,7 @@ export function createTerrainMesh(): THREE.Mesh {
         float shadow = getShadowMask();
 
         vec3 col = albedo * (0.35 + 0.65 * ndl * shadow) * hf;
-
-        // Fog of war: sample fog texture
-        if (mapSize > 0.0) {
-          vec2 fogUV = (vWorldXZ + mapSize * 0.5) / mapSize;
-          fogUV = clamp(fogUV, 0.0, 1.0);
-          float fogVal = texture2D(fogMap, fogUV).r;
-          // 0=unexplored(35%), ~0.39=explored(70%), 1.0=visible(100%)
-          float fogMul = fogVal < 0.01 ? 0.35 : fogVal < 0.5 ? 0.70 : 1.0;
-          col *= fogMul;
-        }
-
+        // Fog of war applied via fullscreen overlay — not here
         gl_FragColor = vec4(col, 1.0);
       }
     `,
