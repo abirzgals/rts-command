@@ -745,9 +745,19 @@ function issueCommand(
     if (cmdType === 'attack' && closestEid >= 0) {
       addComponent(world, AttackTarget, eid)
       AttackTarget.eid[eid] = closestEid
+      // Move toward target — if building, target the edge (center is nav-blocked)
+      const tgtX = Position.x[closestEid], tgtZ = Position.z[closestEid]
       addComponent(world, MoveTarget, eid)
-      MoveTarget.x[eid] = Position.x[closestEid]
-      MoveTarget.z[eid] = Position.z[closestEid]
+      if (hasComponent(world, IsBuilding, closestEid)) {
+        const tr = hasComponent(world, CollisionRadius, closestEid) ? CollisionRadius.value[closestEid] : 1.5
+        const adx = Position.x[eid] - tgtX, adz = Position.z[eid] - tgtZ
+        const ad = Math.sqrt(adx * adx + adz * adz) || 1
+        MoveTarget.x[eid] = tgtX + (adx / ad) * (tr + 1.0)
+        MoveTarget.z[eid] = tgtZ + (adz / ad) * (tr + 1.0)
+      } else {
+        MoveTarget.x[eid] = tgtX
+        MoveTarget.z[eid] = tgtZ
+      }
     } else if (cmdType === 'gather' && closestEid >= 0 && hasComponent(world, WorkerC, eid)) {
       WorkerC.state[eid] = 1
       WorkerC.targetNode[eid] = closestEid
