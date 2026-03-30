@@ -69,6 +69,39 @@ export function spawnExplosion(x: number, y: number, z: number, radius = 2.0) {
   spawnSmoke(x, y + 0.5, z, 6)
 }
 
+// ── Impact sparks (bullet/projectile hit) ───────────────────
+
+const sparkGeo = new THREE.SphereGeometry(0.06, 4, 4)
+
+export function spawnImpact(x: number, y: number, z: number, cfg?: { color?: string; size?: number; particles?: number; lifetime?: number }) {
+  const count = cfg?.particles ?? 5
+  const color = cfg?.color ? parseInt(cfg.color.replace('#', ''), 16) : 0xffaa22
+  const lifetime = cfg?.lifetime ?? 0.3
+  const size = cfg?.size ?? 0.4
+
+  for (let i = 0; i < count; i++) {
+    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, depthWrite: false })
+    const mesh = new THREE.Mesh(sparkGeo, mat)
+    mesh.position.set(
+      x + (Math.random() - 0.5) * size * 0.3,
+      y + Math.random() * size * 0.3,
+      z + (Math.random() - 0.5) * size * 0.3,
+    )
+    scene.add(mesh)
+
+    const angle = Math.random() * Math.PI * 2
+    const speed = 2 + Math.random() * 4
+    smokeParticles.push({
+      mesh,
+      life: 0,
+      maxLife: lifetime + Math.random() * 0.2,
+      vx: Math.cos(angle) * speed,
+      vy: 1 + Math.random() * 3,
+      vz: Math.sin(angle) * speed,
+    })
+  }
+}
+
 // ── Muzzle flash ────────────────────────────────────────────
 interface MuzzleFlash {
   light: THREE.PointLight
