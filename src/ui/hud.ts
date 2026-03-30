@@ -144,6 +144,27 @@ export function updateHUD(world: IWorld, _dt: number, time: number) {
 
   // Update mode highlight every frame
   updateModeHighlight(world, selected)
+
+  // Update affordability styling every frame
+  updateAffordability()
+}
+
+function updateAffordability() {
+  const res = gameState.getResources(FACTION_PLAYER)
+  const btns = actionButtonsEl.querySelectorAll('.action-btn')
+  btns.forEach(btn => {
+    const costEl = btn.querySelectorAll('.label')[1] // second .label is cost
+    if (!costEl) return
+    const costText = costEl.textContent || ''
+    if (!costText.includes('m')) return // not a cost button
+    // Parse cost: "100m 50g" or "100m"
+    const mMatch = costText.match(/(\d+)m/)
+    const gMatch = costText.match(/(\d+)g/)
+    const mineralCost = mMatch ? parseInt(mMatch[1]) : 0
+    const gasCost = gMatch ? parseInt(gMatch[1]) : 0
+    const canAfford = res.minerals >= mineralCost && res.gas >= gasCost
+    btn.classList.toggle('disabled', !canAfford)
+  })
 }
 
 function updateModeHighlight(world: IWorld, selected: number[]) {
