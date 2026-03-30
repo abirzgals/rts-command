@@ -228,14 +228,14 @@ export class AnimatedMeshManager {
     return v.clone()
   }
 
-  playAnimation(eid: number, name: string, crossFadeDuration = 0.15) {
+  playAnimation(eid: number, name: string, crossFadeDuration = 0.15): boolean {
     const unit = this.units.get(eid)
-    if (!unit) return
-    if (unit.currentAnim === name) return
+    if (!unit) return false
+    if (unit.currentAnim === name) return true
 
     const prev = unit.actions.get(unit.currentAnim)
     const next = unit.actions.get(name)
-    if (!next) return
+    if (!next) return false
 
     next.reset()
 
@@ -254,6 +254,7 @@ export class AnimatedMeshManager {
     next.fadeIn(crossFadeDuration).play()
 
     unit.currentAnim = name
+    return true
   }
 
   getCurrentAnim(eid: number): string | undefined {

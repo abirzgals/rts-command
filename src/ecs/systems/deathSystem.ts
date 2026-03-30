@@ -1,9 +1,11 @@
-import { defineQuery, removeEntity, hasComponent } from 'bitecs'
+import { defineQuery, removeEntity, hasComponent, removeComponent } from 'bitecs'
 import type { IWorld } from 'bitecs'
 import {
-  Dead, Position, Faction, MeshRef, IsBuilding, SupplyProvider,
+  Dead, DeathTimer, Position, Faction, MeshRef, IsBuilding, SupplyProvider,
   SupplyCost, ResourceNode, Producer, UnitTypeC, PathFollower, WorkerC,
+  MoveTarget, AttackTarget, Velocity,
 } from '../components'
+import { addComponent } from 'bitecs'
 import { getPool } from '../../render/meshPools'
 import { getAnimManager } from '../../render/animatedMeshManager'
 import { gameState } from '../../game/state'
@@ -18,56 +20,73 @@ import { removePath } from '../../pathfinding/pathStore'
 import { spawnTankDeathExplosion } from '../../render/effects'
 
 const deadQuery = defineQuery([Dead])
+const DEATH_ANIM_DURATION = 2.0 // seconds to play death animation
 
-export function deathSystem(world: IWorld, _dt: number) {
+export function deathSystem(world: IWorld, dt: number) {
   const dead = deadQuery(world)
 
   for (const eid of dead) {
-    // Update supply
-    if (hasComponent(world, SupplyCost, eid)) {
-      const faction = hasComponent(world, Faction, eid) ? Faction.id[eid] : 0
-      const res = gameState.getResources(faction)
-      res.supplyCurrent = Math.max(0, res.supplyCurrent - SupplyCost.amount[eid])
+    // ── Phase 1: First frame of death — start animation, clean up gameplay state ──
+    if (!hasComponent(world, DeathTimer, eid)) {
+      addComponent(world, DeathTimer, eid)
+
+      // Stop all movement/combat
+      if (hasComponent(world, MoveTarget, eid)) removeComponent(world, MoveTarget, eid)
+      if (hasComponent(world, AttackTarget, eid)) removeComponent(world, AttackTarget, eid)
+      if (hasComponent(world, PathFollower, eid)) removePath(PathFollower.pathId[eid])
+      if (hasComponent(world, Velocity, eid)) { Velocity.x[eid] = 0; Velocity.z[eid] = 0 }
+
+      // Start death animation (animated units)
+      const poolId = hasComponent(world, MeshRef, eid) ? MeshRef.poolId[eid] : -1
+      const animMgr = getAnimManager(poolId)
+      let hasDeath = false
+      if (animMgr && animMgr.has(eid)) {
+        hasDeath = animMgr.playAnimation(eid, 'Death')
+      }
+      DeathTimer.remaining[eid] = hasDeath ? DEATH_ANIM_DURATION : 0.3
+
+      // Supply update
+      if (hasComponent(world, SupplyCost, eid)) {
+        const faction = hasComponent(world, Faction, eid) ? Faction.id[eid] : 0
+        gameState.getResources(faction).supplyCurrent = Math.max(0,
+          gameState.getResources(faction).supplyCurrent - SupplyCost.amount[eid])
+      }
+      if (hasComponent(world, SupplyProvider, eid)) {
+        const faction = hasComponent(world, Faction, eid) ? Faction.id[eid] : 0
+        gameState.getResources(faction).supplyMax = Math.max(0,
+          gameState.getResources(faction).supplyMax - SupplyProvider.amount[eid])
+      }
+
+      // Clean up production/path/workers
+      if (hasComponent(world, Producer, eid)) gameState.removeQueue(eid)
+      if (hasComponent(world, IsBuilding, eid)) {
+        const bdef = BUILDING_DEFS[UnitTypeC.id[eid]]
+        if (bdef) unblockCells(Position.x[eid], Position.z[eid], bdef.radius)
+      }
+      if (hasComponent(world, WorkerC, eid)) releaseAllNodes(eid)
+
+      // Tank death explosion
+      if (hasComponent(world, UnitTypeC, eid) && UnitTypeC.id[eid] === UT_TANK) {
+        spawnTankDeathExplosion(Position.x[eid], Position.y[eid], Position.z[eid])
+      }
+
+      // Fog snapshot for enemy buildings
+      if (hasComponent(world, IsBuilding, eid) && hasComponent(world, Faction, eid) &&
+          Faction.id[eid] !== FACTION_PLAYER) {
+        onEnemyBuildingDeath(eid, world)
+      }
+
+      // Remove from spatial hash and command queue immediately
+      spatialHash.remove(eid)
+      removeFromQueues(eid)
+      continue
     }
 
-    if (hasComponent(world, SupplyProvider, eid)) {
-      const faction = hasComponent(world, Faction, eid) ? Faction.id[eid] : 0
-      const res = gameState.getResources(faction)
-      res.supplyMax = Math.max(0, res.supplyMax - SupplyProvider.amount[eid])
-    }
+    // ── Phase 2: Count down timer, remove when done ──
+    DeathTimer.remaining[eid] -= dt
+    if (DeathTimer.remaining[eid] > 0) continue
 
-    // Clean up production queue
-    if (hasComponent(world, Producer, eid)) {
-      gameState.removeQueue(eid)
-    }
-
-    // Unblock nav grid for buildings
-    if (hasComponent(world, IsBuilding, eid)) {
-      const bdef = BUILDING_DEFS[UnitTypeC.id[eid]]
-      if (bdef) unblockCells(Position.x[eid], Position.z[eid], bdef.radius)
-    }
-
-    // Clean up path
-    if (hasComponent(world, PathFollower, eid)) {
-      removePath(PathFollower.pathId[eid])
-    }
-
-    // Tank death: spawn explosion + debris effect
-    if (hasComponent(world, UnitTypeC, eid) && UnitTypeC.id[eid] === UT_TANK) {
-      spawnTankDeathExplosion(
-        Position.x[eid],
-        Position.y[eid],
-        Position.z[eid],
-      )
-    }
-
-    // Fog of war: snapshot enemy buildings dying in fog
-    if (hasComponent(world, IsBuilding, eid) && hasComponent(world, Faction, eid) &&
-        Faction.id[eid] !== FACTION_PLAYER) {
-      onEnemyBuildingDeath(eid, world)
-    }
-
-    // Remove from mesh pool or animated manager
+    // Remove mesh
     if (hasComponent(world, MeshRef, eid)) {
       const poolId = MeshRef.poolId[eid]
       const animMgr = getAnimManager(poolId)
@@ -79,16 +98,6 @@ export function deathSystem(world: IWorld, _dt: number) {
       }
     }
 
-    // Release occupied resource nodes (worker death)
-    if (hasComponent(world, WorkerC, eid)) {
-      releaseAllNodes(eid)
-    }
-
-    // Remove from spatial hash and command queue
-    spatialHash.remove(eid)
-    removeFromQueues(eid)
-
-    // Remove entity
     removeEntity(world, eid)
   }
 }

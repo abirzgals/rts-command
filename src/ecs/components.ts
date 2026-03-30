@@ -130,6 +130,10 @@ export const Selected = defineComponent() // tag
 // ── Flags ────────────────────────────────────────────────────
 export const Dead = defineComponent() // tag
 
+export const DeathTimer = defineComponent({
+  remaining: Types.f32, // seconds until entity is removed
+})
+
 export const Projectile = defineComponent({
   targetEid: Types.ui32,
   damage: Types.f32,
