@@ -7,6 +7,8 @@ import { gameState } from '../../game/state'
 import { spawnUnit } from '../archetypes'
 import { spatialHash } from '../../globals'
 import { getQueue, clearQueue, pushCommand, type Command } from '../commandQueue'
+import { FACTION_PLAYER } from '../../game/config'
+import { notifyProductionBlocked } from '../../ui/notifications'
 
 const producerQuery = defineQuery([Producer, Position, Faction, IsBuilding])
 const buildingQuery = defineQuery([BuildProgress, Position, IsBuilding, Health])
@@ -77,13 +79,42 @@ export function productionSystem(world: IWorld, dt: number) {
 
       if (queue.length > 0) {
         const next = queue[0]
-        Producer.unitType[eid] = next.unitType
-        Producer.progress[eid] = 0
-        Producer.duration[eid] = next.remaining
+        const nextDef = UNIT_DEFS[next.unitType]
+        const res = gameState.getResources(faction)
+        // Check supply before starting next unit
+        if (nextDef && res.supplyCurrent + nextDef.supply > res.supplyMax) {
+          // Not enough supply — pause production, don't dequeue
+          Producer.active[eid] = 0
+          Producer.progress[eid] = 0
+          if (faction === FACTION_PLAYER) notifyProductionBlocked()
+        } else {
+          Producer.unitType[eid] = next.unitType
+          Producer.progress[eid] = 0
+          Producer.duration[eid] = next.remaining
+        }
       } else {
         Producer.active[eid] = 0
         Producer.progress[eid] = 0
       }
+    }
+  }
+
+  // ── Resume blocked production (supply freed up) ──────────
+  for (const eid of producers) {
+    if (Producer.active[eid] !== 0) continue
+    if (hasComponent(world, BuildProgress, eid)) continue
+    const queue = gameState.getQueue(eid)
+    if (queue.length === 0) continue
+    const nextDef = UNIT_DEFS[queue[0].unitType]
+    if (!nextDef) continue
+    const faction = Faction.id[eid]
+    const res = gameState.getResources(faction)
+    if (res.supplyCurrent + nextDef.supply <= res.supplyMax) {
+      // Supply available again — resume
+      Producer.active[eid] = 1
+      Producer.unitType[eid] = queue[0].unitType
+      Producer.progress[eid] = 0
+      Producer.duration[eid] = queue[0].remaining
     }
   }
 

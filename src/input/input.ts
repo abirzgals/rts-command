@@ -23,6 +23,7 @@ import { findPathHierarchical } from '../pathfinding/astar'
 import { removePath } from '../pathfinding/pathStore'
 import { pushCommand, clearQueue, getQueue, type Command } from '../ecs/commandQueue'
 import { matchesAction, getMouseMode, loadBindings, getBindingLabel } from './keybindings'
+import { notifyNotEnoughMinerals, notifyNotEnoughGas, notifyNotEnoughSupply } from '../ui/notifications'
 
 const _vec3 = new THREE.Vector3()
 
@@ -1246,13 +1247,17 @@ export function queueProduction(buildingEid: number, unitType: number) {
 
   const faction = Faction.id[buildingEid]
   if (!gameState.canAfford(faction, def.cost)) {
-    console.log('[PROD] Cannot afford', def.name)
+    if (faction === FACTION_PLAYER) {
+      const res = gameState.getResources(faction)
+      if (res.minerals < def.cost.minerals) notifyNotEnoughMinerals()
+      else notifyNotEnoughGas()
+    }
     return
   }
 
   const res = gameState.getResources(faction)
   if (res.supplyCurrent + def.supply > res.supplyMax) {
-    console.log('[PROD] Not enough supply:', res.supplyCurrent, '/', res.supplyMax)
+    if (faction === FACTION_PLAYER) notifyNotEnoughSupply()
     return
   }
 

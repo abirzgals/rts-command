@@ -35,6 +35,7 @@ import { updateAllAnimations } from './render/animatedMeshManager'
 import { initDebugOverlay, updateDebugOverlay } from './render/debugOverlay'
 import { updateEffects } from './render/effects'
 import { initHPBars, updateHPBars } from './render/hpBars'
+import { initNotifications } from './ui/notifications'
 
 // UI
 import { updateHUD } from './ui/hud'
@@ -285,6 +286,7 @@ async function init() {
   initDebugOverlay()
   initHPBars()
   initSharedButtons()
+  initNotifications()
 
   // 9. Spawn initial entities (bases, resources, obstacles)
   setupMap(world)

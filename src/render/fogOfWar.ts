@@ -14,7 +14,8 @@ import * as THREE from 'three'
 import { defineQuery, hasComponent } from 'bitecs'
 import type { IWorld } from 'bitecs'
 import { Position, Faction, SightRadius, Dead, IsBuilding, MeshRef, Rotation } from '../ecs/components'
-import { FACTION_PLAYER, MAP_SIZE } from '../game/config'
+import { FACTION_PLAYER, FACTION_ENEMY, MAP_SIZE } from '../game/config'
+import { notifyEnemyBaseSpotted } from '../ui/notifications'
 import { getPool } from './meshPools'
 import { getAnimManager } from './animatedMeshManager'
 
@@ -321,15 +322,36 @@ function updateEnemyVisibility(world: IWorld) {
   const entities = enemyQuery(world)
 
   for (const eid of entities) {
-    // Skip entities belonging to the view faction (our own units — always visible)
-    if (Faction.id[eid] === fogViewFaction) continue
     if (hasComponent(world, Dead, eid)) continue
+
+    // Own-faction entities: always visible
+    if (Faction.id[eid] === fogViewFaction) {
+      const poolId = MeshRef.poolId[eid]
+      const animMgr = getAnimManager(poolId)
+      if (animMgr && animMgr.has(eid)) {
+        animMgr.setVisible(eid, true)
+      } else {
+        const pool = getPool(poolId)
+        if (pool) {
+          const wx = Position.x[eid], wz = Position.z[eid]
+          const y = Position.y[eid]
+          const rot = hasComponent(world, Rotation, eid) ? Rotation.y[eid] : 0
+          pool.updateTransform(eid, wx, y, wz, rot)
+        }
+      }
+      continue
+    }
 
     const wx = Position.x[eid], wz = Position.z[eid]
     const visible = isVisibleAt(wx, wz, fogViewFaction)
     const explored = isExploredAt(wx, wz, fogViewFaction)
     const isBuilding = hasComponent(world, IsBuilding, eid)
     const poolId = MeshRef.poolId[eid]
+
+    // Notify when enemy building first spotted by player
+    if (isBuilding && visible && fogViewFaction === FACTION_PLAYER && !seenBuildings.has(eid)) {
+      notifyEnemyBaseSpotted()
+    }
 
     // Animated mesh managers (units) — only show if currently visible
     const animMgr = getAnimManager(poolId)

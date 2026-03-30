@@ -16,6 +16,7 @@ import { getAnimManager } from '../../render/animatedMeshManager'
 import { isVisibleAt } from '../../render/fogOfWar'
 import { FACTION_PLAYER, FACTION_ENEMY } from '../../game/config'
 import { MeshRef } from '../components'
+import { notifyUnitUnderAttack, notifyBaseUnderAttack } from '../../ui/notifications'
 
 const UT_TO_KEY: Record<number, string> = { 0: 'worker', 1: 'marine', 2: 'tank', 3: 'jeep', 4: 'rocket', 5: 'trooper' }
 
@@ -287,6 +288,15 @@ export function applyDamage(world: IWorld, target: number, damage: number, fromX
   const effective = Math.max(1, damage - armor)
 
   Health.current[target] -= effective
+
+  // Notify player when their stuff is attacked
+  if (hasComponent(world, Faction, target) && Faction.id[target] === FACTION_PLAYER) {
+    if (hasComponent(world, IsBuilding, target)) {
+      notifyBaseUnderAttack()
+    } else {
+      notifyUnitUnderAttack()
+    }
+  }
 
   if (Health.current[target] <= 0) {
     addComponent(world, Dead, target)
