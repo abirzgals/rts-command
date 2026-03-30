@@ -2,13 +2,14 @@ import { defineQuery, removeEntity, hasComponent } from 'bitecs'
 import type { IWorld } from 'bitecs'
 import {
   Dead, Position, Faction, MeshRef, IsBuilding, SupplyProvider,
-  SupplyCost, ResourceNode, Producer, UnitTypeC, PathFollower,
+  SupplyCost, ResourceNode, Producer, UnitTypeC, PathFollower, WorkerC,
 } from '../components'
 import { getPool } from '../../render/meshPools'
 import { getAnimManager } from '../../render/animatedMeshManager'
 import { gameState } from '../../game/state'
 import { spatialHash } from '../../globals'
 import { removeFromQueues } from '../commandQueue'
+import { releaseAllNodes } from './resourceSystem'
 import { onEnemyBuildingDeath } from '../../render/fogOfWar'
 import { FACTION_PLAYER } from '../../game/config'
 import { unblockCells } from '../../pathfinding/navGrid'
@@ -76,6 +77,11 @@ export function deathSystem(world: IWorld, _dt: number) {
         const pool = getPool(poolId)
         if (pool) pool.remove(eid)
       }
+    }
+
+    // Release occupied resource nodes (worker death)
+    if (hasComponent(world, WorkerC, eid)) {
+      releaseAllNodes(eid)
     }
 
     // Remove from spatial hash and command queue

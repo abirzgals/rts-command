@@ -72,6 +72,13 @@ export function isNodeOccupied(nodeEid: number): boolean {
   return nodeOccupant.has(nodeEid)
 }
 
+/** Release all nodes occupied by a worker (call on death) */
+export function releaseAllNodes(workerEid: number) {
+  for (const [nodeEid, wid] of nodeOccupant) {
+    if (wid === workerEid) nodeOccupant.delete(nodeEid)
+  }
+}
+
 /** Claim a node for a worker */
 function claimNode(nodeEid: number, workerEid: number) {
   nodeOccupant.set(nodeEid, workerEid)
