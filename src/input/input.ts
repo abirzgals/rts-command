@@ -781,7 +781,6 @@ function placeBuildingAtCursor(world: IWorld) {
 
   if (!gameState.canAfford(FACTION_PLAYER, def.cost)) return
 
-  // Don't spend cost now — it's deducted gradually during construction
   const sx = snapToGrid(mouseWorldX)
   const sz = snapToGrid(mouseWorldZ)
   const buildingEid = spawnBuilding(world, buildingType, FACTION_PLAYER, sx, sz)
@@ -793,26 +792,37 @@ function placeBuildingAtCursor(world: IWorld) {
     BuildProgress.spent[buildingEid] = 0
   }
 
-  // Send selected workers to build it (target edge, not center)
+  // Send selected workers to build
   const selected = selectedQuery(world)
   for (const eid of selected) {
     if (!hasComponent(world, WorkerC, eid)) continue
     if (Faction.id[eid] !== FACTION_PLAYER) continue
-    WorkerC.state[eid] = 4 // movingToBuild
-    WorkerC.buildTarget[eid] = buildingEid
-    // Move to edge of building, not center (center is nav-blocked)
-    const wx = Position.x[eid], wz = Position.z[eid]
-    const dx = wx - sx, dz = wz - sz
-    const d = Math.sqrt(dx * dx + dz * dz) || 1
-    addComponent(world, MoveTarget, eid)
-    MoveTarget.x[eid] = sx + (dx / d) * (def.radius + 1.0)
-    MoveTarget.z[eid] = sz + (dz / d) * (def.radius + 1.0)
+
+    if (shiftHeld) {
+      // Queue the build command — worker will build after current task
+      pushCommand(eid, { type: 'build', targetEid: buildingEid })
+    } else {
+      // Immediate: send worker now
+      WorkerC.state[eid] = 4 // movingToBuild
+      WorkerC.buildTarget[eid] = buildingEid
+      const wx = Position.x[eid], wz = Position.z[eid]
+      const dx = wx - sx, dz = wz - sz
+      const d = Math.sqrt(dx * dx + dz * dz) || 1
+      addComponent(world, MoveTarget, eid)
+      MoveTarget.x[eid] = sx + (dx / d) * (def.radius + 1.0)
+      MoveTarget.z[eid] = sz + (dz / d) * (def.radius + 1.0)
+    }
     break
   }
 
-  gameState.buildMode = null
-  buildModeEl.style.display = 'none'
-  removeBuildPreview()
+  if (shiftHeld) {
+    // Stay in build mode for more placements
+    spawnMoveMarker(sx, getTerrainHeight(sx, sz), sz)
+  } else {
+    gameState.buildMode = null
+    buildModeEl.style.display = 'none'
+    removeBuildPreview()
+  }
 }
 
 function setRallyFromClick(world: IWorld, sx: number, sy: number) {
