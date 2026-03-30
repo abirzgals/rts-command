@@ -22,8 +22,8 @@ interface AnimatedUnit {
   mixer: THREE.AnimationMixer
   actions: Map<string, THREE.AnimationAction>
   currentAnim: string
-  turretBone?: THREE.Bone
-  barrelBone?: THREE.Bone
+  turretBone?: THREE.Object3D
+  barrelBone?: THREE.Object3D
   recoil?: RecoilState
 }
 
@@ -97,13 +97,12 @@ export class AnimatedMeshManager {
     }
 
     // Find turret/barrel bones for independent rotation
-    let turretBone: THREE.Bone | undefined
-    let barrelBone: THREE.Bone | undefined
+    // Find turret/barrel by name — can be Bone (tank-v3) or Object3D (jeep, rocket-tank)
+    let turretBone: THREE.Object3D | undefined
+    let barrelBone: THREE.Object3D | undefined
     clone.traverse((child) => {
-      if ((child as THREE.Bone).isBone) {
-        if (child.name === 'Turret') turretBone = child as THREE.Bone
-        if (child.name === 'Barrel') barrelBone = child as THREE.Bone
-      }
+      if (child.name === 'Turret') turretBone = child
+      if (child.name === 'Barrel') barrelBone = child
     })
 
     this.units.set(eid, { mesh: clone, mixer, actions, currentAnim: 'Idle', turretBone, barrelBone })
