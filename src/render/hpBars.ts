@@ -3,6 +3,8 @@ import { defineQuery, hasComponent } from 'bitecs'
 import type { IWorld } from 'bitecs'
 import { Position, Health, Dead, IsBuilding, Faction } from '../ecs/components'
 import { camera, renderer } from './engine'
+import { isVisibleAt } from './fogOfWar'
+import { FACTION_PLAYER } from '../game/config'
 
 const hpQuery = defineQuery([Position, Health])
 
@@ -79,6 +81,13 @@ export function updateHPBars(world: IWorld) {
 
   for (const eid of entities) {
     if (hasComponent(world, Dead, eid)) continue
+
+    // Hide HP bars for enemy units in fog of war
+    const isEnemy = hasComponent(world, Faction, eid) && Faction.id[eid] !== FACTION_PLAYER
+    if (isEnemy && !isVisibleAt(Position.x[eid], Position.z[eid])) {
+      removeBar(eid)
+      continue
+    }
 
     const ratio = Health.current[eid] / Health.max[eid]
 
