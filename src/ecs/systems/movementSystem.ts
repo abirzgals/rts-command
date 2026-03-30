@@ -312,7 +312,7 @@ export function movementSystem(world: IWorld, dt: number) {
     // Check if on blocked terrain — if so, skip turn rate and move directly
     // unitRadius declared above (before yield check)
     const maxSl = hasComponent(world, MaxSlope, eid) ? MaxSlope.value[eid] : 100
-    const checkR = unitRadius * 0.5
+    const checkR = unitRadius
     const onBlockedTerrain = !checkFootprint(px, pz, checkR, maxSl)
 
     // ── Step 3: Turn rate application ────────────────────────
@@ -375,12 +375,14 @@ export function movementSystem(world: IWorld, dt: number) {
     // ── Step 6: Terrain collision — axis-separated wall slide ─
     // unitRadius, maxSl, checkR, onBlockedTerrain computed above in step 3
 
-    // If on blocked terrain: allow movement only if new pos has better clearance (escaping)
+    // Collision check:
+    // - Normal: full footprint check (center + 4 edge points)
+    // - Escape mode: skip edge points but ALWAYS check center is walkable
+    //   (prevents center from entering fully blocked cells)
     let fullOk: boolean
     if (onBlockedTerrain) {
-      const [ogx, ogz] = worldToGrid(px, pz)
-      const [ngx, ngz] = worldToGrid(newX, newZ)
-      fullOk = getClearanceAt(ngx, ngz) >= getClearanceAt(ogx, ogz)
+      // Escape: allow if center stays on walkable ground
+      fullOk = isWorldWalkable(newX, newZ) && getTerrainTypeAt(newX, newZ) !== T_WATER
     } else {
       fullOk = checkFootprint(newX, newZ, checkR, maxSl)
     }
@@ -536,10 +538,12 @@ export function movementSystem(world: IWorld, dt: number) {
       // Wall slide
       const unitRadius = hasComponent(world, CollisionRadius, eid) ? CollisionRadius.value[eid] : 0.4
       const maxSl = hasComponent(world, MaxSlope, eid) ? MaxSlope.value[eid] : 100
-      const checkR = unitRadius * 0.5
+      const checkR = unitRadius
 
       const curOk = checkFootprint(px, pz, checkR, maxSl)
-      const newOk = curOk ? checkFootprint(newX, newZ, checkR, maxSl) : true // escape mode
+      // Escape: center must stay walkable. Normal: full footprint check.
+      const newOk = curOk ? checkFootprint(newX, newZ, checkR, maxSl)
+        : (isWorldWalkable(newX, newZ) && getTerrainTypeAt(newX, newZ) !== T_WATER)
       if (!newOk) {
         const xOk = checkFootprint(px + moveX, pz, checkR, maxSl)
         const zOk = checkFootprint(px, pz + moveZ, checkR, maxSl)
