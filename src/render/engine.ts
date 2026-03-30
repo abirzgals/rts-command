@@ -108,7 +108,7 @@ export class RTSCamera {
   private dragPrevY = 0
   private rmbStartX = 0
   private rmbStartY = 0
-  private readonly PAN_THRESHOLD = 8
+  private get PAN_THRESHOLD() { return Math.max(5, window.innerWidth * 0.005) }
 
   constructor() {
     window.addEventListener('keydown', (e) => this.keys.add(e.code))
