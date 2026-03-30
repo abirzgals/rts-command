@@ -143,7 +143,7 @@ export function aiSystem(world: IWorld, dt: number) {
 
   // ── Census: count everything ────────────────────────────────
   const census = takeCensus(world)
-  if (!census.commandCenter) {
+  if (census.commandCenter === null) {
     aiDebugStatus = `AI Faction: ${getAIFaction()} | NO COMMAND CENTER FOUND`
     ;(window as any).__aiDebugStatus = aiDebugStatus
     return
@@ -286,7 +286,7 @@ function analyzeInheritedState(world: IWorld) {
   const census = takeCensus(world)
   console.log(`[AI] analyzeInheritedState: faction=${getAIFaction()} CC=${census.commandCenter} army=${census.armySupply} workers=${census.workerCount} rax=${hasBarracks} fac=${hasFactory}`)
 
-  if (!census.commandCenter) {
+  if (census.commandCenter === null) {
     aiState = AIState.SCOUTING
     console.log('[AI] No CC found, starting SCOUTING')
     return
