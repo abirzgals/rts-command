@@ -279,6 +279,7 @@ export function spawnProjectile(
   fromZ: number,
   targetEid: number,
   damage: number,
+  speed = 25,
 ): number {
   const eid = addEntity(world)
 
@@ -290,7 +291,7 @@ export function spawnProjectile(
   addComponent(world, Projectile, eid)
   Projectile.targetEid[eid] = targetEid
   Projectile.damage[eid] = damage
-  Projectile.speed[eid] = 25
+  Projectile.speed[eid] = speed
 
   addComponent(world, MeshRef, eid)
   MeshRef.poolId[eid] = 30
@@ -311,6 +312,7 @@ export function spawnArcProjectile(
   targetEid: number,
   damage: number,
   splash: number,
+  cfgArcHeight?: number,
 ): number {
   const eid = addEntity(world)
   const fromY = getTerrainHeight(fromX, fromZ) + 2.0
@@ -332,8 +334,8 @@ export function spawnArcProjectile(
   ArcProjectile.targetX[eid] = tx
   ArcProjectile.targetZ[eid] = tz
   ArcProjectile.elapsed[eid] = 0
-  ArcProjectile.duration[eid] = Math.max(0.6, dist / 15) // flight time based on distance
-  ArcProjectile.arcHeight[eid] = Math.max(4, dist * 0.4) // higher arc for longer distance
+  ArcProjectile.duration[eid] = Math.max(0.6, dist / 15)
+  ArcProjectile.arcHeight[eid] = cfgArcHeight ?? Math.max(4, dist * 0.4)
   ArcProjectile.damage[eid] = damage
   ArcProjectile.splash[eid] = splash
   ArcProjectile.targetEid[eid] = targetEid

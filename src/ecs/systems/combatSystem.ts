@@ -177,18 +177,22 @@ function tryAttack(world: IWorld, attacker: number, target: number, dist: number
     const splash = AttackC.splash[attacker]
     const fp = getFirePoint(world, attacker)
 
-    // Read editor muzzle config
+    // Read editor config for projectile type and muzzle
     const key = UT_TO_KEY[utId]
     const muzzleCfg = key ? editorConfig?.[key]?.muzzle : null
+    const projCfg = key ? editorConfig?.[key]?.projectile : null
+    const useShell = projCfg?.type === 'shell' && splash > 0
 
-    if (isTank && splash > 0) {
-      spawnArcProjectile(world, fp.x, fp.z, target, damage, splash)
+    const projSpeed = projCfg?.speed ?? (useShell ? 15 : 25)
+
+    if (useShell) {
+      spawnArcProjectile(world, fp.x, fp.z, target, damage, splash, projCfg?.arcHeight)
       spawnMuzzleFlash(fp.x, fp.y, fp.z, muzzleCfg)
       const poolId = MeshRef.poolId[attacker]
       const animMgr = getAnimManager(poolId)
       if (animMgr) animMgr.triggerRecoil(attacker)
     } else {
-      spawnProjectile(world, fp.x, fp.z, target, damage)
+      spawnProjectile(world, fp.x, fp.z, target, damage, projSpeed)
       spawnMuzzleFlash(fp.x, fp.y, fp.z, muzzleCfg)
     }
   } else {
