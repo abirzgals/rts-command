@@ -11,7 +11,8 @@ import { scene } from '../../render/engine'
 import { getPath } from '../../pathfinding/pathStore'
 import { getQueue, type Command } from '../commandQueue'
 import { FACTION_PLAYER } from '../../game/config'
-import { hoverEid } from '../../input/input'
+import { hoverEid, getEntityGroup } from '../../input/input'
+import { camera, renderer } from '../../render/engine'
 
 const selectedQuery = defineQuery([Selected, Position])
 
@@ -150,6 +151,68 @@ export function selectionVisualSystem(world: IWorld, _dt: number) {
 
   // ── Path + queue visualization (visible when shift held) ──
   updatePathQueueVisuals(world, selected, shiftVisualActive)
+  updateGroupLabels(world, selected)
+}
+
+// ── Group number labels above units ─────────────────────────
+let groupLabelContainer: HTMLDivElement | null = null
+const groupLabels = new Map<number, HTMLDivElement>()
+const _projVec = new THREE.Vector3()
+
+function updateGroupLabels(world: IWorld, selected: number[]) {
+  if (!groupLabelContainer) {
+    groupLabelContainer = document.createElement('div')
+    groupLabelContainer.id = 'group-labels'
+    Object.assign(groupLabelContainer.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: '45' })
+    document.body.appendChild(groupLabelContainer)
+  }
+
+  const activeEids = new Set<number>()
+  const rect = renderer.domElement.getBoundingClientRect()
+
+  for (const eid of selected) {
+    if (hasComponent(world, Dead, eid)) continue
+    const groupNum = getEntityGroup(eid)
+    if (groupNum === undefined) {
+      // Remove label if no longer in a group
+      const old = groupLabels.get(eid)
+      if (old) { old.remove(); groupLabels.delete(eid) }
+      continue
+    }
+
+    activeEids.add(eid)
+
+    _projVec.set(Position.x[eid], Position.y[eid] + 2.5, Position.z[eid])
+    _projVec.project(camera)
+    if (_projVec.z > 1) { const l = groupLabels.get(eid); if (l) l.style.display = 'none'; continue }
+
+    const sx = ((_projVec.x + 1) / 2) * rect.width + rect.left
+    const sy = ((-_projVec.y + 1) / 2) * rect.height + rect.top
+
+    let label = groupLabels.get(eid)
+    if (!label) {
+      label = document.createElement('div')
+      Object.assign(label.style, {
+        position: 'fixed', fontSize: '11px', fontWeight: 'bold', color: '#fff',
+        background: 'rgba(0,0,0,0.6)', borderRadius: '3px', padding: '0 4px',
+        transform: 'translate(-50%, -100%)', whiteSpace: 'nowrap',
+      })
+      groupLabelContainer.appendChild(label)
+      groupLabels.set(eid, label)
+    }
+    label.textContent = String(groupNum)
+    label.style.display = 'block'
+    label.style.left = sx + 'px'
+    label.style.top = sy + 'px'
+  }
+
+  // Remove labels for deselected/dead entities
+  for (const [eid, label] of groupLabels) {
+    if (!activeEids.has(eid)) {
+      label.remove()
+      groupLabels.delete(eid)
+    }
+  }
 }
 
 // ── Shift-held path/queue visualization ──────────────────────

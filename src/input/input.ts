@@ -13,7 +13,7 @@ import {
 import { gameState } from '../game/state'
 import { raycastGround, camera, scene } from '../render/engine'
 import { getPool } from '../render/meshPools'
-import { toggleDebug } from '../render/debugOverlay'
+import { toggleDebug, isDebugEnabled } from '../render/debugOverlay'
 import { spawnMoveMarker, spawnActionIndicator } from '../render/effects'
 import { spawnBuilding } from '../ecs/archetypes'
 import { spatialHash } from '../globals'
@@ -37,6 +37,18 @@ let dragStartX = 0
 let dragStartY = 0
 const DRAG_THRESHOLD = 5
 let forceAttackMode = false // when true, next click = attack anything
+
+// ── Control Groups (Ctrl+1-9 assign, 1-9 select, Shift+1-9 add) ──
+const controlGroups = new Map<number, Set<number>>() // group number -> entity IDs
+export function getControlGroup(num: number): Set<number> | undefined {
+  return controlGroups.get(num)
+}
+export function getEntityGroup(eid: number): number | undefined {
+  for (const [num, set] of controlGroups) {
+    if (set.has(eid)) return num
+  }
+  return undefined
+}
 let rallyMode = false       // when true, next click = set rally point
 let shiftHeld = false
 let lastClickTime = 0
@@ -1128,6 +1140,44 @@ function onKeyDown(e: KeyboardEvent, world: IWorld) {
       }
     }
     return
+  }
+
+  // Control groups: Ctrl+1-9 assign, Shift+1-9 add, 1-9 select
+  if (e.key >= '1' && e.key <= '9' && !e.altKey) {
+    const num = parseInt(e.key)
+    if (e.ctrlKey) {
+      // Ctrl+N: assign selected to group N
+      e.preventDefault()
+      const selected = selectedQuery(world)
+      // Remove these units from other groups first
+      for (const [, set] of controlGroups) {
+        for (const eid of selected) set.delete(eid)
+      }
+      controlGroups.set(num, new Set(selected))
+      return
+    } else if (e.shiftKey) {
+      // Shift+N: add selected to group N
+      const selected = selectedQuery(world)
+      let group = controlGroups.get(num)
+      if (!group) { group = new Set(); controlGroups.set(num, group) }
+      for (const eid of selected) group.add(eid)
+      return
+    } else if (!isDebugEnabled()) {
+      // N: select group (without debug mode — debug uses 1-9 for spawning)
+      const group = controlGroups.get(num)
+      if (group && group.size > 0) {
+        clearSelection(world)
+        // Clean dead entities from group
+        for (const eid of group) {
+          if (hasComponent(world, Dead, eid) || !hasComponent(world, Position, eid)) {
+            group.delete(eid)
+          } else {
+            addComponent(world, Selected, eid)
+          }
+        }
+      }
+      return
+    }
   }
 
   // Select all army (Ctrl+A)
