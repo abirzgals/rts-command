@@ -535,9 +535,15 @@ function handleClick(world: IWorld, sx: number, sy: number) {
     Faction.id[eid] === FACTION_PLAYER && !hasComponent(world, IsBuilding, eid)
   )
 
+  // In Starcraft mode, left click only selects — commands go via right click
+  if (getMouseMode() === 'starcraft') {
+    if (closestEid < 0) clearSelection(world)
+    return
+  }
+
   const isMobile = 'ontouchstart' in window
   if (movableUnits.length === 0 && producerBuildings.length > 0 && !isMobile) {
-    // Desktop: left-click ground with building selected = set rally
+    // SupCom desktop: left-click ground with building selected = set rally
     issueBuildingCommand(world, producerBuildings, hit, closestEid, clickedEnemy, clickedResource, shiftHeld)
     return
   }
@@ -547,13 +553,6 @@ function handleClick(world: IWorld, sx: number, sy: number) {
       clearSelection(world)
       addComponent(world, Selected, closestEid)
     }
-    return
-  }
-
-  // In Starcraft mode, left click only selects — commands go via right click
-  if (getMouseMode() === 'starcraft') {
-    // Left click on empty ground with units selected = deselect
-    if (closestEid < 0) clearSelection(world)
     return
   }
 
