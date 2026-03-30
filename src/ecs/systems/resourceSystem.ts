@@ -3,9 +3,10 @@ import type { IWorld } from 'bitecs'
 import {
   Position, Faction, WorkerC, ResourceNode, MoveTarget,
   MoveSpeed, ResourceDropoff, Dead, PathFollower, BuildProgress, IsBuilding,
-  CollisionRadius, Selectable,
+  CollisionRadius, Selectable, Health, UnitTypeC,
 } from '../components'
 import { gameState } from '../../game/state'
+import { BUILDING_DEFS } from '../../game/config'
 import { spatialHash } from '../../globals'
 import { removePath } from '../../pathfinding/pathStore'
 
@@ -137,6 +138,14 @@ export function resourceSystem(world: IWorld, dt: number) {
 
       case 5: // actively building
         activelyBuild(world, eid)
+        break
+
+      case 6: // moving to repair
+        moveToRepair(world, eid)
+        break
+
+      case 7: // actively repairing
+        activelyRepair(world, eid, dt)
         break
     }
   }
@@ -368,4 +377,93 @@ function activelyBuild(world: IWorld, eid: number) {
   }
 
   // Face the building (rotation handled by movement system)
+}
+
+// ── Worker state 6: moving to repair ────────────────────────
+
+const REPAIR_RANGE = 3.5
+const REPAIR_RATE = 20 // HP per second
+
+function moveToRepair(world: IWorld, eid: number) {
+  const target = WorkerC.buildTarget[eid]
+
+  if (!isValidEntity(target) || hasComponent(world, Dead, target)) {
+    WorkerC.state[eid] = 0
+    WorkerC.buildTarget[eid] = NONE
+    return
+  }
+
+  // Already at full HP?
+  if (hasComponent(world, Health, target) && Health.current[target] >= Health.max[target]) {
+    WorkerC.state[eid] = 0
+    WorkerC.buildTarget[eid] = NONE
+    return
+  }
+
+  const dx = Position.x[target] - Position.x[eid]
+  const dz = Position.z[target] - Position.z[eid]
+  const dist = Math.sqrt(dx * dx + dz * dz)
+
+  if (dist < REPAIR_RANGE) {
+    WorkerC.state[eid] = 7 // start repairing
+    if (hasComponent(world, MoveTarget, eid)) removeComponent(world, MoveTarget, eid)
+    clearPath(world, eid)
+  } else if (!hasComponent(world, MoveTarget, eid) && !hasComponent(world, PathFollower, eid)) {
+    moveToEntityEdge(world, eid, target)
+  }
+}
+
+// ── Worker state 7: actively repairing ──────────────────────
+
+function activelyRepair(world: IWorld, eid: number, dt: number) {
+  const target = WorkerC.buildTarget[eid]
+
+  if (!isValidEntity(target) || hasComponent(world, Dead, target) || !hasComponent(world, Health, target)) {
+    WorkerC.state[eid] = 0
+    WorkerC.buildTarget[eid] = NONE
+    return
+  }
+
+  // Done repairing?
+  if (Health.current[target] >= Health.max[target]) {
+    Health.current[target] = Health.max[target]
+    WorkerC.state[eid] = 0
+    WorkerC.buildTarget[eid] = NONE
+    return
+  }
+
+  // Check distance — if pushed away, walk back
+  const dx = Position.x[target] - Position.x[eid]
+  const dz = Position.z[target] - Position.z[eid]
+  if (dx * dx + dz * dz > REPAIR_RANGE * REPAIR_RANGE * 1.5) {
+    WorkerC.state[eid] = 6
+    addComponent(world, MoveTarget, eid)
+    MoveTarget.x[eid] = Position.x[target]
+    MoveTarget.z[eid] = Position.z[target]
+    return
+  }
+
+  // Calculate repair cost per HP (half the building's full cost / full HP)
+  const ut = hasComponent(world, UnitTypeC, target) ? UnitTypeC.id[target] : -1
+  const bdef = BUILDING_DEFS[ut]
+  const maxHp = Health.max[target]
+  const costPerHp = bdef ? {
+    minerals: (bdef.cost.minerals / 2) / maxHp,
+    gas: (bdef.cost.gas / 2) / maxHp,
+  } : { minerals: 0, gas: 0 }
+
+  // Repair
+  const hpToRepair = REPAIR_RATE * dt
+  const mineralCost = hpToRepair * costPerHp.minerals
+  const gasCost = hpToRepair * costPerHp.gas
+
+  const faction = Faction.id[eid]
+  const res = gameState.getResources(faction)
+
+  if (res.minerals >= mineralCost && res.gas >= gasCost) {
+    res.minerals -= mineralCost
+    res.gas -= gasCost
+    Health.current[target] = Math.min(maxHp, Health.current[target] + hpToRepair)
+  }
+  // If can't afford, just stand there waiting for resources
 }

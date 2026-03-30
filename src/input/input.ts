@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import { defineQuery, hasComponent, addComponent, removeComponent } from 'bitecs'
 import type { IWorld } from 'bitecs'
 import {
-  Position, Faction, Selected, Selectable, MoveTarget, Velocity,
+  Position, Faction, Selected, Selectable, MoveTarget, Velocity, Health,
   AttackTarget, AttackMove, ResourceNode, ResourceDropoff, WorkerC, IsBuilding, UnitTypeC,
   Producer, PathFollower, BuildProgress, Dead, CollisionRadius, UnitMode, MODE_MOVE, MODE_ATTACK_MOVE,
 } from '../ecs/components'
@@ -433,6 +433,9 @@ function handleClick(world: IWorld, sx: number, sy: number) {
     !hasComponent(world, Dead, closestEid)
   const clickedBuildSite = closestEid >= 0 && hasComponent(world, BuildProgress, closestEid) &&
     hasComponent(world, Faction, closestEid) && Faction.id[closestEid] === FACTION_PLAYER
+  const clickedDamagedBuilding = closestEid >= 0 && clickedFriendly &&
+    hasComponent(world, IsBuilding, closestEid) && !hasComponent(world, BuildProgress, closestEid) &&
+    hasComponent(world, Health, closestEid) && Health.current[closestEid] < Health.max[closestEid]
 
   // ── Double-click on friendly → select all visible units of same type ──
   const now = performance.now()
@@ -474,7 +477,8 @@ function handleClick(world: IWorld, sx: number, sy: number) {
   }
 
   // ── Click on friendly unit/building → select (or toggle with shift) ──
-  if (clickedFriendly && !clickedResource && !clickedBuildSite) {
+  // But if it's a damaged building and we have workers, issue repair instead
+  if (clickedFriendly && !clickedResource && !clickedBuildSite && !clickedDamagedBuilding) {
     if (shiftHeld) {
       if (hasComponent(world, Selected, closestEid)) {
         removeComponent(world, Selected, closestEid)
@@ -500,7 +504,7 @@ function handleClick(world: IWorld, sx: number, sy: number) {
     return
   }
 
-  issueCommand(world, movableUnits, hit, closestEid, clickedEnemy, clickedResource, clickedBuildSite, shiftHeld)
+  issueCommand(world, movableUnits, hit, closestEid, clickedEnemy, clickedResource, clickedBuildSite, shiftHeld, clickedDamagedBuilding)
 }
 
 function handleBoxSelect(world: IWorld, x1: number, y1: number, x2: number, y2: number) {
@@ -584,15 +588,17 @@ function issueCommand(
   clickedResource: boolean,
   clickedBuildSite: boolean,
   queue: boolean,
+  clickedDamagedBuilding = false,
 ) {
   const count = movableUnits.length
   if (count === 0) return
 
   // Determine command type and show indicator
-  let cmdType: 'move' | 'attack' | 'gather' | 'build' = 'move'
+  let cmdType: 'move' | 'attack' | 'gather' | 'build' | 'repair' = 'move'
   if (clickedEnemy) cmdType = 'attack'
   else if (clickedResource) cmdType = 'gather'
   else if (clickedBuildSite) cmdType = 'build'
+  else if (clickedDamagedBuilding) cmdType = 'repair'
 
   // Show visual feedback
   if (closestEid >= 0 && cmdType !== 'move') {
@@ -698,6 +704,16 @@ function issueCommand(
       MoveTarget.z[eid] = Position.z[closestEid]
     } else if (cmdType === 'build' && closestEid >= 0 && hasComponent(world, WorkerC, eid)) {
       WorkerC.state[eid] = 4
+      WorkerC.buildTarget[eid] = closestEid
+      const bx = Position.x[closestEid], bz = Position.z[closestEid]
+      const bRadius = hasComponent(world, Selectable, closestEid) ? Selectable.radius[closestEid] : 2.0
+      const dx = Position.x[eid] - bx, dz = Position.z[eid] - bz
+      const d = Math.sqrt(dx * dx + dz * dz) || 1
+      addComponent(world, MoveTarget, eid)
+      MoveTarget.x[eid] = bx + (dx / d) * (bRadius + 1.0)
+      MoveTarget.z[eid] = bz + (dz / d) * (bRadius + 1.0)
+    } else if (cmdType === 'repair' && closestEid >= 0 && hasComponent(world, WorkerC, eid)) {
+      WorkerC.state[eid] = 6 // movingToRepair
       WorkerC.buildTarget[eid] = closestEid
       const bx = Position.x[closestEid], bz = Position.z[closestEid]
       const bRadius = hasComponent(world, Selectable, closestEid) ? Selectable.radius[closestEid] : 2.0

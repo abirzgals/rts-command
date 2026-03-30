@@ -65,13 +65,13 @@ export const ResourceNode = defineComponent({
 })
 
 export const WorkerC = defineComponent({
-  state: Types.ui8,      // 0=idle, 1=movingToRes, 2=gathering, 3=returning, 4=movingToBuild, 5=building
+  state: Types.ui8,      // 0=idle, 1=movingToRes, 2=gathering, 3=returning, 4=movingToBuild, 5=building, 6=movingToRepair, 7=repairing
   targetNode: Types.ui32, // entity ID of resource node
   carryAmount: Types.f32,
   carryType: Types.ui8,
   gatherTimer: Types.f32,
   returnTarget: Types.ui32, // entity ID of command center
-  buildTarget: Types.ui32,  // entity ID of building under construction
+  buildTarget: Types.ui32,  // entity ID of building under construction/repair
 })
 
 export const ResourceDropoff = defineComponent() // tag
