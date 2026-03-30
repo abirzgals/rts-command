@@ -297,7 +297,7 @@ function onMouseMove(e: MouseEvent, _world: IWorld) {
       const dz = Position.z[eid] - hit.z
       const dist = Math.sqrt(dx * dx + dz * dz)
       const radius = Selectable.radius[eid]
-      if (dist < radius + 1 && dist < bestDist) {
+      if (dist <= radius && dist < bestDist) {
         bestDist = dist
         hoverEid = eid
       }
@@ -395,7 +395,7 @@ function handleClick(world: IWorld, sx: number, sy: number) {
       const dx = Position.x[eid] - hit.x
       const dz = Position.z[eid] - hit.z
       const dist = Math.sqrt(dx * dx + dz * dz)
-      if (dist > Selectable.radius[eid] + 1) continue
+      if (dist > Selectable.radius[eid]) continue
 
       const hasFaction = hasComponent(world, Faction, eid)
       if (hasFaction && Faction.id[eid] !== FACTION_PLAYER && dist < bestEnemyDist) {
@@ -418,7 +418,7 @@ function handleClick(world: IWorld, sx: number, sy: number) {
       const dx = Position.x[eid] - hit.x
       const dz = Position.z[eid] - hit.z
       const dist = Math.sqrt(dx * dx + dz * dz)
-      if (dist < Selectable.radius[eid] + 1 && dist < closestDist) {
+      if (dist <= Selectable.radius[eid] && dist < closestDist) {
         closestDist = dist; closestEid = eid
       }
     }
