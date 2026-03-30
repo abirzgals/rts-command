@@ -7,7 +7,9 @@ import { telemetry } from '../debug/movementTelemetry'
 import { Selected } from '../ecs/components'
 import { defineQuery } from 'bitecs'
 import { gameState } from '../game/state'
-import { FACTION_PLAYER } from '../game/config'
+import { FACTION_PLAYER, UT_WORKER, UT_MARINE, UT_TANK, UT_JEEP, UT_ROCKET, UNIT_DEFS, BT_COMMAND_CENTER, BT_SUPPLY_DEPOT, BT_BARRACKS, BT_FACTORY, BUILDING_DEFS } from '../game/config'
+import { spawnUnit, spawnBuilding } from '../ecs/archetypes'
+import { mouseWorldX, mouseWorldZ } from '../input/input'
 
 const selectedQuery = defineQuery([Selected])
 
@@ -134,6 +136,34 @@ export function initSharedButtons() {
       e.preventDefault()
       if (telemetry.enabled) {
         telemetry.dump('Snapshot (F3)')
+      }
+    }
+
+    // Debug spawn: number keys 1-9 spawn units/buildings at cursor
+    if (isDebugEnabled() && e.key >= '1' && e.key <= '9' && !e.ctrlKey && !e.altKey) {
+      const w = (window as any).__ecsWorld
+      if (!w) return
+      const num = parseInt(e.key)
+      const debugSpawns: { type: 'unit' | 'building'; id: number; name: string }[] = [
+        { type: 'unit', id: 0, name: 'Worker' },      // 1
+        { type: 'unit', id: 1, name: 'Marine' },      // 2
+        { type: 'unit', id: 2, name: 'Tank' },        // 3
+        { type: 'unit', id: 3, name: 'Jeep' },        // 4
+        { type: 'unit', id: 4, name: 'Rocket' },      // 5
+        { type: 'unit', id: 5, name: 'Trooper' },     // 6
+        { type: 'building', id: 100, name: 'CC' },    // 7
+        { type: 'building', id: 102, name: 'Barracks' }, // 8
+        { type: 'building', id: 103, name: 'Factory' },  // 9
+      ]
+      const spawn = debugSpawns[num - 1]
+      if (spawn) {
+        const x = mouseWorldX, z = mouseWorldZ
+        if (spawn.type === 'unit') {
+          spawnUnit(w, spawn.id, FACTION_PLAYER, x, z)
+        } else {
+          spawnBuilding(w, spawn.id, FACTION_PLAYER, x, z, true)
+        }
+        console.log(`[DEBUG] Spawned ${spawn.name} at (${x.toFixed(1)}, ${z.toFixed(1)})`)
       }
     }
   })
