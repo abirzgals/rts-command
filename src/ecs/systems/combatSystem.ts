@@ -192,7 +192,7 @@ function tryAttack(world: IWorld, attacker: number, target: number, dist: number
       const animMgr = getAnimManager(poolId)
       if (animMgr) animMgr.triggerRecoil(attacker)
     } else {
-      spawnProjectile(world, fp.x, fp.z, target, damage, projSpeed)
+      spawnProjectile(world, fp.x, fp.z, target, damage, projSpeed, projCfg)
       spawnMuzzleFlash(fp.x, fp.y, fp.z, muzzleCfg)
     }
   } else {

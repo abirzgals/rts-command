@@ -5,6 +5,7 @@ import { Position, Rotation, MeshRef, Dead, AttackTarget, Health, WorkerC, MoveT
 import { getPath } from '../../pathfinding/pathStore'
 import { getPool, getAllPools } from '../../render/meshPools'
 import { getAnimManager } from '../../render/animatedMeshManager'
+import { projectileMeshes } from '../archetypes'
 // Carry visual: small crystal for workers carrying resources
 const carryGeo = new THREE.OctahedronGeometry(0.15, 0)
 const carryMatMineral = new THREE.MeshBasicMaterial({ color: 0x44ccff, transparent: true, opacity: 0.9 })
@@ -52,6 +53,13 @@ export function renderSystem(world: IWorld, dt: number) {
         }
       }
 
+      continue
+    }
+
+    // Individual projectile mesh (poolId=255)
+    if (projectileMeshes.has(eid)) {
+      const mesh = projectileMeshes.get(eid)!
+      mesh.position.set(x, y, z)
       continue
     }
 

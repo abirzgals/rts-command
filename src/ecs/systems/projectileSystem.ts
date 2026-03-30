@@ -3,6 +3,7 @@ import type { IWorld } from 'bitecs'
 import { Position, Projectile, ArcProjectile, Dead, Health, MeshRef, Faction } from '../components'
 import { applyDamage } from './combatSystem'
 import { getPool } from '../../render/meshPools'
+import { projectileMeshes, removeProjectileMesh } from '../archetypes'
 import { getTerrainHeight } from '../../terrain/heightmap'
 import { spatialHash } from '../../globals'
 import { spawnExplosion, spawnSmoke, spawnMuzzleFlash } from '../../render/effects'
@@ -124,7 +125,12 @@ export function projectileSystem(world: IWorld, dt: number) {
 }
 
 function destroyProjectile(world: IWorld, eid: number, poolId: number) {
-  const pool = getPool(poolId)
-  if (pool) pool.remove(eid)
+  // Individual mesh projectile (poolId=255)
+  if (projectileMeshes.has(eid)) {
+    removeProjectileMesh(eid)
+  } else {
+    const pool = getPool(poolId)
+    if (pool) pool.remove(eid)
+  }
   removeEntity(world, eid)
 }

@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { scene } from './engine'
+export function getScene() { return scene }
 import {
   createWorkerGeometry,
   createMarineGeometry,

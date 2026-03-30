@@ -1,3 +1,4 @@
+import * as THREE from 'three'
 import { addEntity, addComponent } from 'bitecs'
 import type { IWorld } from 'bitecs'
 import {
@@ -11,7 +12,7 @@ import {
   UNIT_DEFS, BUILDING_DEFS, FACTION_PLAYER, UT_WORKER,
   type UnitDef, type BuildingDef,
 } from '../game/config'
-import { getPool, getFactionColor, editorConfig } from '../render/meshPools'
+import { getPool, getFactionColor, editorConfig, getScene } from '../render/meshPools'
 import { getAnimManager } from '../render/animatedMeshManager'
 import { spatialHash } from '../globals'
 import { getTerrainHeight } from '../terrain/heightmap'
@@ -273,6 +274,19 @@ export function spawnResourceNode(
   return eid
 }
 
+// Track individual projectile meshes — updated by projectileSystem, cleaned on death
+export const projectileMeshes = new Map<number, THREE.Mesh>()
+
+export function removeProjectileMesh(eid: number) {
+  const mesh = projectileMeshes.get(eid)
+  if (mesh) {
+    getScene().remove(mesh)
+    mesh.geometry.dispose()
+    ;(mesh.material as THREE.Material).dispose()
+    projectileMeshes.delete(eid)
+  }
+}
+
 export function spawnProjectile(
   world: IWorld,
   fromX: number,
@@ -280,6 +294,7 @@ export function spawnProjectile(
   targetEid: number,
   damage: number,
   speed = 25,
+  cfg?: { color?: string; size?: number },
 ): number {
   const eid = addEntity(world)
 
@@ -293,14 +308,18 @@ export function spawnProjectile(
   Projectile.damage[eid] = damage
   Projectile.speed[eid] = speed
 
-  addComponent(world, MeshRef, eid)
-  MeshRef.poolId[eid] = 30
+  // Create individual mesh with config size/color
+  const sz = cfg?.size ?? 0.12
+  const color = cfg?.color ? parseInt(cfg.color.replace('#', ''), 16) : 0xffee44
+  const geo = new THREE.SphereGeometry(sz, 6, 6)
+  const mat = new THREE.MeshBasicMaterial({ color })
+  const mesh = new THREE.Mesh(geo, mat)
+  mesh.position.set(fromX, 1.0, fromZ)
+  getScene().add(mesh)
+  projectileMeshes.set(eid, mesh)
 
-  const pool = getPool(30)
-  if (pool) {
-    const idx = pool.add(eid, fromX, 1.0, fromZ, 0)
-    MeshRef.instanceIdx[eid] = idx
-  }
+  addComponent(world, MeshRef, eid)
+  MeshRef.poolId[eid] = 255 // special: individual mesh, not instanced pool
 
   return eid
 }
