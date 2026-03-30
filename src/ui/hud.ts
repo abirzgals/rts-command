@@ -101,12 +101,6 @@ export function updateHUD(world: IWorld, _dt: number, time: number) {
       const pct = Math.floor((Producer.progress[eid] / Producer.duration[eid]) * 100)
       const unitDef = UNIT_DEFS[Producer.unitType[eid]]
       stats.push(`Producing: ${unitDef?.name ?? '?'} (${pct}%)`)
-      // Show queue
-      const queue = gameState.getQueue(eid)
-      if (queue.length > 1) {
-        const queueNames = queue.slice(1).map(q => UNIT_DEFS[q.unitType]?.name ?? '?').join(', ')
-        stats.push(`Queue: ${queueNames}`)
-      }
     }
     selectedStatsEl.innerHTML = stats.join('<br>')
 
@@ -148,6 +142,157 @@ export function updateHUD(world: IWorld, _dt: number, time: number) {
 
   // Update affordability styling every frame
   updateAffordability()
+
+  // Update production queue display for selected building
+  updateProductionQueue(world, selected)
+}
+
+const UNIT_ICONS: Record<number, string> = {
+  0: '👷', 1: '🔫', 2: '🛡️', 3: '🚙', 4: '🚀', 5: '🔫',
+}
+
+let queueContainer: HTMLDivElement | null = null
+
+function updateProductionQueue(world: IWorld, selected: number[]) {
+  if (selected.length !== 1) {
+    if (queueContainer) { queueContainer.style.display = 'none' }
+    return
+  }
+  const eid = selected[0]
+  if (!hasComponent(world, Producer, eid) || !hasComponent(world, IsBuilding, eid)) {
+    if (queueContainer) { queueContainer.style.display = 'none' }
+    return
+  }
+
+  const queue = gameState.getQueue(eid)
+  if (queue.length === 0 && !Producer.active[eid]) {
+    if (queueContainer) { queueContainer.style.display = 'none' }
+    return
+  }
+
+  // Create container if needed
+  if (!queueContainer) {
+    queueContainer = document.createElement('div')
+    Object.assign(queueContainer.style, {
+      position: 'fixed', bottom: '165px', left: '210px',
+      display: 'flex', gap: '3px', flexWrap: 'wrap', zIndex: '50',
+      padding: '4px 8px', background: 'rgba(10,10,20,0.85)',
+      borderRadius: '6px', border: '1px solid #333',
+    })
+    document.body.appendChild(queueContainer)
+  }
+  queueContainer.style.display = 'flex'
+
+  // Build queue icons — first is currently producing (with progress bar)
+  const items: { unitType: number; index: number; active: boolean }[] = []
+  if (Producer.active[eid]) {
+    items.push({ unitType: Producer.unitType[eid], index: 0, active: true })
+  }
+  for (let i = 0; i < queue.length; i++) {
+    // Skip index 0 if it matches the active production (already shown)
+    if (i === 0 && Producer.active[eid]) continue
+    items.push({ unitType: queue[i].unitType, index: i, active: false })
+  }
+
+  // Rebuild only if count changed
+  if (queueContainer.children.length !== items.length) {
+    queueContainer.innerHTML = ''
+    for (const item of items) {
+      const el = document.createElement('div')
+      Object.assign(el.style, {
+        width: '32px', height: '32px', borderRadius: '4px',
+        border: '1px solid #555', background: '#1a1a2e',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: '18px', cursor: 'pointer', position: 'relative',
+      })
+      el.textContent = UNIT_ICONS[item.unitType] || '?'
+      el.title = `${UNIT_DEFS[item.unitType]?.name ?? '?'} — click to cancel`
+      el.addEventListener('click', (ev) => {
+        ev.stopPropagation()
+        cancelQueueItem(eid, item.index)
+      })
+      queueContainer.appendChild(el)
+    }
+  }
+
+  // Update progress on first item
+  if (items.length > 0 && items[0].active && queueContainer.firstChild) {
+    const pct = Producer.duration[eid] > 0
+      ? Math.floor((Producer.progress[eid] / Producer.duration[eid]) * 100) : 0
+    const el = queueContainer.firstChild as HTMLElement
+    el.style.background = `linear-gradient(to top, rgba(40,120,40,0.6) ${pct}%, #1a1a2e ${pct}%)`
+    el.style.borderColor = '#4a8a4a'
+  }
+}
+
+function cancelAllProduction(buildingEid: number) {
+  const queue = gameState.getQueue(buildingEid)
+  const faction = Faction.id[buildingEid]
+  const res = gameState.getResources(faction)
+  // Refund currently producing
+  if (Producer.active[buildingEid]) {
+    const def = UNIT_DEFS[Producer.unitType[buildingEid]]
+    if (def) {
+      res.minerals += def.cost.minerals
+      res.gas += def.cost.gas
+      res.supplyCurrent = Math.max(0, res.supplyCurrent - def.supply)
+    }
+    Producer.active[buildingEid] = 0
+    Producer.progress[buildingEid] = 0
+  }
+  // Refund all queued
+  for (const item of queue) {
+    const def = UNIT_DEFS[item.unitType]
+    if (def) {
+      res.minerals += def.cost.minerals
+      res.gas += def.cost.gas
+      res.supplyCurrent = Math.max(0, res.supplyCurrent - def.supply)
+    }
+  }
+  queue.length = 0
+  if (queueContainer) queueContainer.innerHTML = ''
+}
+
+function cancelQueueItem(buildingEid: number, index: number) {
+  const queue = gameState.getQueue(buildingEid)
+
+  if (index === 0 && Producer.active[buildingEid]) {
+    // Cancel currently producing — refund cost
+    const unitType = Producer.unitType[buildingEid]
+    const def = UNIT_DEFS[unitType]
+    if (def) {
+      const res = gameState.getResources(Faction.id[buildingEid])
+      res.minerals += def.cost.minerals
+      res.gas += def.cost.gas
+      res.supplyCurrent = Math.max(0, res.supplyCurrent - def.supply)
+    }
+    queue.shift()
+    if (queue.length > 0) {
+      const next = queue[0]
+      Producer.unitType[buildingEid] = next.unitType
+      Producer.progress[buildingEid] = 0
+      Producer.duration[buildingEid] = next.remaining
+    } else {
+      Producer.active[buildingEid] = 0
+      Producer.progress[buildingEid] = 0
+    }
+  } else {
+    // Cancel queued item — refund
+    const actualIdx = Producer.active[buildingEid] ? index : index
+    if (actualIdx >= 0 && actualIdx < queue.length) {
+      const item = queue[actualIdx]
+      const def = UNIT_DEFS[item.unitType]
+      if (def) {
+        const res = gameState.getResources(Faction.id[buildingEid])
+        res.minerals += def.cost.minerals
+        res.gas += def.cost.gas
+        res.supplyCurrent = Math.max(0, res.supplyCurrent - def.supply)
+      }
+      queue.splice(actualIdx, 1)
+    }
+  }
+  // Force rebuild
+  if (queueContainer) queueContainer.innerHTML = ''
 }
 
 function updateAffordability() {
@@ -210,6 +355,10 @@ function updateActionButtons(world: IWorld, eid: number) {
       // Rally point button (for mobile)
       actionButtonsEl.appendChild(createActionButton('🚩', 'Rally', 'tap ground', () => {
         setRallyMode(true)
+      }))
+      // Stop all production
+      actionButtonsEl.appendChild(createActionButton('⏹️', 'Cancel All', '', () => {
+        cancelAllProduction(eid)
       }))
     }
   }
