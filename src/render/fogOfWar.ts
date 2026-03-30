@@ -229,6 +229,36 @@ export function renderFogOverlay(rendererRef: THREE.WebGLRenderer, cam: THREE.Ca
 }
 
 // ── Enemy visibility culling ────────────────────────────────
+
+// Snapshots: enemy buildings last seen in fog — kept visible until re-explored
+interface FogSnapshot {
+  poolId: number
+  x: number; y: number; z: number; rot: number
+  idx: number // instanced mesh index
+}
+const fogSnapshots = new Map<number, FogSnapshot>() // fog cell index → snapshot
+
+/** Called by death system when an enemy building dies */
+export function onEnemyBuildingDeath(eid: number, world: IWorld) {
+  const wx = Position.x[eid], wz = Position.z[eid]
+  if (isVisibleAt(wx, wz)) return // player can see it die — no snapshot needed
+
+  if (!isExploredAt(wx, wz)) return // never seen — no snapshot
+
+  // Create snapshot: keep the mesh in place as a ghost
+  const poolId = MeshRef.poolId[eid]
+  const pool = getPool(poolId)
+  if (!pool) return
+
+  const fogIdx = worldToFog(wz) * FOG_RES + worldToFog(wx)
+  fogSnapshots.set(fogIdx, {
+    poolId,
+    x: wx, y: Position.y[eid], z: wz,
+    rot: hasComponent(world, Rotation, eid) ? Rotation.y[eid] : 0,
+    idx: pool.getIndex(eid),
+  })
+}
+
 function updateEnemyVisibility(world: IWorld) {
   const entities = enemyQuery(world)
 
@@ -236,10 +266,13 @@ function updateEnemyVisibility(world: IWorld) {
     if (Faction.id[eid] === FACTION_PLAYER) continue
     if (hasComponent(world, Dead, eid)) continue
 
-    const visible = isVisibleAt(Position.x[eid], Position.z[eid])
+    const wx = Position.x[eid], wz = Position.z[eid]
+    const visible = isVisibleAt(wx, wz)
+    const explored = isExploredAt(wx, wz)
+    const isBuilding = hasComponent(world, IsBuilding, eid)
     const poolId = MeshRef.poolId[eid]
 
-    // Animated mesh managers (units)
+    // Animated mesh managers (units) — only show if currently visible
     const animMgr = getAnimManager(poolId)
     if (animMgr && animMgr.has(eid)) {
       animMgr.setVisible(eid, visible)
@@ -249,15 +282,27 @@ function updateEnemyVisibility(world: IWorld) {
     // Instanced mesh pools (buildings, resources)
     const pool = getPool(poolId)
     if (pool) {
-      if (!visible) {
-        // Move off-screen to hide
+      // Buildings: show if explored (snapshot behavior)
+      // Units/resources: show only if currently visible
+      const show = isBuilding ? explored : visible
+
+      if (!show) {
         pool.updateTransform(eid, 0, -9999, 0, 0)
       } else {
-        // Restore real position
         const y = Position.y[eid]
         const rot = hasComponent(world, Rotation, eid) ? Rotation.y[eid] : 0
-        pool.updateTransform(eid, Position.x[eid], y, Position.z[eid], rot)
+        pool.updateTransform(eid, wx, y, wz, rot)
       }
+    }
+  }
+
+  // Clean up snapshots: remove ghost buildings when area is re-explored
+  for (const [fogIdx, snap] of fogSnapshots) {
+    const fx = fogIdx % FOG_RES
+    const fz = Math.floor(fogIdx / FOG_RES)
+    if (currentVis[fogIdx]) {
+      // Player can see this cell now — remove the ghost
+      fogSnapshots.delete(fogIdx)
     }
   }
 }

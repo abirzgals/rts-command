@@ -9,6 +9,8 @@ import { getAnimManager } from '../../render/animatedMeshManager'
 import { gameState } from '../../game/state'
 import { spatialHash } from '../../globals'
 import { removeFromQueues } from '../commandQueue'
+import { onEnemyBuildingDeath } from '../../render/fogOfWar'
+import { FACTION_PLAYER } from '../../game/config'
 import { unblockCells } from '../../pathfinding/navGrid'
 import { BUILDING_DEFS, UT_TANK } from '../../game/config'
 import { removePath } from '../../pathfinding/pathStore'
@@ -56,6 +58,12 @@ export function deathSystem(world: IWorld, _dt: number) {
         Position.y[eid],
         Position.z[eid],
       )
+    }
+
+    // Fog of war: snapshot enemy buildings dying in fog
+    if (hasComponent(world, IsBuilding, eid) && hasComponent(world, Faction, eid) &&
+        Faction.id[eid] !== FACTION_PLAYER) {
+      onEnemyBuildingDeath(eid, world)
     }
 
     // Remove from mesh pool or animated manager
