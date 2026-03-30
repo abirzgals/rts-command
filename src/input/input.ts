@@ -381,38 +381,47 @@ function handleClick(world: IWorld, sx: number, sy: number) {
 
   let closestEid = -1
   let closestDist = Infinity
-  let closestFriendlyEid = -1
-  let closestFriendlyDist = Infinity
 
-  for (const eid of nearby) {
-    if (!hasComponent(world, Selectable, eid)) continue
-    if (hasComponent(world, Dead, eid)) continue
-    const dx = Position.x[eid] - hit.x
-    const dz = Position.z[eid] - hit.z
-    const dist = Math.sqrt(dx * dx + dz * dz)
-    const radius = Selectable.radius[eid]
-    if (dist > radius + 1) continue
+  if (hasSelection) {
+    // With units selected: find what we clicked, prioritized by type
+    // Priority: enemy > resource/buildsite > friendly
+    let bestEnemy = -1, bestEnemyDist = Infinity
+    let bestRes = -1, bestResDist = Infinity
+    let bestFriendly = -1, bestFriendlyDist = Infinity
 
-    const isFriendly = hasComponent(world, Faction, eid) && Faction.id[eid] === FACTION_PLAYER
-    const isActionable = hasComponent(world, ResourceNode, eid) ||
-      hasComponent(world, BuildProgress, eid) ||
-      (hasComponent(world, Faction, eid) && Faction.id[eid] !== FACTION_PLAYER)
+    for (const eid of nearby) {
+      if (!hasComponent(world, Selectable, eid)) continue
+      if (hasComponent(world, Dead, eid)) continue
+      const dx = Position.x[eid] - hit.x
+      const dz = Position.z[eid] - hit.z
+      const dist = Math.sqrt(dx * dx + dz * dz)
+      if (dist > Selectable.radius[eid] + 1) continue
 
-    if (hasSelection && isActionable && dist < closestDist) {
-      closestDist = dist
-      closestEid = eid
-    } else if (isFriendly && dist < closestFriendlyDist) {
-      closestFriendlyDist = dist
-      closestFriendlyEid = eid
-    } else if (!hasSelection && dist < closestDist) {
-      closestDist = dist
-      closestEid = eid
+      const hasFaction = hasComponent(world, Faction, eid)
+      if (hasFaction && Faction.id[eid] !== FACTION_PLAYER && dist < bestEnemyDist) {
+        bestEnemyDist = dist; bestEnemy = eid
+      } else if ((hasComponent(world, ResourceNode, eid) || hasComponent(world, BuildProgress, eid)) && dist < bestResDist) {
+        bestResDist = dist; bestRes = eid
+      } else if (hasFaction && Faction.id[eid] === FACTION_PLAYER && dist < bestFriendlyDist) {
+        bestFriendlyDist = dist; bestFriendly = eid
+      }
     }
-  }
-  // If no actionable target found, fall back to closest friendly
-  if (closestEid < 0 && closestFriendlyEid >= 0) {
-    closestEid = closestFriendlyEid
-    closestDist = closestFriendlyDist
+    // Pick by priority
+    if (bestEnemy >= 0) { closestEid = bestEnemy; closestDist = bestEnemyDist }
+    else if (bestRes >= 0) { closestEid = bestRes; closestDist = bestResDist }
+    else if (bestFriendly >= 0) { closestEid = bestFriendly; closestDist = bestFriendlyDist }
+  } else {
+    // No selection: just find the closest entity
+    for (const eid of nearby) {
+      if (!hasComponent(world, Selectable, eid)) continue
+      if (hasComponent(world, Dead, eid)) continue
+      const dx = Position.x[eid] - hit.x
+      const dz = Position.z[eid] - hit.z
+      const dist = Math.sqrt(dx * dx + dz * dz)
+      if (dist < Selectable.radius[eid] + 1 && dist < closestDist) {
+        closestDist = dist; closestEid = eid
+      }
+    }
   }
 
   // Classify what we clicked
