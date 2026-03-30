@@ -476,9 +476,13 @@ function handleClick(world: IWorld, sx: number, sy: number) {
     return
   }
 
-  // ── Click on friendly unit/building → select (or toggle with shift) ──
-  // But if it's a damaged building and we have workers, issue repair instead
-  if (clickedFriendly && !clickedResource && !clickedBuildSite && !clickedDamagedBuilding) {
+  // ── Click on friendly unit/building → select it ──
+  // Exception: workers clicking on build site or damaged building → repair/build command
+  const hasWorkers = selected.some(eid =>
+    hasComponent(world, WorkerC, eid) && Faction.id[eid] === FACTION_PLAYER
+  )
+  const isBuildingTarget = clickedBuildSite || clickedDamagedBuilding
+  if (clickedFriendly && !clickedResource && !(hasWorkers && isBuildingTarget)) {
     if (shiftHeld) {
       if (hasComponent(world, Selected, closestEid)) {
         removeComponent(world, Selected, closestEid)
