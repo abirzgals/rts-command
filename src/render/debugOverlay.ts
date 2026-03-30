@@ -10,7 +10,7 @@ import { getPath } from '../pathfinding/pathStore'
 import { getTerrainHeight, GRID_RES, gridToWorld, CELL_SIZE } from '../terrain/heightmap'
 import { walkable, dynamicCost } from '../pathfinding/navGrid'
 import { scene } from './engine'
-import { FACTION_PLAYER } from '../game/config'
+import { getPlayerFaction } from '../game/factions'
 
 let pathLines: THREE.Line | null = null
 let stateSprites: THREE.Points | null = null
@@ -225,7 +225,7 @@ export function updateDebugOverlay(world: IWorld) {
     const px = Position.x[eid]
     const py = Position.y[eid]
     const pz = Position.z[eid]
-    const isPlayer = Faction.id[eid] === FACTION_PLAYER
+    const isPlayer = Faction.id[eid] === getPlayerFaction()
     const pathColor = isPlayer ? PATH_PLAYER : PATH_ENEMY
 
     // ── Draw path lines ─────────────────────────

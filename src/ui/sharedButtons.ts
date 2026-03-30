@@ -8,12 +8,13 @@ import { Selected } from '../ecs/components'
 import { defineQuery, removeComponent } from 'bitecs'
 import { gameState } from '../game/state'
 import { openSettingsUI } from './settingsUI'
-import { FACTION_PLAYER, FACTION_ENEMY, UT_WORKER, UT_MARINE, UT_TANK, UT_JEEP, UT_ROCKET, UNIT_DEFS, BT_COMMAND_CENTER, BT_SUPPLY_DEPOT, BT_BARRACKS, BT_FACTORY, BUILDING_DEFS } from '../game/config'
+import { UT_WORKER, UT_MARINE, UT_TANK, UT_JEEP, UT_ROCKET, UNIT_DEFS, BT_COMMAND_CENTER, BT_SUPPLY_DEPOT, BT_BARRACKS, BT_FACTORY, BUILDING_DEFS } from '../game/config'
+import { getPlayerFaction, swapPlayerFaction } from '../game/factions'
 import { spawnUnit, spawnBuilding } from '../ecs/archetypes'
 import { mouseWorldX, mouseWorldZ } from '../input/input'
 import { Faction } from '../ecs/components'
 import { resetAIState } from '../ecs/systems/aiSystem'
-import { swapFogData } from '../render/fogOfWar'
+import { setFogViewFaction } from '../render/fogOfWar'
 
 const selectedQuery = defineQuery([Selected])
 const factionQuery = defineQuery([Faction])
@@ -56,7 +57,7 @@ export function initSharedButtons() {
       }},
     { id: 'sb-money', icon: '💰', title: '+1000 minerals & gas', right: 16,
       onClick: () => {
-        const res = gameState.getResources(FACTION_PLAYER)
+        const res = gameState.getResources(getPlayerFaction())
         res.minerals += 1000
         res.gas += 1000
       }},
@@ -176,9 +177,9 @@ export function initSharedButtons() {
       if (spawn) {
         const x = mouseWorldX, z = mouseWorldZ
         if (spawn.type === 'unit') {
-          spawnUnit(w, spawn.id, FACTION_PLAYER, x, z)
+          spawnUnit(w, spawn.id, getPlayerFaction(), x, z)
         } else {
-          spawnBuilding(w, spawn.id, FACTION_PLAYER, x, z, true)
+          spawnBuilding(w, spawn.id, getPlayerFaction(), x, z, true)
         }
         console.log(`[DEBUG] Spawned ${spawn.name} at (${x.toFixed(1)}, ${z.toFixed(1)})`)
       }
@@ -190,39 +191,20 @@ function swapTeams() {
   const w = (window as any).__ecsWorld
   if (!w) return
 
-  // 1. Swap faction on all entities
-  const entities = factionQuery(w)
-  for (const eid of entities) {
-    Faction.id[eid] = Faction.id[eid] === FACTION_PLAYER ? FACTION_ENEMY : FACTION_PLAYER
-  }
+  // 1. Flip which faction the player controls (no entity changes needed!)
+  swapPlayerFaction()
 
-  // 2. Swap resources between factions
-  const playerRes = gameState.getResources(FACTION_PLAYER)
-  const enemyRes = gameState.getResources(FACTION_ENEMY)
-  const tmpMin = playerRes.minerals
-  const tmpGas = playerRes.gas
-  const tmpSupCur = playerRes.supplyCurrent
-  const tmpSupMax = playerRes.supplyMax
-  playerRes.minerals = enemyRes.minerals
-  playerRes.gas = enemyRes.gas
-  playerRes.supplyCurrent = enemyRes.supplyCurrent
-  playerRes.supplyMax = enemyRes.supplyMax
-  enemyRes.minerals = tmpMin
-  enemyRes.gas = tmpGas
-  enemyRes.supplyCurrent = tmpSupCur
-  enemyRes.supplyMax = tmpSupMax
-
-  // 3. Clear player selection
+  // 2. Clear player selection (old team's units)
   const selected = selectedQuery(w)
   for (const eid of selected) {
     removeComponent(w, Selected, eid)
   }
 
-  // 4. Swap fog of war data between factions
-  swapFogData()
+  // 3. Update fog view to new player faction
+  setFogViewFaction(getPlayerFaction())
 
-  // 5. Reset AI state so it re-evaluates with new units
+  // 4. Reset AI state so it re-evaluates with its new faction
   resetAIState()
 
-  console.log(`[DEBUG] Teams swapped! ${entities.length} entities affected`)
+  console.log(`[DEBUG] Teams swapped! Now controlling faction ${getPlayerFaction()}`)
 }

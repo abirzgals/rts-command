@@ -1,7 +1,7 @@
 // ─── In-game notification system ────────────────────────────────
 // Starcraft-style event messages: "Unit under attack", "Not enough minerals", etc.
 
-import { FACTION_PLAYER } from '../game/config'
+// No faction imports needed — notifications are triggered by callers who check faction
 
 export type NotifType = 'warning' | 'info' | 'error'
 

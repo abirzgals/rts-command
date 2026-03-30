@@ -13,7 +13,7 @@ import { spatialHash } from '../../globals'
 import { removeFromQueues } from '../commandQueue'
 import { releaseAllNodes } from './resourceSystem'
 import { onEnemyBuildingDeath } from '../../render/fogOfWar'
-import { FACTION_PLAYER } from '../../game/config'
+import { getPlayerFaction } from '../../game/factions'
 import { unblockCells } from '../../pathfinding/navGrid'
 import { BUILDING_DEFS, UT_TANK, UT_JEEP, UT_ROCKET } from '../../game/config'
 import { removePath } from '../../pathfinding/pathStore'
@@ -80,7 +80,7 @@ export function deathSystem(world: IWorld, dt: number) {
 
       // Fog snapshot for enemy buildings
       if (hasComponent(world, IsBuilding, eid) && hasComponent(world, Faction, eid) &&
-          Faction.id[eid] !== FACTION_PLAYER) {
+          Faction.id[eid] !== getPlayerFaction()) {
         onEnemyBuildingDeath(eid, world)
       }
 

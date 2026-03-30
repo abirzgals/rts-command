@@ -7,7 +7,7 @@ import { getPool, getAllPools } from '../../render/meshPools'
 import { getAnimManager } from '../../render/animatedMeshManager'
 import { projectileMeshes } from '../archetypes'
 import { isVisibleAt } from '../../render/fogOfWar'
-import { FACTION_PLAYER } from '../../game/config'
+import { getPlayerFaction } from '../../game/factions'
 // Carry visual: small crystal for workers carrying resources
 const carryGeo = new THREE.OctahedronGeometry(0.15, 0)
 const carryMatMineral = new THREE.MeshBasicMaterial({ color: 0x44ccff, transparent: true, opacity: 0.9 })
@@ -99,7 +99,7 @@ export function renderSystem(world: IWorld, dt: number) {
     if (carryMeshes.has(eid)) {
       const crystal = carryMeshes.get(eid)!
       // Hide crystal if enemy worker is in fog of war
-      const isEnemy = hasComponent(world, Faction, eid) && Faction.id[eid] !== FACTION_PLAYER
+      const isEnemy = hasComponent(world, Faction, eid) && Faction.id[eid] !== getPlayerFaction()
       crystal.visible = !isEnemy || isVisibleAt(Position.x[eid], Position.z[eid])
 
       const rot = hasComponent(world, Rotation, eid) ? Rotation.y[eid] : 0

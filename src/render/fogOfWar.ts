@@ -14,7 +14,8 @@ import * as THREE from 'three'
 import { defineQuery, hasComponent } from 'bitecs'
 import type { IWorld } from 'bitecs'
 import { Position, Faction, SightRadius, Dead, IsBuilding, MeshRef, Rotation } from '../ecs/components'
-import { FACTION_PLAYER, FACTION_ENEMY, MAP_SIZE } from '../game/config'
+import { FACTION_PLAYER, MAP_SIZE } from '../game/config'
+import { getPlayerFaction } from '../game/factions'
 import { notifyEnemyBaseSpotted } from '../ui/notifications'
 import { getPool } from './meshPools'
 import { getAnimManager } from './animatedMeshManager'
@@ -349,7 +350,7 @@ function updateEnemyVisibility(world: IWorld) {
     const poolId = MeshRef.poolId[eid]
 
     // Notify when enemy building first spotted by player
-    if (isBuilding && visible && fogViewFaction === FACTION_PLAYER && !seenBuildings.has(eid)) {
+    if (isBuilding && visible && fogViewFaction === getPlayerFaction() && !seenBuildings.has(eid)) {
       notifyEnemyBaseSpotted()
     }
 

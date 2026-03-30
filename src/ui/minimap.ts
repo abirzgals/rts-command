@@ -1,7 +1,8 @@
 import { defineQuery, hasComponent } from 'bitecs'
 import type { IWorld } from 'bitecs'
 import { Position, Faction, IsBuilding, ResourceNode, Dead, Health, UnitTypeC, AttackTarget } from '../ecs/components'
-import { MAP_SIZE, FACTION_PLAYER, FACTION_ENEMY } from '../game/config'
+import { MAP_SIZE } from '../game/config'
+import { getPlayerFaction } from '../game/factions'
 import { camera } from '../render/engine'
 import { GRID_RES, terrainType, T_GRASS, T_DIRT, T_ROCK, T_WATER, T_CLIFF, T_DARK_GRASS } from '../terrain/heightmap'
 import { fogState, FOG_RES, isVisibleAt } from '../render/fogOfWar'
@@ -99,7 +100,7 @@ export function updateMinimap(world: IWorld, time: number) {
     const isBuilding = hasComponent(world, IsBuilding, eid)
     const ux = Position.x[eid], uz = Position.z[eid]
 
-    if (faction === FACTION_PLAYER) {
+    if (faction === getPlayerFaction()) {
       // Always show own units
       ctx.fillStyle = isBuilding ? '#3366cc' : '#4488ff'
     } else {
@@ -132,7 +133,7 @@ export function updateMinimap(world: IWorld, time: number) {
   if (flash) {
     for (const eid of units) {
       if (hasComponent(world, Dead, eid)) continue
-      if (Faction.id[eid] !== FACTION_PLAYER) continue
+      if (Faction.id[eid] !== getPlayerFaction()) continue
       // Check if this unit is being attacked (has an attacker targeting it)
       // Or if this unit is attacking something
       if (!hasComponent(world, AttackTarget, eid)) continue
@@ -149,10 +150,10 @@ export function updateMinimap(world: IWorld, time: number) {
     // Also check enemy units attacking player units (player units under fire)
     for (const eid of units) {
       if (hasComponent(world, Dead, eid)) continue
-      if (Faction.id[eid] !== FACTION_ENEMY) continue
+      if (Faction.id[eid] === getPlayerFaction()) continue
       if (!hasComponent(world, AttackTarget, eid)) continue
       const targetEid = AttackTarget.eid[eid]
-      if (!hasComponent(world, Faction, targetEid) || Faction.id[targetEid] !== FACTION_PLAYER) continue
+      if (!hasComponent(world, Faction, targetEid) || Faction.id[targetEid] !== getPlayerFaction()) continue
       if (!isVisibleAt(Position.x[eid], Position.z[eid])) continue
 
       // Flash at target (player unit being attacked)

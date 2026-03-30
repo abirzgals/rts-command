@@ -6,9 +6,10 @@ import {
   AttackTarget, AttackMove, PathFollower, UnitMode, MODE_MOVE, MODE_ATTACK_MOVE,
 } from '../ecs/components'
 import {
-  FACTION_PLAYER, UNIT_DEFS, BUILDING_DEFS,
+  UNIT_DEFS, BUILDING_DEFS,
   BT_COMMAND_CENTER, BT_SUPPLY_DEPOT, BT_BARRACKS, BT_FACTORY,
 } from '../game/config'
+import { getPlayerFaction } from '../game/factions'
 import { gameState } from '../game/state'
 import { queueProduction, setForceAttackMode, setRallyMode, enterBuildMode, cancelBuildMode } from '../input/input'
 import { getBindingLabel } from '../input/keybindings'
@@ -48,7 +49,7 @@ export function updateHUD(world: IWorld, _dt: number, time: number) {
   }
 
   // Resources
-  const res = gameState.getResources(FACTION_PLAYER)
+  const res = gameState.getResources(getPlayerFaction())
   mineralsEl.textContent = Math.floor(res.minerals).toString()
   gasEl.textContent = Math.floor(res.gas).toString()
   supplyEl.textContent = `${res.supplyCurrent}/${res.supplyMax}`
@@ -311,7 +312,7 @@ function cancelQueueItem(buildingEid: number, index: number) {
 }
 
 function updateAffordability() {
-  const res = gameState.getResources(FACTION_PLAYER)
+  const res = gameState.getResources(getPlayerFaction())
   const btns = actionButtonsEl.querySelectorAll('.action-btn')
   btns.forEach(btn => {
     const costEl = btn.querySelectorAll('.label')[1] // second .label is cost
@@ -332,7 +333,7 @@ function updateActionButtons(world: IWorld, eid: number) {
   actionButtonsEl.innerHTML = ''
 
   const faction = Faction.id[eid]
-  if (faction !== FACTION_PLAYER) return
+  if (faction !== getPlayerFaction()) return
 
   const isBuilding = hasComponent(world, IsBuilding, eid)
   const ut = UnitTypeC.id[eid]

@@ -10,7 +10,7 @@ import { getTerrainHeight } from '../../terrain/heightmap'
 import { scene } from '../../render/engine'
 import { getPath } from '../../pathfinding/pathStore'
 import { getQueue, type Command } from '../commandQueue'
-import { FACTION_PLAYER } from '../../game/config'
+import { getPlayerFaction } from '../../game/factions'
 import { hoverEid, getEntityGroup } from '../../input/input'
 import { camera, renderer } from '../../render/engine'
 
@@ -300,7 +300,7 @@ function updatePathQueueVisuals(world: IWorld, selected: number[], active: boole
   for (const eid of selected) {
     if (hasComponent(world, Dead, eid)) continue
     if (hasComponent(world, IsBuilding, eid)) continue
-    if (!hasComponent(world, Faction, eid) || Faction.id[eid] !== FACTION_PLAYER) continue
+    if (!hasComponent(world, Faction, eid) || Faction.id[eid] !== getPlayerFaction()) continue
 
     let endX = Position.x[eid]
     let endZ = Position.z[eid]

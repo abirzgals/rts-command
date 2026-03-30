@@ -4,7 +4,7 @@ import type { IWorld } from 'bitecs'
 import { Position, Health, Dead, IsBuilding, Faction } from '../ecs/components'
 import { camera, renderer } from './engine'
 import { isVisibleAt } from './fogOfWar'
-import { FACTION_PLAYER } from '../game/config'
+import { getPlayerFaction } from '../game/factions'
 
 const hpQuery = defineQuery([Position, Health])
 
@@ -83,7 +83,7 @@ export function updateHPBars(world: IWorld) {
     if (hasComponent(world, Dead, eid)) continue
 
     // Hide HP bars for enemy units in fog of war
-    const isEnemy = hasComponent(world, Faction, eid) && Faction.id[eid] !== FACTION_PLAYER
+    const isEnemy = hasComponent(world, Faction, eid) && Faction.id[eid] !== getPlayerFaction()
     if (isEnemy && !isVisibleAt(Position.x[eid], Position.z[eid])) {
       removeBar(eid)
       continue

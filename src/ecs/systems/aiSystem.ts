@@ -6,7 +6,7 @@ import {
   PathFollower, StuckState, Velocity, MoveSpeed,
 } from '../components'
 import {
-  FACTION_ENEMY, FACTION_PLAYER, UT_WORKER, UT_MARINE, UT_TANK, UT_JEEP, UT_TROOPER,
+  UT_WORKER, UT_MARINE, UT_TANK, UT_JEEP, UT_TROOPER,
   BT_COMMAND_CENTER, BT_BARRACKS, BT_SUPPLY_DEPOT, BT_FACTORY,
   BUILDING_DEFS, UNIT_DEFS, MAP_SIZE,
 } from '../../game/config'
@@ -15,6 +15,7 @@ import { spawnBuilding } from '../archetypes'
 import { queueProduction } from '../../input/input'
 import { spatialHash } from '../../globals'
 import { isVisibleAt } from '../../render/fogOfWar'
+import { getAIFaction, getPlayerFaction } from '../../game/factions'
 import { isWorldWalkable } from '../../pathfinding/navGrid'
 import { worldToGrid } from '../../terrain/heightmap'
 import { sectorId, findSectorPath } from '../../pathfinding/sectorGraph'
@@ -144,7 +145,7 @@ export function aiSystem(world: IWorld, dt: number) {
   const census = takeCensus(world)
   if (!census.commandCenter) return // no CC = no AI
 
-  const res = gameState.getResources(FACTION_ENEMY)
+  const res = gameState.getResources(getAIFaction())
   const homeX = Position.x[census.commandCenter]
   const homeZ = Position.z[census.commandCenter]
 
@@ -327,7 +328,7 @@ function isValidScout(world: IWorld, eid: number | null): boolean {
   if (eid === null) return false
   if (hasComponent(world, Dead, eid)) return false
   if (!hasComponent(world, Position, eid)) return false
-  if (Faction.id[eid] !== FACTION_ENEMY) return false
+  if (Faction.id[eid] !== getAIFaction()) return false
   return true
 }
 
@@ -383,7 +384,7 @@ function scanPlayerArmy(world: IWorld): void {
   // Find clusters of player combat units visible to AI
   const playerUnits: { x: number; z: number; supply: number }[] = []
   for (const eid of units) {
-    if (Faction.id[eid] !== FACTION_PLAYER) continue
+    if (Faction.id[eid] !== getPlayerFaction()) continue
     if (hasComponent(world, Dead, eid)) continue
     if (hasComponent(world, IsBuilding, eid)) continue
     if (hasComponent(world, WorkerC, eid)) continue
@@ -393,7 +394,7 @@ function scanPlayerArmy(world: IWorld): void {
     spatialHash.query(px, pz, 15, _near)
     let visible = false
     for (const other of _near) {
-      if (Faction.id[other] !== FACTION_ENEMY) continue
+      if (Faction.id[other] !== getAIFaction()) continue
       if (hasComponent(world, Dead, other)) continue
       visible = true
       break
@@ -654,7 +655,7 @@ function tickDefending(
   spatialHash.query(homeX, homeZ, DEFENSE_RADIUS, _near)
   let threatX = 0, threatZ = 0, threatCount = 0
   for (const eid of _near) {
-    if (!hasComponent(world, Faction, eid) || Faction.id[eid] !== FACTION_PLAYER) continue
+    if (!hasComponent(world, Faction, eid) || Faction.id[eid] !== getPlayerFaction()) continue
     if (hasComponent(world, Dead, eid)) continue
     if (hasComponent(world, IsBuilding, eid)) continue
     threatX += Position.x[eid]
@@ -737,7 +738,7 @@ function tickEconomy(
   // ── Workers (up to 8) ──────────────────────────────────────
   if (census.commandCenter && census.workerCount < 8 && res.supplyCurrent < res.supplyMax) {
     const def = UNIT_DEFS[UT_WORKER]
-    if (gameState.canAfford(FACTION_ENEMY, def.cost)) {
+    if (gameState.canAfford(getAIFaction(), def.cost)) {
       queueProduction(census.commandCenter, UT_WORKER)
       decisions.push('+Worker')
     }
@@ -746,29 +747,29 @@ function tickEconomy(
   // ── Supply depots ──────────────────────────────────────────
   if (res.supplyMax - res.supplyCurrent < 5 && census.commandCenter) {
     const def = BUILDING_DEFS[BT_SUPPLY_DEPOT]
-    if (gameState.canAfford(FACTION_ENEMY, def.cost)) {
+    if (gameState.canAfford(getAIFaction(), def.cost)) {
       const angle = aiRng() * Math.PI * 2
-      spawnBuilding(world, BT_SUPPLY_DEPOT, FACTION_ENEMY,
+      spawnBuilding(world, BT_SUPPLY_DEPOT, getAIFaction(),
         homeX + Math.cos(angle) * 6, homeZ + Math.sin(angle) * 6, true)
-      gameState.spend(FACTION_ENEMY, def.cost)
+      gameState.spend(getAIFaction(), def.cost)
     }
   }
 
   // ── Barracks ───────────────────────────────────────────────
   if (!hasBarracks && census.commandCenter) {
     const def = BUILDING_DEFS[BT_BARRACKS]
-    if (gameState.canAfford(FACTION_ENEMY, def.cost)) {
-      spawnBuilding(world, BT_BARRACKS, FACTION_ENEMY, homeX + 8, homeZ + 4, true)
-      gameState.spend(FACTION_ENEMY, def.cost)
+    if (gameState.canAfford(getAIFaction(), def.cost)) {
+      spawnBuilding(world, BT_BARRACKS, getAIFaction(), homeX + 8, homeZ + 4, true)
+      gameState.spend(getAIFaction(), def.cost)
     }
   }
 
   // ── Factory (after some marines) ───────────────────────────
   if (!hasFactory && hasBarracks && census.marineCount >= 3 && census.commandCenter) {
     const def = BUILDING_DEFS[BT_FACTORY]
-    if (gameState.canAfford(FACTION_ENEMY, def.cost)) {
-      spawnBuilding(world, BT_FACTORY, FACTION_ENEMY, homeX - 8, homeZ + 4, true)
-      gameState.spend(FACTION_ENEMY, def.cost)
+    if (gameState.canAfford(getAIFaction(), def.cost)) {
+      spawnBuilding(world, BT_FACTORY, getAIFaction(), homeX - 8, homeZ + 4, true)
+      gameState.spend(getAIFaction(), def.cost)
     }
   }
 
@@ -777,14 +778,14 @@ function tickEconomy(
   if (aiState !== AIState.ATTACKING) {
     if (census.barracks && census.marineCount < 15 && res.supplyCurrent < res.supplyMax) {
       const def = UNIT_DEFS[UT_MARINE]
-      if (gameState.canAfford(FACTION_ENEMY, def.cost)) {
+      if (gameState.canAfford(getAIFaction(), def.cost)) {
         queueProduction(census.barracks, UT_MARINE)
       }
     }
 
     if (census.factory && census.tankCount < 5 && res.supplyCurrent < res.supplyMax) {
       const def = UNIT_DEFS[UT_TANK]
-      if (gameState.canAfford(FACTION_ENEMY, def.cost)) {
+      if (gameState.canAfford(getAIFaction(), def.cost)) {
         queueProduction(census.factory, UT_TANK)
       }
     }
@@ -798,7 +799,7 @@ function tickEconomy(
 function tryDiscoverPlayerBase(world: IWorld): boolean {
   const pBuildings = playerBuildingQuery(world)
   for (const eid of pBuildings) {
-    if (Faction.id[eid] !== FACTION_PLAYER) continue
+    if (Faction.id[eid] !== getPlayerFaction()) continue
     if (hasComponent(world, Dead, eid)) continue
 
     const bx = Position.x[eid]
@@ -809,7 +810,7 @@ function tryDiscoverPlayerBase(world: IWorld): boolean {
     const _near: number[] = []
     spatialHash.query(bx, bz, 15, _near)
     for (const other of _near) {
-      if (Faction.id[other] !== FACTION_ENEMY) continue
+      if (Faction.id[other] !== getAIFaction()) continue
       if (hasComponent(world, Dead, other)) continue
       // Found it!
       knownPlayerBaseX = bx
@@ -829,7 +830,7 @@ function assessThreatAtBase(world: IWorld, homeX: number, homeZ: number): number
   spatialHash.query(homeX, homeZ, DEFENSE_RADIUS, _near)
   let threatSupply = 0
   for (const eid of _near) {
-    if (!hasComponent(world, Faction, eid) || Faction.id[eid] !== FACTION_PLAYER) continue
+    if (!hasComponent(world, Faction, eid) || Faction.id[eid] !== getPlayerFaction()) continue
     if (hasComponent(world, Dead, eid)) continue
     if (hasComponent(world, IsBuilding, eid)) continue
     // Weight by unit type (same as census)
@@ -926,7 +927,7 @@ function takeCensus(world: IWorld): Census {
 
   const buildings = enemyBuildingQuery(world)
   for (const eid of buildings) {
-    if (Faction.id[eid] !== FACTION_ENEMY) continue
+    if (Faction.id[eid] !== getAIFaction()) continue
     if (hasComponent(world, Dead, eid)) continue
     const ut = UnitTypeC.id[eid]
     if (ut === BT_COMMAND_CENTER) commandCenter = eid
@@ -945,7 +946,7 @@ function takeCensus(world: IWorld): Census {
 
   const units = enemyUnitQuery(world)
   for (const eid of units) {
-    if (Faction.id[eid] !== FACTION_ENEMY) continue
+    if (Faction.id[eid] !== getAIFaction()) continue
     if (hasComponent(world, Dead, eid)) continue
     if (hasComponent(world, IsBuilding, eid)) continue
 
@@ -1052,7 +1053,7 @@ function tickWorkerDefense(world: IWorld, census: Census, homeX: number, homeZ: 
     const _near: number[] = []
     spatialHash.query(wx, wz, WORKER_THREAT_RADIUS, _near)
     for (const eid of _near) {
-      if (!hasComponent(world, Faction, eid) || Faction.id[eid] !== FACTION_PLAYER) continue
+      if (!hasComponent(world, Faction, eid) || Faction.id[eid] !== getPlayerFaction()) continue
       if (hasComponent(world, Dead, eid)) continue
       if (hasComponent(world, IsBuilding, eid)) continue
       nearbyEnemies.add(eid)
@@ -1167,7 +1168,7 @@ function tickWorkerDefense(world: IWorld, census: Census, homeX: number, homeZ: 
 function unstickUnits(world: IWorld, census: Census) {
   const units = enemyUnitQuery(world)
   for (const eid of units) {
-    if (Faction.id[eid] !== FACTION_ENEMY) continue
+    if (Faction.id[eid] !== getAIFaction()) continue
     if (hasComponent(world, Dead, eid)) continue
     if (hasComponent(world, IsBuilding, eid)) continue
     if (!hasComponent(world, StuckState, eid)) continue

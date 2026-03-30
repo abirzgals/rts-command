@@ -7,7 +7,7 @@ import { gameState } from '../../game/state'
 import { spawnUnit } from '../archetypes'
 import { spatialHash } from '../../globals'
 import { getQueue, clearQueue, pushCommand, type Command } from '../commandQueue'
-import { FACTION_PLAYER } from '../../game/config'
+import { getPlayerFaction } from '../../game/factions'
 import { notifyProductionBlocked } from '../../ui/notifications'
 
 const producerQuery = defineQuery([Producer, Position, Faction, IsBuilding])
@@ -86,7 +86,7 @@ export function productionSystem(world: IWorld, dt: number) {
           // Not enough supply — pause production, don't dequeue
           Producer.active[eid] = 0
           Producer.progress[eid] = 0
-          if (faction === FACTION_PLAYER) notifyProductionBlocked()
+          if (faction === getPlayerFaction()) notifyProductionBlocked()
         } else {
           Producer.unitType[eid] = next.unitType
           Producer.progress[eid] = 0

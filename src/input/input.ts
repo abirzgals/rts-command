@@ -7,9 +7,10 @@ import {
   Producer, PathFollower, BuildProgress, Dead, CollisionRadius, UnitMode, MODE_MOVE, MODE_ATTACK_MOVE,
 } from '../ecs/components'
 import {
-  FACTION_PLAYER, BUILDING_DEFS, UNIT_DEFS,
+  BUILDING_DEFS, UNIT_DEFS,
   BT_COMMAND_CENTER, BT_SUPPLY_DEPOT, BT_BARRACKS, BT_FACTORY,
 } from '../game/config'
+import { getPlayerFaction } from '../game/factions'
 import { gameState } from '../game/state'
 import { raycastGround, camera, scene } from '../render/engine'
 import { getPool } from '../render/meshPools'
@@ -188,7 +189,7 @@ function updateBuildPreview() {
   buildPreview.position.set(sx, y, sz)
 
   const def = BUILDING_DEFS[gameState.buildMode]
-  const canAfford = def ? gameState.canAfford(FACTION_PLAYER, def.cost) : true
+  const canAfford = def ? gameState.canAfford(getPlayerFaction(), def.cost) : true
   const canPlace = def ? canPlaceBuilding(sx, sz, def.radius) : true
   const mat = buildPreview.material as THREE.MeshPhongMaterial | THREE.MeshBasicMaterial
   if (!canAfford || !canPlace) {
@@ -441,11 +442,11 @@ function handleClick(world: IWorld, sx: number, sy: number) {
       if (dist > Selectable.radius[eid]) continue
 
       const hasFaction = hasComponent(world, Faction, eid)
-      if (hasFaction && Faction.id[eid] !== FACTION_PLAYER && dist < bestEnemyDist) {
+      if (hasFaction && Faction.id[eid] !== getPlayerFaction() && dist < bestEnemyDist) {
         bestEnemyDist = dist; bestEnemy = eid
       } else if ((hasComponent(world, ResourceNode, eid) || hasComponent(world, BuildProgress, eid)) && dist < bestResDist) {
         bestResDist = dist; bestRes = eid
-      } else if (hasFaction && Faction.id[eid] === FACTION_PLAYER && dist < bestFriendlyDist) {
+      } else if (hasFaction && Faction.id[eid] === getPlayerFaction() && dist < bestFriendlyDist) {
         bestFriendlyDist = dist; bestFriendly = eid
       }
     }
@@ -469,13 +470,13 @@ function handleClick(world: IWorld, sx: number, sy: number) {
 
   // Classify what we clicked
   const clickedFriendly = closestEid >= 0 && hasComponent(world, Faction, closestEid) &&
-    Faction.id[closestEid] === FACTION_PLAYER
+    Faction.id[closestEid] === getPlayerFaction()
   const clickedEnemy = closestEid >= 0 && hasComponent(world, Faction, closestEid) &&
-    Faction.id[closestEid] !== FACTION_PLAYER && !hasComponent(world, Dead, closestEid)
+    Faction.id[closestEid] !== getPlayerFaction() && !hasComponent(world, Dead, closestEid)
   const clickedResource = closestEid >= 0 && hasComponent(world, ResourceNode, closestEid) &&
     !hasComponent(world, Dead, closestEid)
   const clickedBuildSite = closestEid >= 0 && hasComponent(world, BuildProgress, closestEid) &&
-    hasComponent(world, Faction, closestEid) && Faction.id[closestEid] === FACTION_PLAYER
+    hasComponent(world, Faction, closestEid) && Faction.id[closestEid] === getPlayerFaction()
   const clickedDamagedBuilding = closestEid >= 0 && clickedFriendly &&
     hasComponent(world, IsBuilding, closestEid) && !hasComponent(world, BuildProgress, closestEid) &&
     hasComponent(world, Health, closestEid) && Health.current[closestEid] < Health.max[closestEid]
@@ -490,7 +491,7 @@ function handleClick(world: IWorld, sx: number, sy: number) {
     // Select all visible player units of same type
     const entities = selectableQuery(world)
     for (const eid of entities) {
-      if (Faction.id[eid] !== FACTION_PLAYER) continue
+      if (Faction.id[eid] !== getPlayerFaction()) continue
       if (hasComponent(world, Dead, eid)) continue
       if (hasComponent(world, IsBuilding, eid) !== isBuilding) continue
       if (!hasComponent(world, UnitTypeC, eid) || UnitTypeC.id[eid] !== clickedType) continue
@@ -522,7 +523,7 @@ function handleClick(world: IWorld, sx: number, sy: number) {
   // ── Click on friendly unit/building → select it ──
   // Exception: workers clicking on build site or damaged building → repair/build command
   const hasWorkers = selected.some(eid =>
-    hasComponent(world, WorkerC, eid) && Faction.id[eid] === FACTION_PLAYER
+    hasComponent(world, WorkerC, eid) && Faction.id[eid] === getPlayerFaction()
   )
   const isBuildingTarget = clickedBuildSite || clickedDamagedBuilding
   if (clickedFriendly && !clickedResource && !(hasWorkers && isBuildingTarget)) {
@@ -542,10 +543,10 @@ function handleClick(world: IWorld, sx: number, sy: number) {
   // ── Check if only producer buildings selected → rally / unit command queue ──
   const producerBuildings = selected.filter(eid =>
     hasComponent(world, IsBuilding, eid) && hasComponent(world, Producer, eid) &&
-    Faction.id[eid] === FACTION_PLAYER
+    Faction.id[eid] === getPlayerFaction()
   )
   const movableUnits = selected.filter(eid =>
-    Faction.id[eid] === FACTION_PLAYER && !hasComponent(world, IsBuilding, eid)
+    Faction.id[eid] === getPlayerFaction() && !hasComponent(world, IsBuilding, eid)
   )
 
   // In Starcraft mode, left click only selects — commands go via right click
@@ -584,7 +585,7 @@ function handleBoxSelect(world: IWorld, x1: number, y1: number, x2: number, y2: 
   const entities = selectableQuery(world)
 
   for (const eid of entities) {
-    if (Faction.id[eid] !== FACTION_PLAYER) continue
+    if (Faction.id[eid] !== getPlayerFaction()) continue
     if (hasComponent(world, IsBuilding, eid)) continue
     if (hasComponent(world, Dead, eid)) continue
 
@@ -719,7 +720,7 @@ function issueCommandFromClick(world: IWorld, sx: number, sy: number) {
     if (dist > Selectable.radius[eid]) continue
 
     const hasFaction = hasComponent(world, Faction, eid)
-    if (hasFaction && Faction.id[eid] !== FACTION_PLAYER && dist < bestEnemyDist) {
+    if (hasFaction && Faction.id[eid] !== getPlayerFaction() && dist < bestEnemyDist) {
       bestEnemyDist = dist; bestEnemy = eid
     } else if ((hasComponent(world, ResourceNode, eid) || hasComponent(world, BuildProgress, eid)) && dist < bestResDist) {
       bestResDist = dist; bestRes = eid
@@ -729,22 +730,22 @@ function issueCommandFromClick(world: IWorld, sx: number, sy: number) {
   else if (bestRes >= 0) closestEid = bestRes
 
   const clickedEnemy = closestEid >= 0 && hasComponent(world, Faction, closestEid) &&
-    Faction.id[closestEid] !== FACTION_PLAYER
+    Faction.id[closestEid] !== getPlayerFaction()
   const clickedResource = closestEid >= 0 && hasComponent(world, ResourceNode, closestEid)
   const clickedBuildSite = closestEid >= 0 && hasComponent(world, BuildProgress, closestEid) &&
-    hasComponent(world, Faction, closestEid) && Faction.id[closestEid] === FACTION_PLAYER
+    hasComponent(world, Faction, closestEid) && Faction.id[closestEid] === getPlayerFaction()
   const clickedDamagedBuilding = closestEid >= 0 && hasComponent(world, Faction, closestEid) &&
-    Faction.id[closestEid] === FACTION_PLAYER && hasComponent(world, IsBuilding, closestEid) &&
+    Faction.id[closestEid] === getPlayerFaction() && hasComponent(world, IsBuilding, closestEid) &&
     !hasComponent(world, BuildProgress, closestEid) && hasComponent(world, Health, closestEid) &&
     Health.current[closestEid] < Health.max[closestEid]
 
   // Producer buildings: set rally
   const producerBuildings = selected.filter(eid =>
     hasComponent(world, IsBuilding, eid) && hasComponent(world, Producer, eid) &&
-    Faction.id[eid] === FACTION_PLAYER
+    Faction.id[eid] === getPlayerFaction()
   )
   const movableUnits = selected.filter(eid =>
-    Faction.id[eid] === FACTION_PLAYER && !hasComponent(world, IsBuilding, eid)
+    Faction.id[eid] === getPlayerFaction() && !hasComponent(world, IsBuilding, eid)
   )
 
   if (movableUnits.length === 0 && producerBuildings.length > 0) {
@@ -887,7 +888,7 @@ function issueCommand(
       const buildingEnts = playerBuildingQuery(world)
       let nearestDropoff = 0xFFFFFFFF, nearestDD = Infinity
       for (const bid of buildingEnts) {
-        if (Faction.id[bid] !== FACTION_PLAYER || !hasComponent(world, ResourceDropoff, bid)) continue
+        if (Faction.id[bid] !== getPlayerFaction() || !hasComponent(world, ResourceDropoff, bid)) continue
         const dd = (Position.x[bid] - Position.x[eid]) ** 2 + (Position.z[bid] - Position.z[eid]) ** 2
         if (dd < nearestDD) { nearestDD = dd; nearestDropoff = bid }
       }
@@ -934,13 +935,13 @@ function placeBuildingAtCursor(world: IWorld) {
   const def = BUILDING_DEFS[buildingType]
   if (!def) return
 
-  if (!gameState.canAfford(FACTION_PLAYER, def.cost)) return
+  if (!gameState.canAfford(getPlayerFaction(), def.cost)) return
 
   const sx = snapToGrid(mouseWorldX)
   const sz = snapToGrid(mouseWorldZ)
   if (!canPlaceBuilding(sx, sz, def.radius)) return
 
-  const buildingEid = spawnBuilding(world, buildingType, FACTION_PLAYER, sx, sz)
+  const buildingEid = spawnBuilding(world, buildingType, getPlayerFaction(), sx, sz)
 
   // Store total cost in BuildProgress for gradual spending
   if (hasComponent(world, BuildProgress, buildingEid)) {
@@ -952,7 +953,7 @@ function placeBuildingAtCursor(world: IWorld) {
   // Send a worker to build — with shift, distribute round-robin across selected workers
   const selected = selectedQuery(world)
   const workers = selected.filter(eid =>
-    hasComponent(world, WorkerC, eid) && Faction.id[eid] === FACTION_PLAYER
+    hasComponent(world, WorkerC, eid) && Faction.id[eid] === getPlayerFaction()
   )
 
   if (workers.length > 0) {
@@ -1119,7 +1120,7 @@ function onKeyDown(e: KeyboardEvent, world: IWorld) {
 
   if (matchesAction(e, 'buildBarracks')) {
     const selected = selectedQuery(world)
-    if (selected.some(eid => hasComponent(world, WorkerC, eid) && Faction.id[eid] === FACTION_PLAYER)) {
+    if (selected.some(eid => hasComponent(world, WorkerC, eid) && Faction.id[eid] === getPlayerFaction())) {
       enterBuildMode(BT_BARRACKS)
     }
     return
@@ -1132,7 +1133,7 @@ function onKeyDown(e: KeyboardEvent, world: IWorld) {
     // Produce first available unit
     const selected = selectedQuery(world)
     for (const eid of selected) {
-      if (hasComponent(world, Producer, eid) && Faction.id[eid] === FACTION_PLAYER) {
+      if (hasComponent(world, Producer, eid) && Faction.id[eid] === getPlayerFaction()) {
         const ut = UnitTypeC.id[eid]
         const bdef = BUILDING_DEFS[ut]
         if (bdef?.canProduce && bdef.canProduce.length > 0) {
@@ -1187,7 +1188,7 @@ function onKeyDown(e: KeyboardEvent, world: IWorld) {
     clearSelection(world)
     const ents = selectableQuery(world)
     for (const eid of ents) {
-      if (Faction.id[eid] !== FACTION_PLAYER) continue
+      if (Faction.id[eid] !== getPlayerFaction()) continue
       if (hasComponent(world, IsBuilding, eid)) continue
       if (hasComponent(world, WorkerC, eid)) continue
       addComponent(world, Selected, eid)
@@ -1222,7 +1223,7 @@ export function cancelBuildMode() {
 export function enterBuildMode(buildingType: number) {
   const def = BUILDING_DEFS[buildingType]
   if (!def) return
-  if (!gameState.canAfford(FACTION_PLAYER, def.cost)) return
+  if (!gameState.canAfford(getPlayerFaction(), def.cost)) return
 
   gameState.buildMode = buildingType
   buildModeEl.textContent = `Building: ${def.name} — Click to place, ESC to cancel`
@@ -1247,7 +1248,7 @@ export function queueProduction(buildingEid: number, unitType: number) {
 
   const faction = Faction.id[buildingEid]
   if (!gameState.canAfford(faction, def.cost)) {
-    if (faction === FACTION_PLAYER) {
+    if (faction === getPlayerFaction()) {
       const res = gameState.getResources(faction)
       if (res.minerals < def.cost.minerals) notifyNotEnoughMinerals()
       else notifyNotEnoughGas()
@@ -1257,7 +1258,7 @@ export function queueProduction(buildingEid: number, unitType: number) {
 
   const res = gameState.getResources(faction)
   if (res.supplyCurrent + def.supply > res.supplyMax) {
-    if (faction === FACTION_PLAYER) notifyNotEnoughSupply()
+    if (faction === getPlayerFaction()) notifyNotEnoughSupply()
     return
   }
 
@@ -1418,7 +1419,7 @@ function onTouchEnd(e: TouchEvent, world: IWorld) {
   // Single tap (no drag, no pan)
   if (gameState.buildMode !== null) {
     const def = BUILDING_DEFS[gameState.buildMode]
-    if (def && !gameState.canAfford(FACTION_PLAYER, def.cost)) {
+    if (def && !gameState.canAfford(getPlayerFaction(), def.cost)) {
       gameState.buildMode = null
       buildModeEl.style.display = 'none'
       removeBuildPreview()

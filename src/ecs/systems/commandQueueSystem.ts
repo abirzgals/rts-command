@@ -13,7 +13,6 @@ import {
   ResourceNode, ResourceDropoff, BuildProgress, Selectable,
 } from '../components'
 import { shiftCommand, hasQueuedCommands, type Command } from '../commandQueue'
-import { FACTION_PLAYER } from '../../game/config'
 import { spatialHash } from '../../globals'
 
 const idleUnitQuery = defineQuery([Position, Faction])

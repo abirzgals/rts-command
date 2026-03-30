@@ -14,7 +14,7 @@ import { spatialHash } from '../../globals'
 import { editorConfig } from '../../render/meshPools'
 import { getAnimManager } from '../../render/animatedMeshManager'
 import { isVisibleAt } from '../../render/fogOfWar'
-import { FACTION_PLAYER, FACTION_ENEMY } from '../../game/config'
+import { getPlayerFaction, getAIFaction } from '../../game/factions'
 import { MeshRef } from '../components'
 import { notifyUnitUnderAttack, notifyBaseUnderAttack } from '../../ui/notifications'
 
@@ -118,7 +118,7 @@ export function combatSystem(world: IWorld, dt: number) {
     }
 
     // AI workers don't auto-acquire — controlled by AI system only
-    if (hasComponent(world, WorkerC, eid) && myFaction === FACTION_ENEMY) continue
+    if (hasComponent(world, WorkerC, eid) && myFaction === getAIFaction()) continue
 
     // Auto-acquire: skip if moving, unless unit has AttackMove (one-shot attack-move command)
     const isMoving = hasComponent(world, MoveTarget, eid) || hasComponent(world, PathFollower, eid)
@@ -290,7 +290,7 @@ export function applyDamage(world: IWorld, target: number, damage: number, fromX
   Health.current[target] -= effective
 
   // Notify player when their stuff is attacked
-  if (hasComponent(world, Faction, target) && Faction.id[target] === FACTION_PLAYER) {
+  if (hasComponent(world, Faction, target) && Faction.id[target] === getPlayerFaction()) {
     if (hasComponent(world, IsBuilding, target)) {
       notifyBaseUnderAttack()
     } else {

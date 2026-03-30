@@ -1,7 +1,7 @@
 import { defineQuery, hasComponent } from 'bitecs'
 import type { IWorld } from 'bitecs'
 import { Faction, SupplyProvider, SupplyCost, Dead, BuildProgress } from '../components'
-import { FACTION_PLAYER, FACTION_ENEMY } from '../../game/config'
+import { FACTION_PLAYER, FACTION_ENEMY } from '../../game/config' // Identity constants for iteration
 import { gameState } from '../../game/state'
 
 const providerQuery = defineQuery([SupplyProvider, Faction])
