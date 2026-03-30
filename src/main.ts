@@ -308,7 +308,7 @@ async function init() {
 }
 
 import { Producer, Position as EcsPosition, Faction as EcsFaction, IsBuilding, ResourceNode, Dead } from './ecs/components'
-import { spatialHash } from './globals'
+import { spatialHash, updatePerfBudget } from './globals'
 import { defineQuery as dq2, hasComponent as hc2 } from 'bitecs'
 
 function initRallyPoints(world: IWorld) {
@@ -508,6 +508,7 @@ function gameLoop(time: number) {
 
   const dt = Math.min((time - lastTime) / 1000, 0.1)
   lastTime = time
+  updatePerfBudget(dt)
 
   // Minimap click
   const minimapTarget = (window as any).__minimapTarget

@@ -20,13 +20,20 @@ import { notifyUnitUnderAttack, notifyBaseUnderAttack } from '../../ui/notificat
 
 const UT_TO_KEY: Record<number, string> = { 0: 'worker', 1: 'marine', 2: 'tank', 3: 'jeep', 4: 'rocket', 5: 'trooper' }
 
+import { perfBudget } from '../../globals'
+
 const combatQuery = defineQuery([Position, AttackC, Faction])
 const _nearby: number[] = []
+let combatFrame = 0
 
 export function combatSystem(world: IWorld, dt: number) {
   const entities = combatQuery(world)
+  combatFrame++
 
-  for (const eid of entities) {
+  for (let i = 0; i < entities.length; i++) {
+    // Under pressure: process only half the entities per frame (alternate frames)
+    if (perfBudget.combatSkip && (i + combatFrame) % 2 === 0) continue
+    const eid = entities[i]
     // Tick cooldown
     if (AttackC.timer[eid] > 0) {
       AttackC.timer[eid] -= dt

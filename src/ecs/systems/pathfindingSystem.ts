@@ -5,11 +5,10 @@ import { findPathHierarchical } from '../../pathfinding/astar'
 import { storePath } from '../../pathfinding/pathStore'
 import { clearDynamicCosts, markBuildingObstacle, rebuildClearance } from '../../pathfinding/navGrid'
 import { buildSectorGraph } from '../../pathfinding/sectorGraph'
+import { perfBudget } from '../../globals'
 
 const needsPathQuery = defineQuery([Position, MoveTarget, MoveSpeed, Not(PathFollower), Not(IsBuilding)])
 const buildingQuery = defineQuery([Position, IsBuilding, Selectable])
-
-const MAX_PATHS_PER_FRAME = 4
 let lastBuildingCount = -1
 
 // Simple cooldown per entity — don't retry pathfinding more than once per second
@@ -34,7 +33,7 @@ export function pathfindingSystem(world: IWorld, dt: number) {
   let computed = 0
 
   for (const eid of entities) {
-    if (computed >= MAX_PATHS_PER_FRAME) break
+    if (computed >= perfBudget.maxPaths) break
     if (hasComponent(world, Dead, eid)) continue
 
     // Cooldown — don't retry failed paths every frame
