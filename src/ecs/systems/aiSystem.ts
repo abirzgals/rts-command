@@ -429,18 +429,9 @@ function scanPlayerArmy(world: IWorld): void {
     if (hasComponent(world, Dead, eid)) continue
     if (hasComponent(world, IsBuilding, eid)) continue
     if (hasComponent(world, WorkerC, eid)) continue
-    // Check if any AI unit can see this player unit (within sight range)
+    // Check if visible in AI's fog of war
     const px = Position.x[eid], pz = Position.z[eid]
-    const _near: number[] = []
-    spatialHash.query(px, pz, 15, _near)
-    let visible = false
-    for (const other of _near) {
-      if (Faction.id[other] !== getAIFaction()) continue
-      if (hasComponent(world, Dead, other)) continue
-      visible = true
-      break
-    }
-    if (!visible) continue
+    if (!isVisibleAt(px, pz, getAIFaction())) continue
     const ut = hasComponent(world, UnitTypeC, eid) ? UnitTypeC.id[eid] : -1
     const s = ut === UT_TANK ? 3 : (ut === UT_JEEP || ut === UT_TROOPER) ? 2 : 1
     playerUnits.push({ x: px, z: pz, supply: s })
@@ -846,14 +837,8 @@ function tryDiscoverPlayerBase(world: IWorld): boolean {
     const bx = Position.x[eid]
     const bz = Position.z[eid]
 
-    // Check if any AI unit can "see" this building
-    // Simple check: is any AI unit within 15 units of this building?
-    const _near: number[] = []
-    spatialHash.query(bx, bz, 15, _near)
-    for (const other of _near) {
-      if (Faction.id[other] !== getAIFaction()) continue
-      if (hasComponent(world, Dead, other)) continue
-      // Found it!
+    // Check if the building is visible in the AI faction's fog of war
+    if (isVisibleAt(bx, bz, getAIFaction())) {
       knownPlayerBaseX = bx
       knownPlayerBaseZ = bz
       return true
