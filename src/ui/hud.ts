@@ -194,17 +194,7 @@ function updateActionButtons(world: IWorld, eid: number) {
       }
     }))
 
-    // Hold Position (H) — stop moving, keep shooting in range
-    actionButtonsEl.appendChild(createActionButton('🛡️', 'Hold', '', () => {
-      const sel = selectedQuery(world)
-      for (const sid of sel) {
-        if (hasComponent(world, MoveTarget, sid)) removeComponent(world, MoveTarget, sid)
-        if (hasComponent(world, AttackMove, sid)) removeComponent(world, AttackMove, sid)
-        if (hasComponent(world, PathFollower, sid)) { removePath(PathFollower.pathId[sid]); removeComponent(world, PathFollower, sid) }
-        Velocity.x[sid] = 0; Velocity.z[sid] = 0
-        clearQueue(sid)
-      }
-    }))
+    // Hold button removed — will redesign later
   }
 
   if (hasComponent(world, WorkerC, eid)) {

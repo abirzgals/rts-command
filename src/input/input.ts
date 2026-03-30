@@ -835,18 +835,7 @@ function onKeyDown(e: KeyboardEvent, world: IWorld) {
     return
   }
 
-  // Hold position hotkey (H) — stop moving, keep shooting in range
-  if (e.key === 'h' || e.key === 'H') {
-    const selected = selectedQuery(world)
-    for (const eid of selected) {
-      if (hasComponent(world, MoveTarget, eid)) removeComponent(world, MoveTarget, eid)
-      if (hasComponent(world, AttackMove, eid)) removeComponent(world, AttackMove, eid)
-      if (hasComponent(world, PathFollower, eid)) { removePath(PathFollower.pathId[eid]); removeComponent(world, PathFollower, eid) }
-      Velocity.x[eid] = 0; Velocity.z[eid] = 0
-      clearQueue(eid)
-    }
-    return
-  }
+  // Hold hotkey (H) — disabled, will redesign later
 
   // Hotkeys for building
   if (e.key === 'b' || e.key === 'B') {
