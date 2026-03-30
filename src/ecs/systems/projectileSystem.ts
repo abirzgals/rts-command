@@ -4,7 +4,7 @@ import { Position, Projectile, ArcProjectile, Dead, Health, MeshRef, Faction, Ro
 import { addComponent as addComp } from 'bitecs'
 import { applyDamage } from './combatSystem'
 import { getPool } from '../../render/meshPools'
-import { projectileMeshes, removeProjectileMesh } from '../archetypes'
+import { projectileMeshes, removeProjectileMesh, projectileEffects } from '../archetypes'
 import { getTerrainHeight } from '../../terrain/heightmap'
 import { spatialHash } from '../../globals'
 import { spawnExplosion, spawnSmoke, spawnMuzzleFlash, spawnRocketTrail, spawnFireExplosion, spawnImpact } from '../../render/effects'
@@ -37,7 +37,9 @@ export function projectileSystem(world: IWorld, dt: number) {
 
     if (dist < HIT_DIST) {
       applyDamage(world, targetEid, Projectile.damage[eid])
-      spawnImpact(Position.x[eid], Position.y[eid], Position.z[eid])
+      const fx = projectileEffects.get(eid)
+      spawnImpact(Position.x[eid], Position.y[eid], Position.z[eid], fx?.impact)
+      projectileEffects.delete(eid)
       destroyProjectile(world, eid, 30)
       continue
     }
@@ -85,13 +87,16 @@ export function projectileSystem(world: IWorld, dt: number) {
       const splash = ArcProjectile.splash[eid]
       const damage = ArcProjectile.damage[eid]
 
-      // Explosion effect — fire explosion if has fire trail (rockets), normal for shells
+      // Explosion effect from config
+      const fx = projectileEffects.get(eid)
       const hasFire = ArcProjectile.trailFire[eid] > 0 || ArcProjectile.arcHeight[eid] <= 3
+      const explRadius = fx?.explosion?.radius ?? splash
       if (hasFire) {
-        spawnFireExplosion(tx, ty, tz, splash + 1)
+        spawnFireExplosion(tx, ty, tz, explRadius + 1)
       } else {
-        spawnExplosion(tx, ty, tz, splash)
+        spawnExplosion(tx, ty, tz, explRadius)
       }
+      projectileEffects.delete(eid)
 
       // Apply splash damage to all nearby enemies
       const targetEid = ArcProjectile.targetEid[eid]
@@ -168,6 +173,7 @@ export function projectileSystem(world: IWorld, dt: number) {
 }
 
 function destroyProjectile(world: IWorld, eid: number, poolId: number) {
+  projectileEffects.delete(eid)
   // Individual mesh projectile (poolId=255)
   if (projectileMeshes.has(eid)) {
     removeProjectileMesh(eid)

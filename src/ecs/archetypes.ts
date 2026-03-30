@@ -298,6 +298,14 @@ export function spawnResourceNode(
 // Track individual projectile meshes — updated by projectileSystem, cleaned on death
 export const projectileMeshes = new Map<number, THREE.Mesh>()
 
+// Store per-projectile effect configs (impact, explosion) — read on hit
+export interface ProjectileEffectCfg {
+  impact?: { color?: string; size?: number; particles?: number; lifetime?: number }
+  explosion?: { colors?: string[]; radius?: number; particles?: number }
+  smoke?: { color?: string; count?: number }
+}
+export const projectileEffects = new Map<number, ProjectileEffectCfg>()
+
 export function removeProjectileMesh(eid: number) {
   const mesh = projectileMeshes.get(eid)
   if (mesh) {

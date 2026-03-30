@@ -6,7 +6,7 @@ import {
   CollisionRadius, UnitMode, MODE_ATTACK_MOVE,
 } from '../components'
 import { removePath } from '../../pathfinding/pathStore'
-import { spawnProjectile, spawnArcProjectile } from '../archetypes'
+import { spawnProjectile, spawnArcProjectile, projectileEffects } from '../archetypes'
 import { UnitTypeC } from '../components'
 import { UT_TANK, UT_JEEP, UT_ROCKET } from '../../game/config'
 import { spawnMuzzleFlash, spawnRocketTrail, spawnFireExplosion, spawnSmoke } from '../../render/effects'
@@ -211,31 +211,38 @@ function tryAttack(world: IWorld, attacker: number, target: number, dist: number
     const splash = AttackC.splash[attacker]
     const fp = getFirePoint(world, attacker)
 
-    // Read editor config for projectile type and muzzle
+    // Read ALL editor config for this unit
     const key = UT_TO_KEY[utId]
-    const muzzleCfg = key ? editorConfig?.[key]?.muzzle : null
-    const projCfg = key ? editorConfig?.[key]?.projectile : null
-    const useShell = projCfg?.type === 'shell' && splash > 0
+    const unitCfg = key ? editorConfig?.[key] : null
+    const muzzleCfg = unitCfg?.muzzle ?? null
+    const projCfg = unitCfg?.projectile ?? null
+    const impactCfg = unitCfg?.impact ?? null
+    const explosionCfg = unitCfg?.explosion ?? null
+    const smokeCfg = unitCfg?.smoke ?? null
 
     const projType = projCfg?.type ?? (splash > 0 ? 'shell' : 'bullet')
     const projSpeed = projCfg?.speed ?? (projType === 'shell' ? 15 : projType === 'rocket' ? 8 : 25)
     const trailFire = projCfg?.trailFire ?? (projType === 'rocket' ? 3 : 0)
     const trailSmoke = projCfg?.trailSmoke ?? (projType === 'rocket' ? 2 : 0)
+    const smokeLaunchCount = smokeCfg?.count ?? 5
 
+    let projEid: number
     if (projType === 'shell') {
-      spawnArcProjectile(world, fp.x, fp.z, target, damage, splash, projCfg?.arcHeight, trailFire, trailSmoke)
+      projEid = spawnArcProjectile(world, fp.x, fp.z, target, damage, splash, projCfg?.arcHeight, trailFire, trailSmoke)
       spawnMuzzleFlash(fp.x, fp.y, fp.z, muzzleCfg)
       const poolId = MeshRef.poolId[attacker]
       const animMgr = getAnimManager(poolId)
       if (animMgr) animMgr.triggerRecoil(attacker)
     } else if (projType === 'rocket') {
-      spawnArcProjectile(world, fp.x, fp.z, target, damage, splash, projCfg?.arcHeight ?? 2, trailFire, trailSmoke)
+      projEid = spawnArcProjectile(world, fp.x, fp.z, target, damage, splash, projCfg?.arcHeight ?? 2, trailFire, trailSmoke)
       spawnMuzzleFlash(fp.x, fp.y, fp.z, muzzleCfg)
-      spawnSmoke(fp.x, fp.y, fp.z, 5)
+      spawnSmoke(fp.x, fp.y, fp.z, smokeLaunchCount)
     } else {
-      spawnProjectile(world, fp.x, fp.z, target, damage, projSpeed, { ...projCfg, trailFire, trailSmoke })
+      projEid = spawnProjectile(world, fp.x, fp.z, target, damage, projSpeed, { ...projCfg, trailFire, trailSmoke })
       spawnMuzzleFlash(fp.x, fp.y, fp.z, muzzleCfg)
     }
+    // Store effect config on projectile for use on hit
+    projectileEffects.set(projEid, { impact: impactCfg, explosion: explosionCfg, smoke: smokeCfg })
   } else {
     // Melee: direct damage
     applyDamage(world, target, damage)
