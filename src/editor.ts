@@ -40,7 +40,7 @@ interface ModelConfig {
 interface EffectsConfig {
   firePoint: { x: number; y: number; z: number; boneName?: string; normalX?: number; normalY?: number; normalZ?: number }
   muzzle: { color: string; intensity: number; range: number; duration: number }
-  projectile: { type: 'bullet' | 'shell' | 'rocket'; color: string; size: number; speed: number; arcHeight: number }
+  projectile: { type: 'bullet' | 'shell' | 'rocket'; color: string; size: number; speed: number; arcHeight: number; trailFire: number; trailSmoke: number }
   impact: { type: 'sparks' | 'fire' | 'dust' | 'explosion'; color: string; size: number; particles: number; lifetime: number }
   explosion: { colors: string[]; radius: number; particles: number }
   smoke: { color: string; opacity: number; lifetime: number; count: number }
@@ -100,7 +100,7 @@ type UnitConfig = ModelConfig
 const DEFAULT_EFFECTS: EffectsConfig = {
   firePoint: { x: 0, y: 1.5, z: 0.6 },
   muzzle: { color: '#ffaa44', intensity: 8, range: 12, duration: 0.1 },
-  projectile: { type: 'bullet', color: '#ffee44', size: 0.08, speed: 25, arcHeight: 4 },
+  projectile: { type: 'bullet', color: '#ffee44', size: 0.08, speed: 25, arcHeight: 4, trailFire: 0, trailSmoke: 0 },
   impact: { type: 'sparks', color: '#ffaa22', size: 0.4, particles: 6, lifetime: 0.3 },
   explosion: { colors: ['#ff6600', '#ff4400', '#441100'], radius: 2.0, particles: 8 },
   smoke: { color: '#888888', opacity: 0.6, lifetime: 0.75, count: 4 },
@@ -1224,6 +1224,8 @@ function wireEffectControls() {
   wireSliderPair('proj-size', 'proj-size-val', (v) => { effects.projectile.size = v })
   wireSliderPair('proj-speed', 'proj-speed-val', (v) => { effects.projectile.speed = v })
   wireSliderPair('proj-arc', 'proj-arc-val', (v) => { effects.projectile.arcHeight = v })
+  wireSliderPair('proj-trail-fire', 'proj-trail-fire-val', (v) => { effects.projectile.trailFire = v })
+  wireSliderPair('proj-trail-smoke', 'proj-trail-smoke-val', (v) => { effects.projectile.trailSmoke = v })
 
   document.getElementById('launch-btn')!.addEventListener('click', launchEffect)
 
@@ -1297,21 +1299,31 @@ function updateProjDefaults() {
   const arcRow = document.getElementById('proj-arc-row')!
   arcRow.style.display = isBullet ? 'none' : 'flex'
 
+  const isRocket = effects.projectile.type === 'rocket'
   if (isBullet) {
     setSliderValue('proj-speed', 25)
     setSliderValue('proj-size', 0.08)
     setSliderValue('proj-y', 1.0)
     const colorEl = document.getElementById('proj-color') as HTMLInputElement
     colorEl.value = '#ffee44'
-    effects.projectile = { ...effects.projectile, speed: 25, size: 0.08, color: '#ffee44' }
+    effects.projectile = { ...effects.projectile, speed: 25, size: 0.08, color: '#ffee44', trailFire: 0, trailSmoke: 0 }
+  } else if (isRocket) {
+    setSliderValue('proj-speed', 8)
+    setSliderValue('proj-size', 0.15)
+    setSliderValue('proj-arc', 2)
+    const colorEl = document.getElementById('proj-color') as HTMLInputElement
+    colorEl.value = '#ff4400'
+    effects.projectile = { ...effects.projectile, speed: 8, size: 0.15, color: '#ff4400', arcHeight: 2, trailFire: 3, trailSmoke: 2 }
   } else {
     setSliderValue('proj-speed', 15)
     setSliderValue('proj-size', 0.12)
     setSliderValue('proj-arc', 4)
     const colorEl = document.getElementById('proj-color') as HTMLInputElement
     colorEl.value = '#ff4400'
-    effects.projectile = { ...effects.projectile, speed: 15, size: 0.12, color: '#ff4400', arcHeight: 4 }
+    effects.projectile = { ...effects.projectile, speed: 15, size: 0.12, color: '#ff4400', arcHeight: 4, trailFire: 0, trailSmoke: 0 }
   }
+  setSliderValue('proj-trail-fire', effects.projectile.trailFire)
+  setSliderValue('proj-trail-smoke', effects.projectile.trailSmoke)
 }
 
 function setSliderValue(id: string, val: number) {
@@ -1445,6 +1457,36 @@ function launchEffect() {
         lookTarget.lerpVectors(startPos, endPos, tNext)
         lookTarget.y += Math.sin(tNext * Math.PI) * arcHeight
         proj.lookAt(lookTarget)
+
+        // Trail fire/smoke particles behind projectile
+        const backDir = prevPos.clone().sub(proj.position).normalize()
+        const trailPos = proj.position.clone().addScaledVector(backDir, size * 2)
+        const tFire = effects.projectile.trailFire ?? 0
+        const tSmoke = effects.projectile.trailSmoke ?? 0
+        if (tFire > 0) {
+          for (let fi = 0; fi < tFire; fi++) {
+            const spark = new THREE.Mesh(
+              new THREE.SphereGeometry(0.04, 4, 4),
+              new THREE.MeshBasicMaterial({ color: fi === 0 ? 0xff6600 : 0xff2200, transparent: true, opacity: 0.8, depthWrite: false })
+            )
+            spark.position.copy(trailPos).add(new THREE.Vector3((Math.random() - 0.5) * 0.1, (Math.random() - 0.5) * 0.1, (Math.random() - 0.5) * 0.1))
+            scene.add(spark)
+            const sparkLife = { t: 0 }
+            liveEffects.push({ objects: [spark], update(d) { sparkLife.t += d; spark.scale.setScalar(1 - sparkLife.t * 2); (spark.material as THREE.MeshBasicMaterial).opacity = 0.8 * (1 - sparkLife.t * 2); if (sparkLife.t > 0.5) { scene.remove(spark); spark.geometry.dispose(); (spark.material as THREE.Material).dispose(); return false }; return true } })
+          }
+        }
+        if (tSmoke > 0) {
+          for (let si = 0; si < tSmoke; si++) {
+            const puff = new THREE.Mesh(
+              new THREE.SphereGeometry(0.06, 4, 4),
+              new THREE.MeshBasicMaterial({ color: 0x888888, transparent: true, opacity: 0.5, depthWrite: false })
+            )
+            puff.position.copy(trailPos).add(new THREE.Vector3((Math.random() - 0.5) * 0.15, (Math.random() - 0.5) * 0.15, (Math.random() - 0.5) * 0.15))
+            scene.add(puff)
+            const puffLife = { t: 0 }
+            liveEffects.push({ objects: [puff], update(d) { puffLife.t += d; puff.scale.setScalar(1 + puffLife.t * 2); (puff.material as THREE.MeshBasicMaterial).opacity = 0.4 * (1 - puffLife.t); if (puffLife.t > 1) { scene.remove(puff); puff.geometry.dispose(); (puff.material as THREE.Material).dispose(); return false }; return true } })
+          }
+        }
       }
 
       if (t >= 1) {
@@ -2430,6 +2472,8 @@ function syncEffectsUI() {
   setSliderValue('proj-size', effects.projectile.size)
   setSliderValue('proj-speed', effects.projectile.speed)
   setSliderValue('proj-arc', effects.projectile.arcHeight)
+  setSliderValue('proj-trail-fire', effects.projectile.trailFire ?? 0)
+  setSliderValue('proj-trail-smoke', effects.projectile.trailSmoke ?? 0)
   const arcRow = document.getElementById('proj-arc-row')
   if (arcRow) arcRow.style.display = effects.projectile.type === 'bullet' ? 'none' : 'flex'
 
@@ -2472,6 +2516,8 @@ function resetEffectsUI() {
   setSliderValue('proj-size', DEFAULT_EFFECTS.projectile.size)
   setSliderValue('proj-speed', DEFAULT_EFFECTS.projectile.speed)
   setSliderValue('proj-arc', DEFAULT_EFFECTS.projectile.arcHeight)
+  setSliderValue('proj-trail-fire', DEFAULT_EFFECTS.projectile.trailFire)
+  setSliderValue('proj-trail-smoke', DEFAULT_EFFECTS.projectile.trailSmoke)
   document.getElementById('proj-arc-row')!.style.display = 'none'
 
   // Impact

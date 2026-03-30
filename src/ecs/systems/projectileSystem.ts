@@ -49,6 +49,16 @@ export function projectileSystem(world: IWorld, dt: number) {
     Position.x[eid] += nx * step
     Position.y[eid] += ny * step
     Position.z[eid] += nz * step
+
+    // Trail effects from config
+    const tFire = Projectile.trailFire[eid]
+    const tSmoke = Projectile.trailSmoke[eid]
+    if (tFire > 0) {
+      spawnRocketTrail(Position.x[eid] - nx * 0.3, Position.y[eid] - ny * 0.3, Position.z[eid] - nz * 0.3, tFire)
+    }
+    if (tSmoke > 0) {
+      spawnSmoke(Position.x[eid] - nx * 0.3, Position.y[eid] - ny * 0.3, Position.z[eid] - nz * 0.3, tSmoke)
+    }
   }
 
   // ── Arc projectiles (tank shells) ──
@@ -66,9 +76,9 @@ export function projectileSystem(world: IWorld, dt: number) {
       const splash = ArcProjectile.splash[eid]
       const damage = ArcProjectile.damage[eid]
 
-      // Explosion effect — fire explosion for rockets (low arc), normal for shells
-      const arcH = ArcProjectile.arcHeight[eid]
-      if (arcH <= 3) {
+      // Explosion effect — fire explosion if has fire trail (rockets), normal for shells
+      const hasFire = ArcProjectile.trailFire[eid] > 0 || ArcProjectile.arcHeight[eid] <= 3
+      if (hasFire) {
         spawnFireExplosion(tx, ty, tz, splash + 1)
       } else {
         spawnExplosion(tx, ty, tz, splash)
@@ -122,12 +132,19 @@ export function projectileSystem(world: IWorld, dt: number) {
     Position.y[eid] = y
     Position.z[eid] = z
 
-    // Smoke trail for all arc projectiles; thick rocket trail for low arcHeight
-    if (arcH <= 3) {
-      // Rocket: thick fire + smoke trail every frame
+    // Trail effects from config
+    const tFire = ArcProjectile.trailFire[eid]
+    const tSmoke = ArcProjectile.trailSmoke[eid]
+    if (tFire > 0) {
+      spawnRocketTrail(x, y - 0.2, z, tFire)
+    } else if (arcH <= 3) {
+      // Fallback: rocket-like trail for low arc if no explicit config
       spawnRocketTrail(x, y - 0.2, z)
-    } else if (Math.random() < 0.4) {
-      // Shell: occasional smoke puff
+    }
+    if (tSmoke > 0) {
+      spawnSmoke(x, y - 0.3, z, tSmoke)
+    } else if (arcH > 3 && Math.random() < 0.4) {
+      // Fallback: occasional smoke puff for shells
       spawnSmoke(x, y - 0.3, z, 1)
     }
   }

@@ -185,20 +185,21 @@ function tryAttack(world: IWorld, attacker: number, target: number, dist: number
 
     const projType = projCfg?.type ?? (splash > 0 ? 'shell' : 'bullet')
     const projSpeed = projCfg?.speed ?? (projType === 'shell' ? 15 : projType === 'rocket' ? 8 : 25)
+    const trailFire = projCfg?.trailFire ?? (projType === 'rocket' ? 3 : 0)
+    const trailSmoke = projCfg?.trailSmoke ?? (projType === 'rocket' ? 2 : 0)
 
     if (projType === 'shell') {
-      spawnArcProjectile(world, fp.x, fp.z, target, damage, splash, projCfg?.arcHeight)
+      spawnArcProjectile(world, fp.x, fp.z, target, damage, splash, projCfg?.arcHeight, trailFire, trailSmoke)
       spawnMuzzleFlash(fp.x, fp.y, fp.z, muzzleCfg)
       const poolId = MeshRef.poolId[attacker]
       const animMgr = getAnimManager(poolId)
       if (animMgr) animMgr.triggerRecoil(attacker)
     } else if (projType === 'rocket') {
-      // Rocket: slower, arc trajectory, smoke trail + fire explosion
-      spawnArcProjectile(world, fp.x, fp.z, target, damage, splash, projCfg?.arcHeight ?? 2)
+      spawnArcProjectile(world, fp.x, fp.z, target, damage, splash, projCfg?.arcHeight ?? 2, trailFire, trailSmoke)
       spawnMuzzleFlash(fp.x, fp.y, fp.z, muzzleCfg)
       spawnSmoke(fp.x, fp.y, fp.z, 5)
     } else {
-      spawnProjectile(world, fp.x, fp.z, target, damage, projSpeed, projCfg)
+      spawnProjectile(world, fp.x, fp.z, target, damage, projSpeed, { ...projCfg, trailFire, trailSmoke })
       spawnMuzzleFlash(fp.x, fp.y, fp.z, muzzleCfg)
     }
   } else {

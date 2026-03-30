@@ -294,7 +294,7 @@ export function spawnProjectile(
   targetEid: number,
   damage: number,
   speed = 25,
-  cfg?: { color?: string; size?: number },
+  cfg?: { color?: string; size?: number; trailFire?: number; trailSmoke?: number },
 ): number {
   const eid = addEntity(world)
 
@@ -307,6 +307,8 @@ export function spawnProjectile(
   Projectile.targetEid[eid] = targetEid
   Projectile.damage[eid] = damage
   Projectile.speed[eid] = speed
+  Projectile.trailFire[eid] = cfg?.trailFire ?? 0
+  Projectile.trailSmoke[eid] = cfg?.trailSmoke ?? 0
 
   // Create individual mesh with config size/color
   const sz = cfg?.size ?? 0.12
@@ -332,6 +334,8 @@ export function spawnArcProjectile(
   damage: number,
   splash: number,
   cfgArcHeight?: number,
+  trailFire = 0,
+  trailSmoke = 0,
 ): number {
   const eid = addEntity(world)
   const fromY = getTerrainHeight(fromX, fromZ) + 2.0
@@ -358,6 +362,8 @@ export function spawnArcProjectile(
   ArcProjectile.damage[eid] = damage
   ArcProjectile.splash[eid] = splash
   ArcProjectile.targetEid[eid] = targetEid
+  ArcProjectile.trailFire[eid] = trailFire
+  ArcProjectile.trailSmoke[eid] = trailSmoke
 
   // Use pool 31 for tank shells (we'll register it)
   addComponent(world, MeshRef, eid)

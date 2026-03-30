@@ -316,8 +316,8 @@ export function updateEffects(dt: number) {
 
 const rocketTrailGeo = new THREE.SphereGeometry(0.2, 4, 4)
 
-export function spawnRocketTrail(x: number, y: number, z: number) {
-  for (let i = 0; i < 3; i++) {
+export function spawnRocketTrail(x: number, y: number, z: number, count = 3) {
+  for (let i = 0; i < count; i++) {
     const mat = smokeMat.clone()
     mat.color.setHex(i === 0 ? 0xff6600 : 0x888888) // first = fire, rest = smoke
     mat.opacity = i === 0 ? 0.8 : 0.5

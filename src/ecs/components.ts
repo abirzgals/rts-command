@@ -131,6 +131,8 @@ export const Projectile = defineComponent({
   targetEid: Types.ui32,
   damage: Types.f32,
   speed: Types.f32,
+  trailFire: Types.ui8,   // particles per frame (0 = off)
+  trailSmoke: Types.ui8,  // particles per frame (0 = off)
 })
 
 // Artillery projectile (tank shells) — follows parabolic arc
@@ -145,6 +147,8 @@ export const ArcProjectile = defineComponent({
   damage: Types.f32,
   splash: Types.f32,
   targetEid: Types.ui32,
+  trailFire: Types.ui8,   // particles per frame (0 = off)
+  trailSmoke: Types.ui8,  // particles per frame (0 = off)
 })
 
 // ── Collision size (for spatial hash) ────────────────────────
