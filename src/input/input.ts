@@ -745,15 +745,27 @@ function issueCommand(
     if (cmdType === 'attack' && closestEid >= 0) {
       addComponent(world, AttackTarget, eid)
       AttackTarget.eid[eid] = closestEid
-      // Move toward target — if building, target the edge (center is nav-blocked)
+      // Move toward target — if building, find a walkable spot near the edge
       const tgtX = Position.x[closestEid], tgtZ = Position.z[closestEid]
       addComponent(world, MoveTarget, eid)
       if (hasComponent(world, IsBuilding, closestEid)) {
         const tr = hasComponent(world, CollisionRadius, closestEid) ? CollisionRadius.value[closestEid] : 1.5
         const adx = Position.x[eid] - tgtX, adz = Position.z[eid] - tgtZ
         const ad = Math.sqrt(adx * adx + adz * adz) || 1
-        MoveTarget.x[eid] = tgtX + (adx / ad) * (tr + 1.0)
-        MoveTarget.z[eid] = tgtZ + (adz / ad) * (tr + 1.0)
+        // Try direct edge first, then search around if blocked
+        let mx = tgtX + (adx / ad) * (tr + 1.0)
+        let mz = tgtZ + (adz / ad) * (tr + 1.0)
+        if (!isWorldWalkable(mx, mz)) {
+          // Try 8 directions around the building
+          for (let a = 0; a < 8; a++) {
+            const angle = (a / 8) * Math.PI * 2
+            mx = tgtX + Math.cos(angle) * (tr + 1.5)
+            mz = tgtZ + Math.sin(angle) * (tr + 1.5)
+            if (isWorldWalkable(mx, mz)) break
+          }
+        }
+        MoveTarget.x[eid] = mx
+        MoveTarget.z[eid] = mz
       } else {
         MoveTarget.x[eid] = tgtX
         MoveTarget.z[eid] = tgtZ

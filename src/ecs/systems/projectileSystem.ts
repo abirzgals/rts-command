@@ -1,6 +1,7 @@
 import { defineQuery, hasComponent, addComponent, removeEntity } from 'bitecs'
 import type { IWorld } from 'bitecs'
-import { Position, Projectile, ArcProjectile, Dead, Health, MeshRef, Faction } from '../components'
+import { Position, Projectile, ArcProjectile, Dead, Health, MeshRef, Faction, Rotation } from '../components'
+import { addComponent as addComp } from 'bitecs'
 import { applyDamage } from './combatSystem'
 import { getPool } from '../../render/meshPools'
 import { projectileMeshes, removeProjectileMesh } from '../archetypes'
@@ -49,6 +50,13 @@ export function projectileSystem(world: IWorld, dt: number) {
     Position.x[eid] += nx * step
     Position.y[eid] += ny * step
     Position.z[eid] += nz * step
+
+    // Orient projectile mesh along movement direction
+    const projMesh = projectileMeshes.get(eid)
+    if (projMesh) {
+      projMesh.position.set(Position.x[eid], Position.y[eid], Position.z[eid])
+      projMesh.lookAt(tx, ty, tz)
+    }
 
     // Trail effects from config
     const tFire = Projectile.trailFire[eid]
@@ -131,6 +139,14 @@ export function projectileSystem(world: IWorld, dt: number) {
     Position.x[eid] = x
     Position.y[eid] = y
     Position.z[eid] = z
+
+    // Orient projectile along trajectory tangent (XZ direction)
+    const dirX = ex - sx
+    const dirZ = ez - sz
+    if (dirX !== 0 || dirZ !== 0) {
+      if (!hasComponent(world, Rotation, eid)) addComp(world, Rotation, eid)
+      Rotation.y[eid] = Math.atan2(dirX, dirZ)
+    }
 
     // Trail effects from config
     const tFire = ArcProjectile.trailFire[eid]

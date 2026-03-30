@@ -83,8 +83,8 @@ export function combatSystem(world: IWorld, dt: number) {
             const tr = hasComponent(world, CollisionRadius, targetEid) ? CollisionRadius.value[targetEid] : 1.5
             const cdx = px - tx, cdz = pz - tz
             const cd = Math.sqrt(cdx * cdx + cdz * cdz) || 1
-            MoveTarget.x[eid] = tx + (cdx / cd) * (tr + 1.0)
-            MoveTarget.z[eid] = tz + (cdz / cd) * (tr + 1.0)
+            MoveTarget.x[eid] = tx + (cdx / cd) * (tr + 1.5)
+            MoveTarget.z[eid] = tz + (cdz / cd) * (tr + 1.5)
           } else {
             MoveTarget.x[eid] = tx
             MoveTarget.z[eid] = tz
