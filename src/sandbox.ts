@@ -674,8 +674,17 @@ function onCanvasClick(e: MouseEvent) {
 function onRightClick(e: MouseEvent) {
   const pos = raycastCanvasToGround(e.clientX, e.clientY)
   if (!pos) return
-  // Use shared command module (same as main game)
-  issueCommand(world, pos.x, pos.y, pos.z, 0) // faction 0 = player
+  // Use shared command module — detect faction from selected units
+  let cmdFaction = 0
+  const chk: number[] = []
+  spatialHash.query(0, 0, 9999, chk)
+  for (const eid of chk) {
+    if (hasComponent(world, Selected, eid) && !hasComponent(world, Dead, eid) && hasComponent(world, Faction, eid)) {
+      cmdFaction = Faction.id[eid]
+      break
+    }
+  }
+  issueCommand(world, pos.x, pos.y, pos.z, cmdFaction)
 }
 
 function onKeyDown(e: KeyboardEvent) {
