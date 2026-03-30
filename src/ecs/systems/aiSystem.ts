@@ -2,7 +2,7 @@ import { defineQuery, hasComponent, addComponent, removeComponent } from 'bitecs
 import type { IWorld } from 'bitecs'
 import {
   Position, Faction, IsBuilding, Producer, WorkerC,
-  MoveTarget, AttackTarget, Health, Dead, UnitTypeC,
+  MoveTarget, AttackTarget, AttackMove, Health, Dead, UnitTypeC,
   PathFollower, StuckState, Velocity,
 } from '../components'
 import {
@@ -178,9 +178,14 @@ function sendAttackWave(world: IWorld) {
     if (hasComponent(world, IsBuilding, eid)) continue
     if (hasComponent(world, WorkerC, eid)) continue
 
-    // Give move command toward player base
+    // Give attack-move command toward player base
+    const destX = targetX + (Math.random() - 0.5) * 10
+    const destZ = targetZ + (Math.random() - 0.5) * 10
     addComponent(world, MoveTarget, eid)
-    MoveTarget.x[eid] = targetX + (Math.random() - 0.5) * 10
-    MoveTarget.z[eid] = targetZ + (Math.random() - 0.5) * 10
+    MoveTarget.x[eid] = destX
+    MoveTarget.z[eid] = destZ
+    addComponent(world, AttackMove, eid)
+    AttackMove.destX[eid] = destX
+    AttackMove.destZ[eid] = destZ
   }
 }

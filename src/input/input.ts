@@ -353,11 +353,15 @@ function handleClick(world: IWorld, sx: number, sy: number) {
   const hasSelection = selected.length > 0
 
   // Find closest selectable entity near click
+  // When units are selected, prioritize actionable targets (resources, enemies, build sites)
+  // over already-selected friendlies so commands work correctly
   const nearby: number[] = []
   spatialHash.query(hit.x, hit.z, 3, nearby)
 
   let closestEid = -1
   let closestDist = Infinity
+  let closestFriendlyEid = -1
+  let closestFriendlyDist = Infinity
 
   for (const eid of nearby) {
     if (!hasComponent(world, Selectable, eid)) continue
@@ -366,10 +370,28 @@ function handleClick(world: IWorld, sx: number, sy: number) {
     const dz = Position.z[eid] - hit.z
     const dist = Math.sqrt(dx * dx + dz * dz)
     const radius = Selectable.radius[eid]
-    if (dist < radius + 1 && dist < closestDist) {
+    if (dist > radius + 1) continue
+
+    const isFriendly = hasComponent(world, Faction, eid) && Faction.id[eid] === FACTION_PLAYER
+    const isActionable = hasComponent(world, ResourceNode, eid) ||
+      hasComponent(world, BuildProgress, eid) ||
+      (hasComponent(world, Faction, eid) && Faction.id[eid] !== FACTION_PLAYER)
+
+    if (hasSelection && isActionable && dist < closestDist) {
+      closestDist = dist
+      closestEid = eid
+    } else if (isFriendly && dist < closestFriendlyDist) {
+      closestFriendlyDist = dist
+      closestFriendlyEid = eid
+    } else if (!hasSelection && dist < closestDist) {
       closestDist = dist
       closestEid = eid
     }
+  }
+  // If no actionable target found, fall back to closest friendly
+  if (closestEid < 0 && closestFriendlyEid >= 0) {
+    closestEid = closestFriendlyEid
+    closestDist = closestFriendlyDist
   }
 
   // Classify what we clicked
