@@ -645,7 +645,6 @@ function finishPath(world: IWorld, eid: number, pathId: number) {
   removePath(pathId)
   removeComponent(world, PathFollower, eid)
   if (hasComponent(world, MoveTarget, eid)) removeComponent(world, MoveTarget, eid)
-  if (hasComponent(world, AttackMove, eid)) removeComponent(world, AttackMove, eid)
   Velocity.x[eid] = 0
   Velocity.z[eid] = 0
   if (hasComponent(world, CurrentSpeed, eid)) CurrentSpeed.value[eid] = 0

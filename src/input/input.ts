@@ -147,6 +147,25 @@ function removeBuildPreview() {
   }
 }
 
+function canPlaceBuilding(x: number, z: number, radius: number): boolean {
+  if (!isWorldWalkable(x, z)) return false
+  // Check overlap with existing buildings (radius + radius)
+  const nearby: number[] = []
+  spatialHash.query(x, z, radius + 5, nearby)
+  for (const eid of nearby) {
+    if (!hasComponent(currentWorld!, IsBuilding, eid)) continue
+    if (hasComponent(currentWorld!, Dead, eid)) continue
+    const cr = hasComponent(currentWorld!, CollisionRadius, eid) ? CollisionRadius.value[eid] : 1.0
+    const dx = Position.x[eid] - x
+    const dz = Position.z[eid] - z
+    const minDist = cr + radius
+    if (dx * dx + dz * dz < minDist * minDist) return false
+  }
+  return true
+}
+
+let currentWorld: IWorld | null = null
+
 function updateBuildPreview() {
   if (!buildPreview || gameState.buildMode === null) return
   const sx = snapToGrid(mouseWorldX)
@@ -154,12 +173,11 @@ function updateBuildPreview() {
   const y = getTerrainHeight(sx, sz)
   buildPreview.position.set(sx, y, sz)
 
-  // Tint red if can't afford or blocked
   const def = BUILDING_DEFS[gameState.buildMode]
   const canAfford = def ? gameState.canAfford(FACTION_PLAYER, def.cost) : true
-  const walkable = isWorldWalkable(sx, sz)
+  const canPlace = def ? canPlaceBuilding(sx, sz, def.radius) : true
   const mat = buildPreview.material as THREE.MeshPhongMaterial | THREE.MeshBasicMaterial
-  if (!canAfford || !walkable) {
+  if (!canAfford || !canPlace) {
     mat.color.setHex(0xff4444)
     mat.opacity = 0.35
   } else {
@@ -194,6 +212,7 @@ const LONG_PRESS_TIME = 400 // ms — hold this long to start box select
 import { setTouchPan } from '../globals'
 
 export function initInput(world: IWorld) {
+  currentWorld = world
   selectableQuery = defineQuery([Selectable, Position, Faction])
   selectedQuery = defineQuery([Selected])
   playerUnitQuery = defineQuery([Position, Faction, Selectable])
@@ -791,6 +810,8 @@ function placeBuildingAtCursor(world: IWorld) {
 
   const sx = snapToGrid(mouseWorldX)
   const sz = snapToGrid(mouseWorldZ)
+  if (!canPlaceBuilding(sx, sz, def.radius)) return
+
   const buildingEid = spawnBuilding(world, buildingType, FACTION_PLAYER, sx, sz)
 
   // Store total cost in BuildProgress for gradual spending

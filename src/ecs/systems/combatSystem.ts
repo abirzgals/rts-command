@@ -3,7 +3,7 @@ import type { IWorld } from 'bitecs'
 import {
   Position, Rotation, Faction, Health, AttackC, AttackTarget, MoveTarget,
   Dead, IsBuilding, MoveSpeed, Armor, PathFollower, Velocity, AttackMove,
-  CollisionRadius,
+  CollisionRadius, UnitMode, MODE_ATTACK_MOVE,
 } from '../components'
 import { removePath } from '../../pathfinding/pathStore'
 import { spawnProjectile, spawnArcProjectile } from '../archetypes'
@@ -86,9 +86,10 @@ export function combatSystem(world: IWorld, dt: number) {
       continue
     }
 
-    // Auto-acquire: skip if moving (unless attack-move)
+    // Auto-acquire: skip if moving, unless unit is in attack-move mode
     const isMoving = hasComponent(world, MoveTarget, eid) || hasComponent(world, PathFollower, eid)
-    if (isMoving && !hasComponent(world, AttackMove, eid)) continue
+    const isAttackMoveMode = hasComponent(world, UnitMode, eid) && UnitMode.mode[eid] === MODE_ATTACK_MOVE
+    if (isMoving && !isAttackMoveMode) continue
 
     spatialHash.query(px, pz, range, _nearby)
     let bestTarget = -1
