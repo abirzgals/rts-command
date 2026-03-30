@@ -1,11 +1,13 @@
 import * as THREE from 'three'
 import { defineQuery, hasComponent } from 'bitecs'
 import type { IWorld } from 'bitecs'
-import { Position, Rotation, MeshRef, Dead, AttackTarget, Health, WorkerC, MoveTarget, PathFollower, Velocity } from '../components'
+import { Position, Rotation, MeshRef, Dead, AttackTarget, Health, WorkerC, MoveTarget, PathFollower, Velocity, Faction } from '../components'
 import { getPath } from '../../pathfinding/pathStore'
 import { getPool, getAllPools } from '../../render/meshPools'
 import { getAnimManager } from '../../render/animatedMeshManager'
 import { projectileMeshes } from '../archetypes'
+import { isVisibleAt } from '../../render/fogOfWar'
+import { FACTION_PLAYER } from '../../game/config'
 // Carry visual: small crystal for workers carrying resources
 const carryGeo = new THREE.OctahedronGeometry(0.15, 0)
 const carryMatMineral = new THREE.MeshBasicMaterial({ color: 0x44ccff, transparent: true, opacity: 0.9 })
@@ -94,6 +96,10 @@ export function renderSystem(world: IWorld, dt: number) {
     // Update position: in front of worker, at chest height
     if (carryMeshes.has(eid)) {
       const crystal = carryMeshes.get(eid)!
+      // Hide crystal if enemy worker is in fog of war
+      const isEnemy = hasComponent(world, Faction, eid) && Faction.id[eid] !== FACTION_PLAYER
+      crystal.visible = !isEnemy || isVisibleAt(Position.x[eid], Position.z[eid])
+
       const rot = hasComponent(world, Rotation, eid) ? Rotation.y[eid] : 0
       crystal.position.set(
         Position.x[eid] + Math.sin(rot) * 0.4,
