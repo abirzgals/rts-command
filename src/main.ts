@@ -222,8 +222,38 @@ async function init() {
     }
   }
 
+  // Set rally points on CCs to nearest minerals
+  initRallyPoints(world)
+
   // Start game loop
   requestAnimationFrame(gameLoop)
+}
+
+import { Producer, Position as EcsPosition, Faction as EcsFaction, IsBuilding, ResourceNode, Dead } from './ecs/components'
+import { spatialHash } from './globals'
+import { defineQuery as dq2, hasComponent as hc2 } from 'bitecs'
+
+function initRallyPoints(world: IWorld) {
+  const producers = dq2([Producer, EcsPosition, EcsFaction, IsBuilding])(world)
+  for (const eid of producers) {
+    const bx = EcsPosition.x[eid], bz = EcsPosition.z[eid]
+    // Find nearest mineral within 20 units
+    const nearby: number[] = []
+    spatialHash.query(bx, bz, 20, nearby)
+    let bestDist = Infinity, bestEid = 0
+    for (const r of nearby) {
+      if (!hc2(world, ResourceNode, r)) continue
+      if (hc2(world, Dead, r)) continue
+      const dx = EcsPosition.x[r] - bx, dz = EcsPosition.z[r] - bz
+      const dist = dx * dx + dz * dz
+      if (dist < bestDist) { bestDist = dist; bestEid = r }
+    }
+    if (bestEid > 0) {
+      Producer.rallyX[eid] = EcsPosition.x[bestEid]
+      Producer.rallyZ[eid] = EcsPosition.z[bestEid]
+      Producer.rallyTargetEid[eid] = bestEid
+    }
+  }
 }
 
 init()
