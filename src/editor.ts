@@ -35,6 +35,7 @@ interface ModelConfig {
   turnRate?: number      // radians/sec
   acceleration?: number  // units/sec²
   maxSlope?: number      // max height delta per cell
+  visionRadius?: number  // fog of war sight range
 }
 
 interface EffectsConfig {
@@ -52,22 +53,22 @@ const ALL_MODELS: ModelConfig[] = [
   // ── Units ──
   { key: 'worker', name: 'Worker', category: 'units', modelUrl: '/models/worker.glb', scale: 1.0, rotationOffset: 0, icon: '\u26CF',
     hp: 40, speed: 3.5, armor: 0, damage: 5, range: 1.2, cooldown: 1.5, splash: 0, selectionRadius: 0.4, collisionRadius: 0.4,
-    turnRate: 6.0, acceleration: 8.0, maxSlope: 2.0 },
+    turnRate: 6.0, acceleration: 8.0, maxSlope: 2.0, visionRadius: 8 },
   { key: 'marine', name: 'Marine', category: 'units', modelUrl: '/models/marine.glb', scale: 1.0, rotationOffset: 0, icon: '\u2694',
     hp: 55, speed: 3.0, armor: 0, damage: 8, range: 6, cooldown: 0.8, splash: 0, selectionRadius: 0.4, collisionRadius: 0.4,
-    turnRate: 5.0, acceleration: 7.0, maxSlope: 2.5 },
+    turnRate: 5.0, acceleration: 7.0, maxSlope: 2.5, visionRadius: 10 },
   { key: 'tank', name: 'Tank', category: 'units', modelUrl: '/models/tank-v3.glb', scale: 0.55, rotationOffset: Math.PI, icon: '\u2617',
     hp: 160, speed: 2.0, armor: 2, damage: 30, range: 8, cooldown: 2.5, splash: 1.5, selectionRadius: 1.2, collisionRadius: 1.2,
-    turnRate: 1.5, acceleration: 3.0, maxSlope: 1.5 },
+    turnRate: 1.5, acceleration: 3.0, maxSlope: 1.5, visionRadius: 12 },
   { key: 'jeep', name: 'Jeep', category: 'units', modelUrl: '/models/jeep.glb', scale: 1.0, rotationOffset: 0, icon: '\u{1F699}',
     hp: 80, speed: 4.5, armor: 1, damage: 12, range: 7, cooldown: 0.4, splash: 0, selectionRadius: 0.8, collisionRadius: 0.8,
-    turnRate: 3.0, acceleration: 6.0, maxSlope: 1.8 },
+    turnRate: 3.0, acceleration: 6.0, maxSlope: 1.8, visionRadius: 14 },
   { key: 'rocket', name: 'Rocket Tank', category: 'units', modelUrl: '/models/rocket-tank.glb', scale: 0.8, rotationOffset: Math.PI, icon: '\u{1F680}',
     hp: 120, speed: 1.8, armor: 2, damage: 45, range: 12, cooldown: 3.5, splash: 2.5, selectionRadius: 1.0, collisionRadius: 1.0,
-    turnRate: 1.2, acceleration: 2.5, maxSlope: 1.3 },
+    turnRate: 1.2, acceleration: 2.5, maxSlope: 1.3, visionRadius: 10 },
   { key: 'trooper', name: 'Trooper', category: 'units', modelUrl: '/models/star-trooper.glb', scale: 1.0, rotationOffset: 0, icon: '\u{1F52B}',
     hp: 70, speed: 2.8, armor: 1, damage: 14, range: 7, cooldown: 0.6, splash: 0, selectionRadius: 0.4, collisionRadius: 0.4,
-    turnRate: 4.5, acceleration: 6.5, maxSlope: 2.0 },
+    turnRate: 4.5, acceleration: 6.5, maxSlope: 2.0, visionRadius: 10 },
   // ── Buildings ──
   { key: 'command-center', name: 'Command Center', category: 'buildings', modelUrl: '/models/command-center.glb', scale: 5.0, rotationOffset: 0, icon: '\u2302',
     hp: 1500, armor: 1, selectionRadius: 2.0, collisionRadius: 2.0 },
@@ -231,6 +232,7 @@ const STAT_DEFS: StatDef[] = [
   { key: 'turnRate', label: 'Turn Rate', min: 0.5, max: 10, step: 0.1, suffix: ' rad/s' },
   { key: 'acceleration', label: 'Acceleration', min: 1, max: 15, step: 0.5, suffix: ' u/s²' },
   { key: 'maxSlope', label: 'Max Slope', min: 0.5, max: 5, step: 0.1 },
+  { key: 'visionRadius', label: 'Vision', min: 2, max: 30, step: 0.5 },
   { key: 'scale', label: 'Model Scale', min: 0.1, max: 10, step: 0.05 },
   { key: 'rotationOffset', label: 'Rotation', min: 0, max: 6.2832, step: 0.0175, suffix: '`' },
 ]
@@ -2266,7 +2268,7 @@ function buildExportJSON(): string {
 
   // Add stats if they exist
   const stats: Record<string, any> = {}
-  for (const k of ['hp', 'speed', 'armor', 'damage', 'range', 'cooldown', 'splash'] as const) {
+  for (const k of ['hp', 'speed', 'armor', 'damage', 'range', 'cooldown', 'splash', 'visionRadius'] as const) {
     if ((config as any)[k] !== undefined) stats[k] = (config as any)[k]
   }
   if (Object.keys(stats).length > 0) modelConfig.stats = stats
@@ -2323,11 +2325,11 @@ function buildFullConfigJSON(): string {
       entry.scale = config.scale
       entry.rotationOffset = config.rotationOffset
       entry.rotationOffsetDeg = Math.round(config.rotationOffset * 180 / Math.PI)
-      for (const k of ['hp', 'speed', 'armor', 'damage', 'range', 'cooldown', 'splash', 'selectionRadius', 'collisionRadius', 'turnRate', 'acceleration', 'maxSlope'] as const) {
+      for (const k of ['hp', 'speed', 'armor', 'damage', 'range', 'cooldown', 'splash', 'selectionRadius', 'collisionRadius', 'turnRate', 'acceleration', 'maxSlope', 'visionRadius'] as const) {
         if ((config as any)[k] !== undefined) entry[k] = (config as any)[k]
       }
     } else {
-      for (const k of ['hp', 'speed', 'armor', 'damage', 'range', 'cooldown', 'splash', 'selectionRadius', 'collisionRadius', 'turnRate', 'acceleration', 'maxSlope'] as const) {
+      for (const k of ['hp', 'speed', 'armor', 'damage', 'range', 'cooldown', 'splash', 'selectionRadius', 'collisionRadius', 'turnRate', 'acceleration', 'maxSlope', 'visionRadius'] as const) {
         if ((m as any)[k] !== undefined) entry[k] = (m as any)[k]
       }
     }
@@ -2422,6 +2424,7 @@ function applyLoadedConfig(data: Record<string, any>) {
     if (saved.turnRate !== undefined) m.turnRate = saved.turnRate
     if (saved.acceleration !== undefined) m.acceleration = saved.acceleration
     if (saved.maxSlope !== undefined) m.maxSlope = saved.maxSlope
+    if (saved.visionRadius !== undefined) m.visionRadius = saved.visionRadius
 
     // Restore effects
     if (saved.firePoint || saved.muzzle || saved.projectile) {

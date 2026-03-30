@@ -87,10 +87,15 @@ export function spawnUnit(
   addComponent(world, UnitMode, eid)
   UnitMode.mode[eid] = 0 // default: move
 
-  // Sight radius: 1.3x attack range, minimum 8
+  // Sight radius: from editor config, or 1.3x attack range, minimum 8
   addComponent(world, SightRadius, eid)
-  const atkRange = def.attack ? cfgStat(def, 'range') ?? def.attack.range : 0
-  SightRadius.value[eid] = Math.max(8, atkRange * 1.3)
+  const cfgVision = cfgStat(def, 'visionRadius')
+  if (cfgVision && cfgVision > 0) {
+    SightRadius.value[eid] = cfgVision
+  } else {
+    const atkRange = def.attack ? cfgStat(def, 'range') ?? def.attack.range : 0
+    SightRadius.value[eid] = Math.max(8, atkRange * 1.3)
+  }
 
   addComponent(world, Armor, eid)
   Armor.value[eid] = cfgStat(def, 'armor')
