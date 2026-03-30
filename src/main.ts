@@ -108,10 +108,10 @@ async function showMapSelector(): Promise<MapSelection> {
         <button id="menu-settings-btn" style="width:100%;padding:5px;border:1px solid #555;border-radius:4px;background:#252535;color:#aaf;cursor:pointer;font-size:12px">Customize Keys...</button>
       </div>
     </div>
-    <button id="btn-random-map" style="
+    <button id="btn-quick-start" style="
       padding:10px 32px;border:1px solid #4a8a4a;border-radius:6px;
       background:#2a5a2a;color:#fff;cursor:pointer;font-size:14px;width:100%
-    ">Random Map</button>
+    "></button>
   `
   overlay.appendChild(box)
   document.body.appendChild(overlay)
@@ -188,12 +188,21 @@ async function showMapSelector(): Promise<MapSelection> {
     return (checked?.value as FogMode) || 'normal'
   }
 
+  // Quick start button — last played map or random
+  const lastMap = localStorage.getItem('rts-last-map')
+  const quickBtn = document.getElementById('btn-quick-start')!
+  quickBtn.textContent = lastMap ? `Play: ${lastMap}` : 'Random Map'
+
   return new Promise(resolve => {
-    // Random map button
-    document.getElementById('btn-random-map')!.addEventListener('click', () => {
+    quickBtn.addEventListener('click', () => {
       const fog = getSelectedFog()
       overlay.remove()
-      resolve({ map: 'random', fog })
+      if (lastMap) {
+        localStorage.setItem('rts-last-map', lastMap)
+        resolve({ map: { name: lastMap }, fog })
+      } else {
+        resolve({ map: 'random', fog })
+      }
     })
 
     // Map items
@@ -207,6 +216,7 @@ async function showMapSelector(): Promise<MapSelection> {
       el.addEventListener('click', () => {
         const name = (el as HTMLElement).dataset.name!
         const fog = getSelectedFog()
+        localStorage.setItem('rts-last-map', name)
         overlay.remove()
         resolve({ map: { name }, fog })
       })
