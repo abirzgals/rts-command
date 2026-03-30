@@ -250,7 +250,6 @@ function hasFoundPlayerBase(): boolean {
 
 /** Reset AI state — call after team swap so AI re-evaluates from scratch */
 export function resetAIState() {
-  aiState = AIState.SCOUTING
   aiTimer = AI_TICK // tick immediately on next frame
   scoutEid = null
   scoutWaypoints = []
@@ -269,6 +268,48 @@ export function resetAIState() {
   knownArmySupply = 0
   hasBarracks = false
   hasFactory = false
+
+  // Analyze inherited situation from the world
+  const w = (window as any).__ecsWorld
+  if (w) {
+    analyzeInheritedState(w)
+  } else {
+    aiState = AIState.SCOUTING
+  }
+}
+
+/** After team swap: check fog, find enemy base, assess force, pick correct state */
+function analyzeInheritedState(world: IWorld) {
+  // 1. Take census of new faction
+  const census = takeCensus(world)
+  if (!census.commandCenter) {
+    aiState = AIState.SCOUTING
+    return
+  }
+
+  // 2. Check if enemy base is already visible/known via fog
+  const found = tryDiscoverPlayerBase(world)
+
+  // 3. If we have buildings, update flags
+  // (takeCensus already sets hasBarracks/hasFactory)
+
+  // 4. Decide starting state based on situation
+  if (found) {
+    // Enemy base known — skip scouting
+    if (census.armySupply >= MIN_ATTACK_ARMY) {
+      // Strong army ready — go to staging
+      const homeX = Position.x[census.commandCenter]
+      const homeZ = Position.z[census.commandCenter]
+      computeRallyPoint(world, homeX, homeZ)
+      aiState = AIState.STAGING
+    } else {
+      // Need more army — build up
+      aiState = AIState.BUILDING
+    }
+  } else {
+    // Enemy base unknown — need to scout
+    aiState = AIState.SCOUTING
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
