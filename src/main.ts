@@ -64,6 +64,9 @@ interface MapSelection {
 }
 
 async function showMapSelector(): Promise<MapSelection> {
+  // Load saved keybindings before showing menu
+  loadBindings()
+
   const overlay = document.createElement('div')
   Object.assign(overlay.style, {
     position: 'fixed', inset: '0', zIndex: '1000',
@@ -172,6 +175,7 @@ async function showMapSelector(): Promise<MapSelection> {
     } else if (val.startsWith('server:')) {
       const name = val.replace('server:', '')
       await loadBindingsFromServer(name)
+      saveBindings()
     }
   })
 
