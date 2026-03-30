@@ -1,11 +1,12 @@
 import { defineQuery, hasComponent, removeComponent, addComponent } from 'bitecs'
 import type { IWorld } from 'bitecs'
-import { Producer, Position, Faction, IsBuilding, BuildProgress, Health, UnitTypeC, WorkerC, Dead, MoveTarget, ResourceNode, ResourceDropoff } from '../components'
+import { Producer, Position, Faction, IsBuilding, BuildProgress, Health, UnitTypeC, WorkerC, Dead, MoveTarget, ResourceNode, ResourceDropoff, AttackMove, AttackTarget } from '../components'
 import { UNIT_DEFS, BUILDING_DEFS, UT_WORKER } from '../../game/config'
 import { getTerrainHeight } from '../../terrain/heightmap'
 import { gameState } from '../../game/state'
 import { spawnUnit } from '../archetypes'
 import { spatialHash } from '../../globals'
+import { getQueue, clearQueue, pushCommand, type Command } from '../commandQueue'
 
 const producerQuery = defineQuery([Producer, Position, Faction, IsBuilding])
 const buildingQuery = defineQuery([BuildProgress, Position, IsBuilding, Health])
@@ -38,26 +39,36 @@ export function productionSystem(world: IWorld, dt: number) {
       const spawnZ = Position.z[eid] + 3
       const newEid = spawnUnit(world, unitType, faction, spawnX, spawnZ)
 
-      // Send to rally point
-      addComponent(world, MoveTarget, newEid)
-      MoveTarget.x[newEid] = rallyX
-      MoveTarget.z[newEid] = rallyZ
-
-      // If worker + rally on resource → auto-gather with dropoff
-      if (unitType === UT_WORKER && rallyTarget > 0 &&
-          hasComponent(world, ResourceNode, rallyTarget) && !hasComponent(world, Dead, rallyTarget)) {
-        WorkerC.state[newEid] = 1 // movingToResource
-        WorkerC.targetNode[newEid] = rallyTarget
-        // Find nearest dropoff for return trips
-        const dropoffs = dropoffQuery(world)
-        let nearestDropoff = 0xFFFFFFFF, nearestDD = Infinity
-        for (const bid of dropoffs) {
-          if (Faction.id[bid] !== faction) continue
-          const ddx = Position.x[bid] - spawnX, ddz = Position.z[bid] - spawnZ
-          const dd = ddx * ddx + ddz * ddz
-          if (dd < nearestDD) { nearestDD = dd; nearestDropoff = bid }
+      // Apply rally point as first command
+      if (rallyTarget > 0 && hasComponent(world, ResourceNode, rallyTarget) && !hasComponent(world, Dead, rallyTarget)) {
+        // Rally on resource → auto-gather
+        if (unitType === UT_WORKER) {
+          WorkerC.state[newEid] = 1
+          WorkerC.targetNode[newEid] = rallyTarget
+          const dropoffs = dropoffQuery(world)
+          let nearestDropoff = 0xFFFFFFFF, nearestDD = Infinity
+          for (const bid of dropoffs) {
+            if (Faction.id[bid] !== faction) continue
+            const ddx = Position.x[bid] - spawnX, ddz = Position.z[bid] - spawnZ
+            const dd = ddx * ddx + ddz * ddz
+            if (dd < nearestDD) { nearestDD = dd; nearestDropoff = bid }
+          }
+          WorkerC.returnTarget[newEid] = nearestDropoff
         }
-        WorkerC.returnTarget[newEid] = nearestDropoff
+        addComponent(world, MoveTarget, newEid)
+        MoveTarget.x[newEid] = Position.x[rallyTarget]
+        MoveTarget.z[newEid] = Position.z[rallyTarget]
+      } else {
+        // Rally on ground — move there
+        addComponent(world, MoveTarget, newEid)
+        MoveTarget.x[newEid] = rallyX
+        MoveTarget.z[newEid] = rallyZ
+      }
+
+      // Transfer building's command queue to the new unit (shift-queued commands)
+      const buildingQueue = getQueue(eid)
+      for (const cmd of buildingQueue) {
+        pushCommand(newEid, cmd)
       }
 
       // Check queue for next item

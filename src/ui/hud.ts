@@ -181,10 +181,7 @@ function updateActionButtons(world: IWorld, eid: number) {
         )
         actionButtonsEl.appendChild(btn)
       }
-      // Rally point button
-      actionButtonsEl.appendChild(createActionButton('🚩', 'Rally Point', '', () => {
-        setRallyMode(true)
-      }))
+      // Rally point: set by left-clicking ground with building selected
     }
   }
 

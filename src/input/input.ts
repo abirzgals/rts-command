@@ -492,10 +492,21 @@ function handleClick(world: IWorld, sx: number, sy: number) {
     return
   }
 
-  // ── Units selected — issue command ──
+  // ── Check if only producer buildings selected → rally / unit command queue ──
+  const producerBuildings = selected.filter(eid =>
+    hasComponent(world, IsBuilding, eid) && hasComponent(world, Producer, eid) &&
+    Faction.id[eid] === FACTION_PLAYER
+  )
   const movableUnits = selected.filter(eid =>
     Faction.id[eid] === FACTION_PLAYER && !hasComponent(world, IsBuilding, eid)
   )
+
+  if (movableUnits.length === 0 && producerBuildings.length > 0) {
+    // Building selected — set rally + queue commands for produced units
+    issueBuildingCommand(world, producerBuildings, hit, closestEid, clickedEnemy, clickedResource, shiftHeld)
+    return
+  }
+
   if (movableUnits.length === 0) {
     if (closestEid >= 0 && clickedFriendly) {
       clearSelection(world)
@@ -539,41 +550,63 @@ function handleBoxSelect(world: IWorld, x1: number, y1: number, x2: number, y2: 
   }
 }
 
-function handleRightClick(world: IWorld, sx: number, sy: number) {
-  const hit = raycastGround(sx, sy)
-  const selected = selectedQuery(world)
+/** Set rally point and queue commands on a building — transferred to produced units */
+function issueBuildingCommand(
+  world: IWorld,
+  buildings: number[],
+  hit: THREE.Vector3,
+  closestEid: number,
+  clickedEnemy: boolean,
+  clickedResource: boolean,
+  queue: boolean,
+) {
+  // Determine command type
+  let cmdType: 'move' | 'attack' | 'gather' = 'move'
+  if (clickedEnemy) cmdType = 'attack'
+  else if (clickedResource) cmdType = 'gather'
 
-  // If building with Producer selected → set rally point
-  let hasProducer = false
-  for (const eid of selected) {
-    if (hasComponent(world, IsBuilding, eid) && hasComponent(world, Producer, eid)) {
-      hasProducer = true
-      if (hit) {
-        // Check if rally on resource
-        const nearbyR: number[] = []
-        spatialHash.query(hit.x, hit.z, 2, nearbyR)
-        let resEid = 0
-        for (const r of nearbyR) {
-          if (hasComponent(world, ResourceNode, r) && !hasComponent(world, Dead, r)) {
-            const dx = Position.x[r] - hit.x, dz = Position.z[r] - hit.z
-            if (dx * dx + dz * dz < 4) { resEid = r; break }
-          }
-        }
-        Producer.rallyX[eid] = hit.x
-        Producer.rallyZ[eid] = hit.z
-        Producer.rallyTargetEid[eid] = resEid
-        if (resEid > 0) {
-          // Rally on resource — show gather indicator
-          const tr = hasComponent(world, Selectable, resEid) ? Selectable.radius[resEid] : 0.8
-          spawnActionIndicator(Position.x[resEid], Position.y[resEid], Position.z[resEid], tr + 0.3, 'gather')
-        }
-        spawnMoveMarker(hit.x, hit.y, hit.z)
-      }
+  // Visual feedback
+  if (closestEid >= 0 && cmdType !== 'move') {
+    const tr = hasComponent(world, Selectable, closestEid) ? Selectable.radius[closestEid] : 0.8
+    const color = cmdType === 'attack' ? 'attack' : 'gather'
+    spawnActionIndicator(Position.x[closestEid], Position.y[closestEid], Position.z[closestEid], tr + 0.3, color)
+  }
+  spawnMoveMarker(hit.x, hit.y, hit.z)
+
+  // Check for resource target
+  let resEid = 0
+  if (clickedResource && closestEid >= 0) resEid = closestEid
+
+  for (const eid of buildings) {
+    if (!queue) {
+      // Set rally point (first command)
+      Producer.rallyX[eid] = hit.x
+      Producer.rallyZ[eid] = hit.z
+      Producer.rallyTargetEid[eid] = resEid
+      // Clear queued commands for this building
+      clearQueue(eid)
+    }
+
+    // Build the command
+    let cmd: Command
+    if (cmdType === 'attack' && closestEid >= 0) {
+      cmd = { type: 'attack', targetEid: closestEid }
+    } else if (cmdType === 'gather' && closestEid >= 0) {
+      cmd = { type: 'gather', targetEid: closestEid }
+    } else {
+      cmd = { type: 'move', x: hit.x, z: hit.z }
+    }
+
+    if (queue) {
+      pushCommand(eid, cmd)
+    } else {
+      // First command is the rally point itself — queue additional ones after it
+      // The rally point command will be the first action for produced units
     }
   }
-  if (hasProducer) return
+}
 
-  // Otherwise: deselect all
+function handleRightClick(world: IWorld, _sx: number, _sy: number) {
   clearSelection(world)
 }
 
