@@ -39,6 +39,8 @@ import { initHPBars, updateHPBars } from './render/hpBars'
 // UI
 import { updateHUD } from './ui/hud'
 import { initFogOfWar, updateFogOfWar, renderFogOverlay, fogTexture, setFogMode, type FogMode } from './render/fogOfWar'
+import { PRESETS, applyPreset, loadBindings, loadBindingsFromServer, listServerPresets, getPresetName, saveBindings } from './input/keybindings'
+import { openSettingsUI } from './ui/settingsUI'
 import { setTerrainFogMap } from './terrain/terrainMesh'
 import { updateMinimap } from './ui/minimap'
 import { initSharedButtons } from './ui/sharedButtons'
@@ -79,20 +81,29 @@ async function showMapSelector(): Promise<MapSelection> {
   box.innerHTML = `
     <h1 style="color:#8af;font-size:24px;margin-bottom:4px">RTS Command</h1>
     <p style="color:#666;font-size:13px;margin-bottom:16px">Select a map to start</p>
-    <div id="map-selector-list" style="margin-bottom:16px;max-height:250px;overflow-y:auto">
+    <div id="map-selector-list" style="margin-bottom:12px;max-height:200px;overflow-y:auto">
       <div style="color:#666">Loading maps...</div>
     </div>
-    <div style="margin-bottom:16px;text-align:left;padding:8px 12px;background:#1a1a2a;border-radius:6px;border:1px solid #333">
-      <div style="color:#888;font-size:11px;margin-bottom:6px">FOG OF WAR</div>
-      <label style="color:#ccc;font-size:13px;display:block;margin:4px 0;cursor:pointer">
-        <input type="radio" name="fog" value="normal" checked style="margin-right:6px">Normal — unexplored is hidden
-      </label>
-      <label style="color:#ccc;font-size:13px;display:block;margin:4px 0;cursor:pointer">
-        <input type="radio" name="fog" value="revealed" style="margin-right:6px">Map Revealed — terrain visible, enemies hidden
-      </label>
-      <label style="color:#ccc;font-size:13px;display:block;margin:4px 0;cursor:pointer">
-        <input type="radio" name="fog" value="disabled" style="margin-right:6px">Disabled — everything visible
-      </label>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <div style="flex:1;text-align:left;padding:8px 12px;background:#1a1a2a;border-radius:6px;border:1px solid #333">
+        <div style="color:#888;font-size:11px;margin-bottom:6px">FOG OF WAR</div>
+        <label style="color:#ccc;font-size:12px;display:block;margin:3px 0;cursor:pointer">
+          <input type="radio" name="fog" value="normal" checked style="margin-right:4px">Normal
+        </label>
+        <label style="color:#ccc;font-size:12px;display:block;margin:3px 0;cursor:pointer">
+          <input type="radio" name="fog" value="revealed" style="margin-right:4px">Map Revealed
+        </label>
+        <label style="color:#ccc;font-size:12px;display:block;margin:3px 0;cursor:pointer">
+          <input type="radio" name="fog" value="disabled" style="margin-right:4px">Disabled
+        </label>
+      </div>
+      <div style="flex:1;text-align:left;padding:8px 12px;background:#1a1a2a;border-radius:6px;border:1px solid #333">
+        <div style="color:#888;font-size:11px;margin-bottom:6px">CONTROLS</div>
+        <select id="menu-controls" style="width:100%;padding:6px;border:1px solid #444;border-radius:4px;background:#252535;color:#fff;font-size:12px;margin-bottom:6px">
+          <option value="">Loading...</option>
+        </select>
+        <button id="menu-settings-btn" style="width:100%;padding:5px;border:1px solid #555;border-radius:4px;background:#252535;color:#aaf;cursor:pointer;font-size:12px">Customize Keys...</button>
+      </div>
     </div>
     <button id="btn-random-map" style="
       padding:10px 32px;border:1px solid #4a8a4a;border-radius:6px;
@@ -120,6 +131,53 @@ async function showMapSelector(): Promise<MapSelection> {
       </div>
     `).join('')
   }
+
+  // Populate controls dropdown
+  const controlsSelect = document.getElementById('menu-controls') as HTMLSelectElement
+  ;(async () => {
+    const serverPresets = await listServerPresets()
+    controlsSelect.innerHTML = ''
+    const currentName = getPresetName()
+    // Built-in presets
+    for (const p of PRESETS) {
+      const opt = document.createElement('option')
+      opt.value = `builtin:${p.name}`
+      opt.textContent = p.name
+      if (p.name === currentName) opt.selected = true
+      controlsSelect.appendChild(opt)
+    }
+    // Server presets
+    for (const name of serverPresets) {
+      const opt = document.createElement('option')
+      opt.value = `server:${name}`
+      opt.textContent = name
+      controlsSelect.appendChild(opt)
+    }
+    // Current if custom
+    if (currentName === 'Custom') {
+      const opt = document.createElement('option')
+      opt.value = 'custom'
+      opt.textContent = 'Custom'
+      opt.selected = true
+      controlsSelect.appendChild(opt)
+    }
+  })()
+
+  controlsSelect.addEventListener('change', async () => {
+    const val = controlsSelect.value
+    if (val.startsWith('builtin:')) {
+      const name = val.replace('builtin:', '')
+      const preset = PRESETS.find(p => p.name === name)
+      if (preset) { applyPreset(preset); saveBindings() }
+    } else if (val.startsWith('server:')) {
+      const name = val.replace('server:', '')
+      await loadBindingsFromServer(name)
+    }
+  })
+
+  document.getElementById('menu-settings-btn')!.addEventListener('click', () => {
+    openSettingsUI()
+  })
 
   function getSelectedFog(): FogMode {
     const checked = overlay.querySelector<HTMLInputElement>('input[name="fog"]:checked')
