@@ -13,6 +13,8 @@ import { spawnMuzzleFlash, spawnRocketTrail, spawnFireExplosion, spawnSmoke } fr
 import { spatialHash } from '../../globals'
 import { editorConfig } from '../../render/meshPools'
 import { getAnimManager } from '../../render/animatedMeshManager'
+import { isVisibleAt } from '../../render/fogOfWar'
+import { FACTION_PLAYER } from '../../game/config'
 import { MeshRef } from '../components'
 
 const UT_TO_KEY: Record<number, string> = { 0: 'worker', 1: 'marine', 2: 'tank', 3: 'jeep', 4: 'rocket', 5: 'trooper' }
@@ -107,6 +109,8 @@ export function combatSystem(world: IWorld, dt: number) {
       if (Faction.id[other] === myFaction) continue
       if (hasComponent(world, Dead, other)) continue
       if (!hasComponent(world, Health, other)) continue
+      // Player units can only auto-acquire visible enemies (not in fog)
+      if (myFaction === FACTION_PLAYER && !isVisibleAt(Position.x[other], Position.z[other])) continue
 
       const dx = Position.x[other] - px
       const dz = Position.z[other] - pz
