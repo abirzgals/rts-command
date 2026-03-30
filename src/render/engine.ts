@@ -111,10 +111,10 @@ export class RTSCamera {
     window.addEventListener('keyup', (e) => this.keys.delete(e.code))
     window.addEventListener('mousedown', (e) => {
       if (e.button === 0) this.lmb = true
-      if (e.button === 2) this.rmb = true
-      if (e.button === 1) { this.mmb = true; e.preventDefault() }
-      // Track drag start for any button
-      if (e.button === 1 || (e.button === 0 && this.rmb) || (e.button === 2 && this.lmb)) {
+      if (e.button === 2) { this.rmb = true; this.dragPrevX = e.clientX; this.dragPrevY = e.clientY }
+      if (e.button === 1) { this.mmb = true; this.dragPrevX = e.clientX; this.dragPrevY = e.clientY; e.preventDefault() }
+      // Track drag start for both-button rotate
+      if ((e.button === 0 && this.rmb) || (e.button === 2 && this.lmb)) {
         this.dragPrevX = e.clientX; this.dragPrevY = e.clientY
       }
     })
@@ -137,8 +137,9 @@ export class RTSCamera {
         this.pitch = Math.max(0.3, Math.min(1.5, this.pitch + dy * 0.005))
       }
 
-      // Middle-click drag → pan camera (rotated by yaw)
-      if (this.mmb) {
+      // Middle-click or right-click drag → pan camera (not when both held = rotate)
+      const panning = this.mmb || (this.rmb && !this.lmb)
+      if (panning) {
         const dx = e.clientX - this.dragPrevX
         const dy = e.clientY - this.dragPrevY
         this.dragPrevX = e.clientX
