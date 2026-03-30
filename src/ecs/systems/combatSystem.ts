@@ -83,8 +83,9 @@ export function combatSystem(world: IWorld, dt: number) {
       continue
     }
 
-    // Auto-acquire: only when idle (no move command) — units on the move don't stop to fight
-    if (hasComponent(world, MoveTarget, eid) || hasComponent(world, PathFollower, eid)) continue
+    // Auto-acquire: skip if moving (unless attack-move)
+    const isMoving = hasComponent(world, MoveTarget, eid) || hasComponent(world, PathFollower, eid)
+    if (isMoving && !hasComponent(world, AttackMove, eid)) continue
 
     spatialHash.query(px, pz, range, _nearby)
     let bestTarget = -1

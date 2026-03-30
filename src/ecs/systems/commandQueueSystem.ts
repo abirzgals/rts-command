@@ -8,7 +8,7 @@
 import { defineQuery, hasComponent, addComponent, removeComponent } from 'bitecs'
 import type { IWorld } from 'bitecs'
 import {
-  Position, Faction, MoveTarget, AttackTarget, Velocity,
+  Position, Faction, MoveTarget, AttackTarget, AttackMove, Velocity,
   IsBuilding, WorkerC, Dead, PathFollower,
   ResourceNode, ResourceDropoff, BuildProgress, Selectable,
 } from '../components'
@@ -65,7 +65,9 @@ function applyCommand(world: IWorld, eid: number, cmd: Command) {
       addComponent(world, MoveTarget, eid)
       MoveTarget.x[eid] = cmd.x!
       MoveTarget.z[eid] = cmd.z!
-      // Attack-move is handled by combatSystem auto-acquire
+      addComponent(world, AttackMove, eid)
+      AttackMove.destX[eid] = cmd.x!
+      AttackMove.destZ[eid] = cmd.z!
       break
 
     case 'gather':

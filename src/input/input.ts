@@ -3,7 +3,7 @@ import { defineQuery, hasComponent, addComponent, removeComponent } from 'bitecs
 import type { IWorld } from 'bitecs'
 import {
   Position, Faction, Selected, Selectable, MoveTarget, Velocity,
-  AttackTarget, ResourceNode, ResourceDropoff, WorkerC, IsBuilding, UnitTypeC,
+  AttackTarget, AttackMove, ResourceNode, ResourceDropoff, WorkerC, IsBuilding, UnitTypeC,
   Producer, PathFollower, BuildProgress, Dead, CollisionRadius,
 } from '../ecs/components'
 import {
@@ -782,6 +782,10 @@ function forceAttackTarget(world: IWorld, sx: number, sy: number) {
         addComponent(world, MoveTarget, eid)
         MoveTarget.x[eid] = hit.x
         MoveTarget.z[eid] = hit.z
+        // Mark as attack-move so combat system auto-acquires en route
+        addComponent(world, AttackMove, eid)
+        AttackMove.destX[eid] = hit.x
+        AttackMove.destZ[eid] = hit.z
       }
     }
   }
