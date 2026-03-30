@@ -252,6 +252,7 @@ function transitionTo(state: AIState) {
   aiState = state
   stagingTimer = 0
   attackOrderIssued = false
+  attackTimer = 0
 }
 
 function hasFoundPlayerBase(): boolean {
@@ -633,10 +634,9 @@ function tickStaging(
       || hasComponent(world, AttackTarget, eid)
 
     if (!hasOrders) {
-      // Slight randomization so they don't all stack on one point
       const rx = rallyX + (aiRng() - 0.5) * 6
       const rz = rallyZ + (aiRng() - 0.5) * 6
-      sendMoveTo(world, eid, rx, rz)
+      sendAttackMoveTo(world, eid, rx, rz)
     }
   }
 
@@ -663,11 +663,15 @@ function tickStaging(
 //  Once the attack is over (most units dead), go back to BUILDING.
 // ═══════════════════════════════════════════════════════════════
 
+let attackTimer = 0
+
 function tickAttacking(
   world: IWorld,
   census: Census,
   decisions: string[],
 ) {
+  attackTimer += AI_TICK
+
   // Refresh player base location -- they might have expanded
   tryDiscoverPlayerBase(world)
 
@@ -678,7 +682,6 @@ function tickAttacking(
   // Re-scan player army — if we were targeting army and it moved, update target
   scanPlayerArmy(world)
   if (knownArmySupply >= 4) {
-    // Redirect attack toward player army concentration
     targetX = knownArmyX
     targetZ = knownArmyZ
   }
@@ -688,18 +691,51 @@ function tickAttacking(
     sendGroupAttackMove(world, force, targetX, targetZ)
     attackOrderIssued = true
     attackCount++
+    attackTimer = 0
     const targetType = knownArmySupply >= 4 ? 'army' : 'base'
     decisions.push(`Attack #${attackCount} (${targetType}): ${force.length} units → (${Math.round(targetX)}, ${Math.round(targetZ)})`)
+  }
+
+  // Re-issue orders to idle units every few ticks (stuck recovery)
+  let idleCount = 0
+  const force = selectAttackForce(world, census)
+  for (const eid of force) {
+    const hasOrders = hasComponent(world, MoveTarget, eid)
+      || hasComponent(world, PathFollower, eid)
+      || hasComponent(world, AttackTarget, eid)
+    if (!hasOrders) idleCount++
+  }
+
+  if (idleCount > 0 && force.length > 0) {
+    // Re-send idle units to attack target
+    for (const eid of force) {
+      const hasOrders = hasComponent(world, MoveTarget, eid)
+        || hasComponent(world, PathFollower, eid)
+        || hasComponent(world, AttackTarget, eid)
+      if (!hasOrders) {
+        sendAttackMoveTo(world, eid, targetX + aiRng() * 8 - 4, targetZ + aiRng() * 8 - 4)
+      }
+    }
+    decisions.push(`Re-sent ${idleCount} idle units`)
   }
 
   // Check if attack is spent
   if (census.armySupply <= 2) {
     decisions.push('Attack spent, rebuilding')
+    attackTimer = 0
     transitionTo(AIState.BUILDING)
     return
   }
 
-  decisions.push(`Attacking with ${census.combatUnits.length} units (${census.armySupply} supply)`)
+  // Attack timeout — if stuck for too long, give up and rebuild
+  if (attackTimer > 60) {
+    decisions.push('Attack timed out, rebuilding')
+    attackTimer = 0
+    transitionTo(AIState.BUILDING)
+    return
+  }
+
+  decisions.push(`Attacking with ${census.combatUnits.length} units (${census.armySupply} supply) [${Math.round(attackTimer)}s] idle:${idleCount}`)
 }
 
 // ═══════════════════════════════════════════════════════════════
