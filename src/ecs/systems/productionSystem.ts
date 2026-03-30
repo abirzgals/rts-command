@@ -1,6 +1,6 @@
 import { defineQuery, hasComponent, removeComponent, addComponent } from 'bitecs'
 import type { IWorld } from 'bitecs'
-import { Producer, Position, Faction, IsBuilding, BuildProgress, Health, UnitTypeC, WorkerC, Dead, MoveTarget, ResourceNode } from '../components'
+import { Producer, Position, Faction, IsBuilding, BuildProgress, Health, UnitTypeC, WorkerC, Dead, MoveTarget, ResourceNode, ResourceDropoff } from '../components'
 import { UNIT_DEFS, BUILDING_DEFS, UT_WORKER } from '../../game/config'
 import { getTerrainHeight } from '../../terrain/heightmap'
 import { gameState } from '../../game/state'
@@ -10,6 +10,7 @@ import { spatialHash } from '../../globals'
 const producerQuery = defineQuery([Producer, Position, Faction, IsBuilding])
 const buildingQuery = defineQuery([BuildProgress, Position, IsBuilding, Health])
 const workerQuery = defineQuery([WorkerC, Position, Faction])
+const dropoffQuery = defineQuery([ResourceDropoff, Position, Faction])
 const BUILD_RANGE = 4.0 // max distance worker can build from
 
 export function productionSystem(world: IWorld, dt: number) {
@@ -42,11 +43,21 @@ export function productionSystem(world: IWorld, dt: number) {
       MoveTarget.x[newEid] = rallyX
       MoveTarget.z[newEid] = rallyZ
 
-      // If worker + rally on resource → auto-gather
+      // If worker + rally on resource → auto-gather with dropoff
       if (unitType === UT_WORKER && rallyTarget > 0 &&
           hasComponent(world, ResourceNode, rallyTarget) && !hasComponent(world, Dead, rallyTarget)) {
         WorkerC.state[newEid] = 1 // movingToResource
         WorkerC.targetNode[newEid] = rallyTarget
+        // Find nearest dropoff for return trips
+        const dropoffs = dropoffQuery(world)
+        let nearestDropoff = 0xFFFFFFFF, nearestDD = Infinity
+        for (const bid of dropoffs) {
+          if (Faction.id[bid] !== faction) continue
+          const ddx = Position.x[bid] - spawnX, ddz = Position.z[bid] - spawnZ
+          const dd = ddx * ddx + ddz * ddz
+          if (dd < nearestDD) { nearestDD = dd; nearestDropoff = bid }
+        }
+        WorkerC.returnTarget[newEid] = nearestDropoff
       }
 
       // Check queue for next item

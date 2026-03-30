@@ -485,6 +485,11 @@ function handleRightClick(world: IWorld, sx: number, sy: number) {
         Producer.rallyX[eid] = hit.x
         Producer.rallyZ[eid] = hit.z
         Producer.rallyTargetEid[eid] = resEid
+        if (resEid > 0) {
+          // Rally on resource — show gather indicator
+          const tr = hasComponent(world, Selectable, resEid) ? Selectable.radius[resEid] : 0.8
+          spawnActionIndicator(Position.x[resEid], Position.y[resEid], Position.z[resEid], tr + 0.3, 'gather')
+        }
         spawnMoveMarker(hit.x, hit.y, hit.z)
       }
     }

@@ -61,6 +61,53 @@ const GATHER_TIME = 1.5 // seconds per gather tick
 // Sentinel for "no entity" — entity IDs start at 0 in bitECS, so we can't use 0
 const NONE = 0xFFFFFFFF
 
+// ── One-worker-per-node tracking ────────────────────────────
+// Maps resource node eid → worker eid that is currently gathering from it
+const nodeOccupant = new Map<number, number>()
+
+/** Check if a resource node already has a worker gathering */
+export function isNodeOccupied(nodeEid: number): boolean {
+  return nodeOccupant.has(nodeEid)
+}
+
+/** Claim a node for a worker */
+function claimNode(nodeEid: number, workerEid: number) {
+  nodeOccupant.set(nodeEid, workerEid)
+}
+
+/** Release a node when worker leaves or dies */
+function releaseNode(nodeEid: number, workerEid: number) {
+  if (nodeOccupant.get(nodeEid) === workerEid) {
+    nodeOccupant.delete(nodeEid)
+  }
+}
+
+/** Find nearest free (unoccupied) resource node within radius */
+function findFreeNode(world: IWorld, wx: number, wz: number, radius: number, resType?: number): number {
+  const nearby: number[] = []
+  spatialHash.query(wx, wz, radius, nearby)
+
+  let bestNode = -1
+  let bestDist = Infinity
+
+  for (const eid of nearby) {
+    if (!hasComponent(world, ResourceNode, eid)) continue
+    if (hasComponent(world, Dead, eid)) continue
+    if (ResourceNode.amount[eid] <= 0) continue
+    if (nodeOccupant.has(eid)) continue // occupied
+    if (resType !== undefined && ResourceNode.type[eid] !== resType) continue
+
+    const dx = Position.x[eid] - wx
+    const dz = Position.z[eid] - wz
+    const dist = dx * dx + dz * dz
+    if (dist < bestDist) {
+      bestDist = dist
+      bestNode = eid
+    }
+  }
+  return bestNode
+}
+
 export function resourceSystem(world: IWorld, dt: number) {
   const workers = workerQuery(world)
 
@@ -102,38 +149,17 @@ function isValidEntity(eid: number): boolean {
 function autoFindResource(world: IWorld, eid: number) {
   const px = Position.x[eid]
   const pz = Position.z[eid]
-  const nearby: number[] = []
-  spatialHash.query(px, pz, 30, nearby)
 
-  let bestNode = -1
-  let bestDist = Infinity
-
-  for (const other of nearby) {
-    if (!hasComponent(world, ResourceNode, other)) continue
-    if (hasComponent(world, Dead, other)) continue
-    if (ResourceNode.amount[other] <= 0) continue
-
-    const dx = Position.x[other] - px
-    const dz = Position.z[other] - pz
-    const dist = dx * dx + dz * dz
-
-    if (dist < bestDist) {
-      bestDist = dist
-      bestNode = other
-    }
-  }
-
-  if (bestNode >= 0) {
+  // Prefer unoccupied nodes
+  const freeNode = findFreeNode(world, px, pz, 30)
+  if (freeNode >= 0) {
     WorkerC.state[eid] = 1
-    WorkerC.targetNode[eid] = bestNode
-
-    // Find nearest dropoff
+    WorkerC.targetNode[eid] = freeNode
     findDropoff(world, eid)
-
     clearPath(world, eid)
     addComponent(world, MoveTarget, eid)
-    MoveTarget.x[eid] = Position.x[bestNode]
-    MoveTarget.z[eid] = Position.z[bestNode]
+    MoveTarget.x[eid] = Position.x[freeNode]
+    MoveTarget.z[eid] = Position.z[freeNode]
   }
 }
 
@@ -153,11 +179,31 @@ function moveToResource(world: IWorld, eid: number) {
   const dist = Math.sqrt(dx * dx + dz * dz)
 
   if (dist <= GATHER_RANGE) {
+    // Check if node is occupied by another worker
+    if (nodeOccupant.has(nodeEid) && nodeOccupant.get(nodeEid) !== eid) {
+      // Find nearest free node of same type within 20m
+      const resType = ResourceNode.type[nodeEid]
+      const freeNode = findFreeNode(world, Position.x[eid], Position.z[eid], 20, resType)
+      if (freeNode >= 0) {
+        // Redirect to free node
+        WorkerC.targetNode[eid] = freeNode
+        clearPath(world, eid)
+        addComponent(world, MoveTarget, eid)
+        MoveTarget.x[eid] = Position.x[freeNode]
+        MoveTarget.z[eid] = Position.z[freeNode]
+      } else {
+        // No free nodes — wait nearby (idle but keep state 1, will retry)
+        if (hasComponent(world, MoveTarget, eid)) removeComponent(world, MoveTarget, eid)
+      }
+      return
+    }
+
+    // Claim this node and start gathering
+    claimNode(nodeEid, eid)
     WorkerC.state[eid] = 2 // gathering
     WorkerC.gatherTimer[eid] = 0
     if (hasComponent(world, MoveTarget, eid)) removeComponent(world, MoveTarget, eid)
   } else if (!hasComponent(world, MoveTarget, eid) && !hasComponent(world, PathFollower, eid)) {
-    // Worker lost its path/target (e.g. dynamic obstacle blocked it) — re-issue move
     addComponent(world, MoveTarget, eid)
     MoveTarget.x[eid] = Position.x[nodeEid]
     MoveTarget.z[eid] = Position.z[nodeEid]
@@ -168,6 +214,7 @@ function gather(world: IWorld, eid: number, dt: number) {
   const nodeEid = WorkerC.targetNode[eid]
 
   if (!hasComponent(world, ResourceNode, nodeEid) || hasComponent(world, Dead, nodeEid) || ResourceNode.amount[nodeEid] <= 0) {
+    releaseNode(nodeEid, eid)
     if (WorkerC.carryAmount[eid] > 0) {
       WorkerC.state[eid] = 3
       moveToDropoff(world, eid)
@@ -189,6 +236,7 @@ function gather(world: IWorld, eid: number, dt: number) {
 
     // Worker carries up to a full load then returns
     if (WorkerC.carryAmount[eid] >= GATHER_AMOUNT * 2) {
+      releaseNode(nodeEid, eid)
       WorkerC.state[eid] = 3
       moveToDropoff(world, eid)
     }
