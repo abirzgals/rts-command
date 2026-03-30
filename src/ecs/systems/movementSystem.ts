@@ -16,7 +16,7 @@ import type { IWorld } from 'bitecs'
 import {
   Position, Rotation, MoveTarget, MoveSpeed, Velocity,
   IsBuilding, PathFollower, Projectile, CollisionRadius, Dead,
-  TurnRate, Acceleration, CurrentSpeed, MaxSlope, StuckState,
+  TurnRate, Acceleration, CurrentSpeed, MaxSlope, StuckState, AttackMove,
 } from '../components'
 import { getPath, removePath } from '../../pathfinding/pathStore'
 import { resetPathAttempt } from './pathfindingSystem'
@@ -645,6 +645,7 @@ function finishPath(world: IWorld, eid: number, pathId: number) {
   removePath(pathId)
   removeComponent(world, PathFollower, eid)
   if (hasComponent(world, MoveTarget, eid)) removeComponent(world, MoveTarget, eid)
+  if (hasComponent(world, AttackMove, eid)) removeComponent(world, AttackMove, eid)
   Velocity.x[eid] = 0
   Velocity.z[eid] = 0
   if (hasComponent(world, CurrentSpeed, eid)) CurrentSpeed.value[eid] = 0

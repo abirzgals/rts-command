@@ -41,12 +41,11 @@ export function combatSystem(world: IWorld, dt: number) {
       // Check target still alive
       if (hasComponent(world, Dead, targetEid) || !hasComponent(world, Health, targetEid)) {
         removeComponent(world, AttackTarget, eid)
-        // If attack-move, resume moving to original destination
+        // If attack-move, resume moving to original destination (keep AttackMove for further engagements)
         if (hasComponent(world, AttackMove, eid)) {
           addComponent(world, MoveTarget, eid)
           MoveTarget.x[eid] = AttackMove.destX[eid]
           MoveTarget.z[eid] = AttackMove.destZ[eid]
-          removeComponent(world, AttackMove, eid)
         }
         continue
       }
