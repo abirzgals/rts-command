@@ -20,6 +20,7 @@ import { spatialHash } from '../globals'
 import { getTerrainHeight } from '../terrain/heightmap'
 import { isWorldWalkable } from '../pathfinding/navGrid'
 import { findPathHierarchical } from '../pathfinding/astar'
+import { pushCommand, clearQueue, type Command } from '../ecs/commandQueue'
 
 const _vec3 = new THREE.Vector3()
 
@@ -33,6 +34,7 @@ let dragStartX = 0
 let dragStartY = 0
 const DRAG_THRESHOLD = 5
 let forceAttackMode = false // when true, next click = attack anything
+let shiftHeld = false
 
 export function setForceAttackMode(on: boolean) {
   forceAttackMode = on
@@ -183,7 +185,8 @@ export function initInput(world: IWorld) {
   canvas.addEventListener('mousemove', (e) => onMouseMove(e, world))
   canvas.addEventListener('mouseup', (e) => onMouseUp(e, world))
   canvas.addEventListener('contextmenu', (e) => e.preventDefault())
-  window.addEventListener('keydown', (e) => onKeyDown(e, world))
+  window.addEventListener('keydown', (e) => { shiftHeld = e.shiftKey; onKeyDown(e, world) })
+  window.addEventListener('keyup', (e) => { shiftHeld = e.shiftKey })
 
   // Touch events
   canvas.addEventListener('touchstart', (e) => onTouchStart(e, world), { passive: false })
@@ -322,6 +325,9 @@ function handleClick(world: IWorld, sx: number, sy: number) {
   const hit = raycastGround(sx, sy)
   if (!hit) return
 
+  const selected = selectedQuery(world)
+  const hasSelection = selected.length > 0
+
   // Find closest selectable entity near click
   const nearby: number[] = []
   spatialHash.query(hit.x, hit.z, 3, nearby)
@@ -331,6 +337,7 @@ function handleClick(world: IWorld, sx: number, sy: number) {
 
   for (const eid of nearby) {
     if (!hasComponent(world, Selectable, eid)) continue
+    if (hasComponent(world, Dead, eid)) continue
     const dx = Position.x[eid] - hit.x
     const dz = Position.z[eid] - hit.z
     const dist = Math.sqrt(dx * dx + dz * dz)
@@ -341,11 +348,57 @@ function handleClick(world: IWorld, sx: number, sy: number) {
     }
   }
 
-  clearSelection(world)
-
-  if (closestEid >= 0) {
-    addComponent(world, Selected, closestEid)
+  // ── No units selected → select whatever we clicked ──
+  if (!hasSelection) {
+    if (closestEid >= 0) {
+      if (!shiftHeld) clearSelection(world)
+      addComponent(world, Selected, closestEid)
+    }
+    return
   }
+
+  // ── Units selected — context-sensitive command ──
+  // Determine if we clicked on something actionable
+  const clickedEnemy = closestEid >= 0 && hasComponent(world, Faction, closestEid) &&
+    Faction.id[closestEid] !== FACTION_PLAYER && !hasComponent(world, Dead, closestEid)
+  const clickedResource = closestEid >= 0 && hasComponent(world, ResourceNode, closestEid) &&
+    !hasComponent(world, Dead, closestEid)
+  const clickedFriendly = closestEid >= 0 && hasComponent(world, Faction, closestEid) &&
+    Faction.id[closestEid] === FACTION_PLAYER
+  const clickedBuildSite = closestEid >= 0 && hasComponent(world, BuildProgress, closestEid) &&
+    hasComponent(world, Faction, closestEid) && Faction.id[closestEid] === FACTION_PLAYER
+
+  // Click on friendly unit/building → select it instead (unless shift = add to selection)
+  if (clickedFriendly && !clickedResource && !clickedBuildSite) {
+    if (shiftHeld) {
+      // Shift+click friendly → toggle selection
+      if (hasComponent(world, Selected, closestEid)) {
+        removeComponent(world, Selected, closestEid)
+      } else {
+        addComponent(world, Selected, closestEid)
+      }
+    } else {
+      clearSelection(world)
+      addComponent(world, Selected, closestEid)
+    }
+    return
+  }
+
+  // Filter to movable player units from selection
+  const movableUnits = selected.filter(eid =>
+    Faction.id[eid] === FACTION_PLAYER && !hasComponent(world, IsBuilding, eid)
+  )
+  if (movableUnits.length === 0) {
+    // Only buildings selected — clicking does nothing for commands
+    if (closestEid >= 0 && clickedFriendly) {
+      clearSelection(world)
+      addComponent(world, Selected, closestEid)
+    }
+    return
+  }
+
+  // Issue command to selected units
+  issueCommand(world, movableUnits, hit, closestEid, clickedEnemy, clickedResource, clickedBuildSite, shiftHeld)
 }
 
 function handleBoxSelect(world: IWorld, x1: number, y1: number, x2: number, y2: number) {
@@ -377,185 +430,148 @@ function handleBoxSelect(world: IWorld, x1: number, y1: number, x2: number, y2: 
 
 function handleRightClick(world: IWorld, sx: number, sy: number) {
   const hit = raycastGround(sx, sy)
-  if (!hit) return
-
   const selected = selectedQuery(world)
-  if (selected.length === 0) return
 
-  // Check if selected entities are buildings → set rally point
-  let hasBuildings = false
-  let hasUnits = false
+  // If building with Producer selected → set rally point
+  let hasProducer = false
   for (const eid of selected) {
-    if (hasComponent(world, IsBuilding, eid) && hasComponent(world, Producer, eid)) hasBuildings = true
-    else if (!hasComponent(world, IsBuilding, eid)) hasUnits = true
-  }
-
-  if (hasBuildings) {
-    // Set rally point for all selected buildings
-    const nearbyR: number[] = []
-    spatialHash.query(hit.x, hit.z, 2, nearbyR)
-    let resEid = 0
-    for (const eid of nearbyR) {
-      if (hasComponent(world, ResourceNode, eid) && !hasComponent(world, Dead, eid)) {
-        const dx = Position.x[eid] - hit.x, dz = Position.z[eid] - hit.z
-        if (dx * dx + dz * dz < 4) { resEid = eid; break }
+    if (hasComponent(world, IsBuilding, eid) && hasComponent(world, Producer, eid)) {
+      hasProducer = true
+      if (hit) {
+        // Check if rally on resource
+        const nearbyR: number[] = []
+        spatialHash.query(hit.x, hit.z, 2, nearbyR)
+        let resEid = 0
+        for (const r of nearbyR) {
+          if (hasComponent(world, ResourceNode, r) && !hasComponent(world, Dead, r)) {
+            const dx = Position.x[r] - hit.x, dz = Position.z[r] - hit.z
+            if (dx * dx + dz * dz < 4) { resEid = r; break }
+          }
+        }
+        Producer.rallyX[eid] = hit.x
+        Producer.rallyZ[eid] = hit.z
+        Producer.rallyTargetEid[eid] = resEid
+        spawnMoveMarker(hit.x, hit.y, hit.z)
       }
     }
-
-    for (const eid of selected) {
-      if (!hasComponent(world, Producer, eid)) continue
-      Producer.rallyX[eid] = hit.x
-      Producer.rallyZ[eid] = hit.z
-      Producer.rallyTargetEid[eid] = resEid
-    }
-    spawnMoveMarker(hit.x, hit.y, hit.z)
-    // If only buildings selected, don't also move units
-    if (!hasUnits) return
   }
+  if (hasProducer) return
 
-  // Show target marker
-  spawnMoveMarker(hit.x, hit.y, hit.z)
+  // Otherwise: deselect all
+  clearSelection(world)
+}
 
-  // Check if right-clicked on an enemy or resource
-  const nearby: number[] = []
-  spatialHash.query(hit.x, hit.z, 3, nearby)
+// ── Unified command issuing (used by left-click with selection) ──
 
-  let targetEid = -1
-  let targetDist = Infinity
-  let isResource = false
-
-  for (const eid of nearby) {
-    const dx = Position.x[eid] - hit.x
-    const dz = Position.z[eid] - hit.z
-    const dist = Math.sqrt(dx * dx + dz * dz)
-
-    if (hasComponent(world, ResourceNode, eid) && dist < 2) {
-      if (dist < targetDist) { targetEid = eid; targetDist = dist; isResource = true }
-    } else if (hasComponent(world, Faction, eid) && Faction.id[eid] !== FACTION_PLAYER && dist < 2) {
-      if (dist < targetDist) { targetEid = eid; targetDist = dist; isResource = false }
-    }
-  }
-
-  // Check if right-clicked on a building under construction → assign workers to build
-  let isBuildSite = false
-  for (const eid of nearby) {
-    if (!hasComponent(world, BuildProgress, eid)) continue
-    if (!hasComponent(world, Faction, eid) || Faction.id[eid] !== FACTION_PLAYER) continue
-    const dx = Position.x[eid] - hit.x
-    const dz = Position.z[eid] - hit.z
-    if (dx * dx + dz * dz < 9) { // within 3 units
-      isBuildSite = true
-      const bx = Position.x[eid], bz = Position.z[eid]
-      const bRadius = hasComponent(world, Selectable, eid) ? Selectable.radius[eid] : 2.0
-      spawnActionIndicator(bx, Position.y[eid], bz, bRadius + 0.3, 'assist')
-      for (const wid of selected) {
-        if (!hasComponent(world, WorkerC, wid)) continue
-        WorkerC.state[wid] = 4 // movingToBuild
-        WorkerC.buildTarget[wid] = eid
-        // Target edge of building
-        const wdx = Position.x[wid] - bx, wdz = Position.z[wid] - bz
-        const wd = Math.sqrt(wdx * wdx + wdz * wdz) || 1
-        addComponent(world, MoveTarget, wid)
-        MoveTarget.x[wid] = bx + (wdx / wd) * (bRadius + 1.0)
-        MoveTarget.z[wid] = bz + (wdz / wd) * (bRadius + 1.0)
-      }
-      break
-    }
-  }
-  if (isBuildSite) return
-
-  // Filter movable units
-  const movableUnits = selected.filter(eid =>
-    Faction.id[eid] === FACTION_PLAYER && !hasComponent(world, IsBuilding, eid)
-  )
-
+function issueCommand(
+  world: IWorld,
+  movableUnits: number[],
+  hit: THREE.Vector3,
+  closestEid: number,
+  clickedEnemy: boolean,
+  clickedResource: boolean,
+  clickedBuildSite: boolean,
+  queue: boolean,
+) {
   const count = movableUnits.length
   if (count === 0) return
 
-  // Formation spacing based on largest unit radius
-  let maxR = 0.5
-  for (const eid of movableUnits) {
-    if (hasComponent(world, CollisionRadius, eid)) maxR = Math.max(maxR, CollisionRadius.value[eid])
+  // Determine command type and show indicator
+  let cmdType: 'move' | 'attack' | 'gather' | 'build' = 'move'
+  if (clickedEnemy) cmdType = 'attack'
+  else if (clickedResource) cmdType = 'gather'
+  else if (clickedBuildSite) cmdType = 'build'
+
+  // Show visual feedback
+  if (closestEid >= 0 && cmdType !== 'move') {
+    const tr = hasComponent(world, Selectable, closestEid) ? Selectable.radius[closestEid] : 0.8
+    const color = cmdType === 'attack' ? 'attack' : cmdType === 'build' ? 'assist' : 'gather'
+    spawnActionIndicator(Position.x[closestEid], Position.y[closestEid], Position.z[closestEid], tr + 0.3, color)
+  } else {
+    spawnMoveMarker(hit.x, hit.y, hit.z)
   }
-  const cols = Math.ceil(Math.sqrt(count))
-  const rows = Math.ceil(count / cols)
-  const spacing = maxR * 2.8
 
-  // Generate formation slots — walkable AND reachable via A*
-  const srcX = Position.x[movableUnits[0]]
-  const srcZ = Position.z[movableUnits[0]]
-
-  const slots: { x: number; z: number }[] = []
-  for (let ring = 0; ring < 8 && slots.length < count; ring++) {
-    const rStart = -Math.floor(rows / 2) - ring
-    const rEnd = Math.ceil(rows / 2) + ring
-    for (let r = rStart; r <= rEnd; r++) {
-      for (let c = 0; c < cols + ring * 2; c++) {
-        if (slots.length >= count) break
-        const sx = hit.x + (c - (cols + ring * 2 - 1) / 2) * spacing
-        const sz = hit.z + r * spacing
-        if (!isWorldWalkable(sx, sz)) continue
-        const path = findPathHierarchical(srcX, srcZ, sx, sz, 0, 100)
-        if (path && path.length >= 0) {
-          slots.push({ x: sx, z: sz })
-        }
+  // ── Queue mode (shift held) — add to queue, don't interrupt ──
+  if (queue) {
+    for (const eid of movableUnits) {
+      if (cmdType === 'attack' && closestEid >= 0) {
+        pushCommand(eid, { type: 'attack', targetEid: closestEid })
+      } else if (cmdType === 'gather' && closestEid >= 0) {
+        pushCommand(eid, { type: 'gather', targetEid: closestEid })
+      } else if (cmdType === 'build' && closestEid >= 0) {
+        pushCommand(eid, { type: 'build', targetEid: closestEid })
+      } else {
+        pushCommand(eid, { type: 'move', x: hit.x, z: hit.z })
       }
-      if (slots.length >= count) break
+    }
+    return
+  }
+
+  // ── Immediate mode — clear queue, execute now ──
+
+  // Formation slots for move commands
+  let slots: { x: number; z: number }[] | null = null
+  let assignments: Map<number, number> | null = null
+
+  if (cmdType === 'move' && count > 0) {
+    let maxR = 0.5
+    for (const eid of movableUnits) {
+      if (hasComponent(world, CollisionRadius, eid)) maxR = Math.max(maxR, CollisionRadius.value[eid])
+    }
+    const cols = Math.ceil(Math.sqrt(count))
+    const rows = Math.ceil(count / cols)
+    const spacing = maxR * 2.8
+    const srcX = Position.x[movableUnits[0]]
+    const srcZ = Position.z[movableUnits[0]]
+
+    slots = []
+    for (let ring = 0; ring < 8 && slots.length < count; ring++) {
+      const rStart = -Math.floor(rows / 2) - ring
+      const rEnd = Math.ceil(rows / 2) + ring
+      for (let r = rStart; r <= rEnd; r++) {
+        for (let c = 0; c < cols + ring * 2; c++) {
+          if (slots!.length >= count) break
+          const sx = hit.x + (c - (cols + ring * 2 - 1) / 2) * spacing
+          const sz = hit.z + r * spacing
+          if (!isWorldWalkable(sx, sz)) continue
+          const path = findPathHierarchical(srcX, srcZ, sx, sz, 0, 100)
+          if (path && path.length >= 0) slots!.push({ x: sx, z: sz })
+        }
+        if (slots!.length >= count) break
+      }
+    }
+    while (slots.length < count) slots.push({ x: hit.x, z: hit.z })
+
+    // Angle-sorted slot assignment
+    const unitAngles = movableUnits.map(eid => ({
+      eid, angle: Math.atan2(Position.x[eid] - hit.x, Position.z[eid] - hit.z),
+    }))
+    unitAngles.sort((a, b) => a.angle - b.angle)
+    const slotAngles = slots.map((s, i) => ({
+      idx: i, angle: Math.atan2(s.x - hit.x, s.z - hit.z),
+    }))
+    slotAngles.sort((a, b) => a.angle - b.angle)
+    assignments = new Map()
+    for (let i = 0; i < unitAngles.length; i++) {
+      assignments.set(unitAngles[i].eid, slotAngles[i % slotAngles.length].idx)
     }
   }
-  while (slots.length < count) {
-    slots.push({ x: hit.x, z: hit.z })
-  }
-
-  // Sort units by angle from target → assign slots in same angular order
-  // This ensures left units go to left slots, right to right — no crossing
-  const unitAngles = movableUnits.map(eid => ({
-    eid,
-    angle: Math.atan2(Position.x[eid] - hit.x, Position.z[eid] - hit.z),
-  }))
-  unitAngles.sort((a, b) => a.angle - b.angle)
-
-  const slotAngles = slots.map((s, i) => ({
-    idx: i,
-    angle: Math.atan2(s.x - hit.x, s.z - hit.z),
-  }))
-  slotAngles.sort((a, b) => a.angle - b.angle)
-
-  // Map: sorted unit i → sorted slot i
-  const assignments = new Map<number, number>()
-  for (let i = 0; i < unitAngles.length; i++) {
-    assignments.set(unitAngles[i].eid, slotAngles[i % slotAngles.length].idx)
-  }
-
-  // Issue commands
-  console.log(`[FORMATION] ${count} units, ${slots.length} slots, targetEid=${targetEid}, spacing=${spacing.toFixed(1)}`)
-  for (let si = 0; si < Math.min(3, slots.length); si++) {
-    console.log(`  slot[${si}]: (${slots[si].x.toFixed(1)}, ${slots[si].z.toFixed(1)})`)
-  }
-
-  // Show animated action indicator on target
-  if (targetEid >= 0) {
-    const tr = hasComponent(world, Selectable, targetEid) ? Selectable.radius[targetEid] : 0.8
-    const tx = Position.x[targetEid], tz = Position.z[targetEid], ty = Position.y[targetEid]
-    spawnActionIndicator(tx, ty, tz, tr + 0.3, isResource ? 'gather' : 'attack')
-  }
 
   for (const eid of movableUnits) {
-    // Clear existing commands
+    // Clear current commands and queue
+    clearQueue(eid)
     if (hasComponent(world, AttackTarget, eid)) removeComponent(world, AttackTarget, eid)
     if (hasComponent(world, PathFollower, eid)) removeComponent(world, PathFollower, eid)
 
-    if (targetEid >= 0 && !isResource) {
-      // Attack command
+    if (cmdType === 'attack' && closestEid >= 0) {
       addComponent(world, AttackTarget, eid)
-      AttackTarget.eid[eid] = targetEid
+      AttackTarget.eid[eid] = closestEid
       addComponent(world, MoveTarget, eid)
-      MoveTarget.x[eid] = Position.x[targetEid]
-      MoveTarget.z[eid] = Position.z[targetEid]
-    } else if (targetEid >= 0 && isResource && hasComponent(world, WorkerC, eid)) {
-      // Gather command
+      MoveTarget.x[eid] = Position.x[closestEid]
+      MoveTarget.z[eid] = Position.z[closestEid]
+    } else if (cmdType === 'gather' && closestEid >= 0 && hasComponent(world, WorkerC, eid)) {
       WorkerC.state[eid] = 1
-      WorkerC.targetNode[eid] = targetEid
+      WorkerC.targetNode[eid] = closestEid
       const buildingEnts = playerBuildingQuery(world)
       let nearestDropoff = 0xFFFFFFFF, nearestDD = Infinity
       for (const bid of buildingEnts) {
@@ -565,12 +581,22 @@ function handleRightClick(world: IWorld, sx: number, sy: number) {
       }
       WorkerC.returnTarget[eid] = nearestDropoff
       addComponent(world, MoveTarget, eid)
-      MoveTarget.x[eid] = Position.x[targetEid]
-      MoveTarget.z[eid] = Position.z[targetEid]
+      MoveTarget.x[eid] = Position.x[closestEid]
+      MoveTarget.z[eid] = Position.z[closestEid]
+    } else if (cmdType === 'build' && closestEid >= 0 && hasComponent(world, WorkerC, eid)) {
+      WorkerC.state[eid] = 4
+      WorkerC.buildTarget[eid] = closestEid
+      const bx = Position.x[closestEid], bz = Position.z[closestEid]
+      const bRadius = hasComponent(world, Selectable, closestEid) ? Selectable.radius[closestEid] : 2.0
+      const dx = Position.x[eid] - bx, dz = Position.z[eid] - bz
+      const d = Math.sqrt(dx * dx + dz * dz) || 1
+      addComponent(world, MoveTarget, eid)
+      MoveTarget.x[eid] = bx + (dx / d) * (bRadius + 1.0)
+      MoveTarget.z[eid] = bz + (dz / d) * (bRadius + 1.0)
     } else {
-      // Move to assigned formation slot
-      const slotIdx = assignments.get(eid) ?? 0
-      const slot = slots[slotIdx]
+      // Move to formation slot
+      const slotIdx = assignments?.get(eid) ?? 0
+      const slot = slots ? slots[slotIdx] : { x: hit.x, z: hit.z }
       addComponent(world, MoveTarget, eid)
       MoveTarget.x[eid] = slot.x
       MoveTarget.z[eid] = slot.z
@@ -643,22 +669,30 @@ function forceAttackTarget(world: IWorld, sx: number, sy: number) {
 
   const selected = selectedQuery(world)
   if (targetEid >= 0) {
-    // Force-attack this entity (even friendly)
-    for (const eid of selected) {
-      if (!hasComponent(world, AttackTarget, eid) && !hasComponent(world, Position, eid)) continue
-      addComponent(world, AttackTarget, eid)
-      AttackTarget.eid[eid] = targetEid
-    }
     const tr = hasComponent(world, Selectable, targetEid) ? Selectable.radius[targetEid] : 0.8
     spawnActionIndicator(Position.x[targetEid], Position.y[targetEid], Position.z[targetEid], tr + 0.3, 'attack')
-  } else {
-    // Attack-move: move to position but attack anything on the way
     for (const eid of selected) {
-      addComponent(world, MoveTarget, eid)
-      MoveTarget.x[eid] = hit.x
-      MoveTarget.z[eid] = hit.z
+      if (!hasComponent(world, Position, eid)) continue
+      if (shiftHeld) {
+        pushCommand(eid, { type: 'attack', targetEid })
+      } else {
+        clearQueue(eid)
+        addComponent(world, AttackTarget, eid)
+        AttackTarget.eid[eid] = targetEid
+      }
     }
+  } else {
     spawnMoveMarker(hit.x, hit.y, hit.z)
+    for (const eid of selected) {
+      if (shiftHeld) {
+        pushCommand(eid, { type: 'attackMove', x: hit.x, z: hit.z })
+      } else {
+        clearQueue(eid)
+        addComponent(world, MoveTarget, eid)
+        MoveTarget.x[eid] = hit.x
+        MoveTarget.z[eid] = hit.z
+      }
+    }
   }
 
   setForceAttackMode(false)
@@ -827,53 +861,8 @@ export function queueProduction(buildingEid: number, unitType: number) {
  * If we tap an entity → select it (or attack if enemy).
  */
 function handleTouchTap(world: IWorld, sx: number, sy: number) {
-  const hit = raycastGround(sx, sy)
-  if (!hit) return
-
-  // Check if tap hit an entity
-  const nearby: number[] = []
-  spatialHash.query(hit.x, hit.z, 3, nearby)
-
-  let tappedEid = -1
-  let tappedDist = Infinity
-  for (const eid of nearby) {
-    if (!hasComponent(world, Selectable, eid)) continue
-    if (hasComponent(world, Dead, eid)) continue
-    const dx = Position.x[eid] - hit.x
-    const dz = Position.z[eid] - hit.z
-    const dist = Math.sqrt(dx * dx + dz * dz)
-    const radius = Selectable.radius[eid]
-    if (dist < radius + 0.5 && dist < tappedDist) {
-      tappedDist = dist
-      tappedEid = eid
-    }
-  }
-
-  const selected = selectedQuery(world)
-  const hasPlayerUnitsSelected = selected.some(eid =>
-    Faction.id[eid] === FACTION_PLAYER && !hasComponent(world, IsBuilding, eid)
-  )
-
-  if (tappedEid >= 0) {
-    // Tapped an entity
-    if (hasPlayerUnitsSelected && hasComponent(world, Faction, tappedEid) && Faction.id[tappedEid] !== FACTION_PLAYER) {
-      // Tapped enemy → attack command
-      handleRightClick(world, sx, sy)
-    } else if (hasPlayerUnitsSelected && hasComponent(world, ResourceNode, tappedEid)) {
-      // Tapped resource → gather command
-      handleRightClick(world, sx, sy)
-    } else {
-      // Tapped friendly unit/building → select it
-      clearSelection(world)
-      addComponent(world, Selected, tappedEid)
-    }
-  } else if (hasPlayerUnitsSelected) {
-    // Tapped empty ground with units selected → move command
-    handleRightClick(world, sx, sy)
-  } else {
-    // Nothing selected, tapped empty ground → deselect
-    clearSelection(world)
-  }
+  // On mobile, tap = left click (select or command)
+  handleClick(world, sx, sy)
 }
 
 // ── Touch handlers ──────────────────────────────────────────

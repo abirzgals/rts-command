@@ -30,6 +30,7 @@ import { aiSystem } from './ecs/systems/aiSystem'
 import { selectionVisualSystem } from './ecs/systems/selectionVisualSystem'
 import { pathfindingSystem } from './ecs/systems/pathfindingSystem'
 import { animationSystem } from './ecs/systems/animationSystem'
+import { commandQueueSystem } from './ecs/systems/commandQueueSystem'
 import { updateAllAnimations } from './render/animatedMeshManager'
 import { initDebugOverlay, updateDebugOverlay } from './render/debugOverlay'
 import { updateEffects } from './render/effects'
@@ -377,6 +378,7 @@ function gameLoop(time: number) {
 
   // ECS systems
   supplySystem(world, dt)
+  commandQueueSystem(world, dt)
   aiSystem(world, dt)
   productionSystem(world, dt)
   resourceSystem(world, dt)

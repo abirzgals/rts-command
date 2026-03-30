@@ -8,6 +8,7 @@ import { getPool } from '../../render/meshPools'
 import { getAnimManager } from '../../render/animatedMeshManager'
 import { gameState } from '../../game/state'
 import { spatialHash } from '../../globals'
+import { removeFromQueues } from '../commandQueue'
 import { unblockCells } from '../../pathfinding/navGrid'
 import { BUILDING_DEFS, UT_TANK } from '../../game/config'
 import { removePath } from '../../pathfinding/pathStore'
@@ -69,8 +70,9 @@ export function deathSystem(world: IWorld, _dt: number) {
       }
     }
 
-    // Remove from spatial hash
+    // Remove from spatial hash and command queue
     spatialHash.remove(eid)
+    removeFromQueues(eid)
 
     // Remove entity
     removeEntity(world, eid)
