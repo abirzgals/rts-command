@@ -4,7 +4,7 @@ import type { IWorld } from 'bitecs'
 import {
   Position, Faction, Selected, Selectable, MoveTarget, Velocity,
   AttackTarget, AttackMove, ResourceNode, ResourceDropoff, WorkerC, IsBuilding, UnitTypeC,
-  Producer, PathFollower, BuildProgress, Dead, CollisionRadius,
+  Producer, PathFollower, BuildProgress, Dead, CollisionRadius, UnitMode, MODE_MOVE, MODE_ATTACK_MOVE,
 } from '../ecs/components'
 import {
   FACTION_PLAYER, BUILDING_DEFS, UNIT_DEFS,
@@ -561,7 +561,8 @@ function issueCommand(
       } else if (cmdType === 'build' && closestEid >= 0) {
         pushCommand(eid, { type: 'build', targetEid: closestEid })
       } else {
-        pushCommand(eid, { type: 'move', x: hit.x, z: hit.z })
+        const isAM = hasComponent(world, UnitMode, eid) && UnitMode.mode[eid] === MODE_ATTACK_MOVE
+        pushCommand(eid, { type: isAM ? 'attackMove' : 'move', x: hit.x, z: hit.z })
       }
     }
     return
@@ -660,6 +661,14 @@ function issueCommand(
       addComponent(world, MoveTarget, eid)
       MoveTarget.x[eid] = slot.x
       MoveTarget.z[eid] = slot.z
+      // If unit is in attack-move mode, mark as attack-move
+      if (hasComponent(world, UnitMode, eid) && UnitMode.mode[eid] === MODE_ATTACK_MOVE) {
+        addComponent(world, AttackMove, eid)
+        AttackMove.destX[eid] = slot.x
+        AttackMove.destZ[eid] = slot.z
+      } else if (hasComponent(world, AttackMove, eid)) {
+        removeComponent(world, AttackMove, eid)
+      }
     }
   }
 }
@@ -812,10 +821,14 @@ function onKeyDown(e: KeyboardEvent, world: IWorld) {
     return
   }
 
-  // Attack hotkey (A)
+  // Attack-move mode hotkey (A) — toggle unit mode
   if (e.key === 'a' || e.key === 'A') {
     const selected = selectedQuery(world)
-    if (selected.length > 0) setForceAttackMode(true)
+    for (const sid of selected) {
+      if (hasComponent(world, UnitMode, sid)) {
+        UnitMode.mode[sid] = UnitMode.mode[sid] === MODE_ATTACK_MOVE ? MODE_MOVE : MODE_ATTACK_MOVE
+      }
+    }
     return
   }
 

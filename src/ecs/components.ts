@@ -162,6 +162,13 @@ export const AttackMove = defineComponent({
   destZ: Types.f32,
 })
 
+// ── Unit mode (0=move, 1=attack-move) ───────────────────────
+export const UnitMode = defineComponent({
+  mode: Types.ui8, // 0=move, 1=attackMove
+})
+export const MODE_MOVE = 0
+export const MODE_ATTACK_MOVE = 1
+
 // ── SupCom-style movement physics ───────────────────────────
 export const TurnRate = defineComponent({
   value: Types.f32, // radians/sec — how fast unit rotates

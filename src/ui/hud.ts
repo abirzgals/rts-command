@@ -3,7 +3,7 @@ import type { IWorld } from 'bitecs'
 import {
   Selected, Position, Faction, Health, UnitTypeC,
   IsBuilding, WorkerC, Producer, AttackC, MoveSpeed, Armor, MoveTarget, Velocity,
-  AttackTarget, AttackMove, PathFollower,
+  AttackTarget, AttackMove, PathFollower, UnitMode, MODE_MOVE, MODE_ATTACK_MOVE,
 } from '../ecs/components'
 import {
   FACTION_PLAYER, UNIT_DEFS, BUILDING_DEFS,
@@ -37,6 +37,7 @@ let lastSelectedEid = -1
 let lastSelectedCount = -1
 
 export function updateHUD(world: IWorld, _dt: number, time: number) {
+  lastWorld = world
   // FPS counter
   frameCount++
   if (time - lastFpsUpdate > 1000) {
@@ -130,18 +131,31 @@ export function updateHUD(world: IWorld, _dt: number, time: number) {
     selectedCountEl.textContent = ''
     if (selectionChanged) {
       actionButtonsEl.innerHTML = ''
-      // Show unit commands for multi-selection too
-      actionButtonsEl.appendChild(createActionButton('⚔️', 'Attack (A)', '', () => setForceAttackMode(true)))
-      actionButtonsEl.appendChild(createActionButton('⏹️', 'Stop (S)', '', () => {
-        for (const sid of selected) {
-          if (hasComponent(world, MoveTarget, sid)) removeComponent(world, MoveTarget, sid)
-          Velocity.x[sid] = 0; Velocity.z[sid] = 0
-        }
-      }))
+      // Use first unit's mode for highlight
+      updateActionButtons(world, selected[0])
       lastSelectedEid = -1
       lastSelectedCount = selected.length
     }
   }
+
+  // Update mode highlight every frame
+  updateModeHighlight(world, selected)
+}
+
+function updateModeHighlight(world: IWorld, selected: number[]) {
+  if (selected.length === 0) return
+  const eid = selected[0]
+  if (!hasComponent(world, UnitMode, eid)) return
+  const mode = UnitMode.mode[eid]
+  const btns = actionButtonsEl.querySelectorAll('.action-btn')
+  btns.forEach(btn => {
+    const label = btn.querySelector('.label')?.textContent || ''
+    if (label === 'Move') {
+      btn.classList.toggle('active', mode === MODE_MOVE)
+    } else if (label === 'Attack (A)') {
+      btn.classList.toggle('active', mode === MODE_ATTACK_MOVE)
+    }
+  })
 }
 
 function updateActionButtons(world: IWorld, eid: number) {
@@ -176,15 +190,32 @@ function updateActionButtons(world: IWorld, eid: number) {
 
   // ── Unit commands (for all player units) ──
   if (!isBuilding && hasComponent(world, MoveSpeed, eid)) {
-    // Move mode — cancel attack mode, tap ground to move
-    actionButtonsEl.appendChild(createActionButton('🏃', 'Move', 'tap ground', () => {
-      setForceAttackMode(false)
-    }))
+    // Determine current mode of first selected unit
+    const currentMode = hasComponent(world, UnitMode, eid) ? UnitMode.mode[eid] : MODE_MOVE
 
-    // Attack-Move (A) — tap ground = attack-move, tap enemy = attack
-    actionButtonsEl.appendChild(createActionButton('⚔️', 'Attack (A)', 'tap target', () => {
-      setForceAttackMode(true)
-    }))
+    // Move mode button
+    const moveBtn = createActionButton('🏃', 'Move', '', () => {
+      setForceAttackMode(false)
+      const sel = selectedQuery(world)
+      for (const sid of sel) {
+        if (hasComponent(world, UnitMode, sid)) UnitMode.mode[sid] = MODE_MOVE
+      }
+      refreshModeHighlight()
+    })
+    if (currentMode === MODE_MOVE) moveBtn.classList.add('active')
+    actionButtonsEl.appendChild(moveBtn)
+
+    // Attack-Move mode button
+    const atkBtn = createActionButton('⚔️', 'Attack (A)', '', () => {
+      setForceAttackMode(false)
+      const sel = selectedQuery(world)
+      for (const sid of sel) {
+        if (hasComponent(world, UnitMode, sid)) UnitMode.mode[sid] = MODE_ATTACK_MOVE
+      }
+      refreshModeHighlight()
+    })
+    if (currentMode === MODE_ATTACK_MOVE) atkBtn.classList.add('active')
+    actionButtonsEl.appendChild(atkBtn)
 
     // Stop command (S) — stop moving, keep shooting in range
     actionButtonsEl.appendChild(createActionButton('⏹️', 'Stop (S)', '', () => {
@@ -225,6 +256,28 @@ function updateActionButtons(world: IWorld, eid: number) {
     }
   }
 }
+
+function refreshModeHighlight() {
+  const btns = actionButtonsEl.querySelectorAll('.action-btn')
+  btns.forEach(btn => {
+    const label = btn.querySelector('.label')?.textContent || ''
+    if (label === 'Move' || label === 'Attack (A)') {
+      btn.classList.remove('active')
+    }
+  })
+  // Re-check first selected unit's mode
+  const sel = selectedQuery(lastWorld!)
+  if (sel.length > 0) {
+    const mode = hasComponent(lastWorld!, UnitMode, sel[0]) ? UnitMode.mode[sel[0]] : MODE_MOVE
+    btns.forEach(btn => {
+      const label = btn.querySelector('.label')?.textContent || ''
+      if (label === 'Move' && mode === MODE_MOVE) btn.classList.add('active')
+      if (label === 'Attack (A)' && mode === MODE_ATTACK_MOVE) btn.classList.add('active')
+    })
+  }
+}
+
+let lastWorld: IWorld | null = null
 
 function createActionButton(
   icon: string,

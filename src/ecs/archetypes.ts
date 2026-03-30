@@ -6,7 +6,7 @@ import {
   MoveSpeed, Armor, Selectable, MeshRef, CollisionRadius,
   WorkerC, ResourceDropoff, IsBuilding, BuildProgress, Producer,
   SupplyProvider, SupplyCost, ResourceNode, Projectile, Selected,
-  ArcProjectile, TurnRate, Acceleration, MaxSlope, CurrentSpeed, StuckState,
+  ArcProjectile, TurnRate, Acceleration, MaxSlope, CurrentSpeed, StuckState, UnitMode,
 } from './components'
 import {
   UNIT_DEFS, BUILDING_DEFS, FACTION_PLAYER, UT_WORKER,
@@ -83,6 +83,9 @@ export function spawnUnit(
   addComponent(world, StuckState, eid)
   StuckState.phase[eid] = 0
   StuckState.timer[eid] = 0
+
+  addComponent(world, UnitMode, eid)
+  UnitMode.mode[eid] = 0 // default: move
 
   addComponent(world, Armor, eid)
   Armor.value[eid] = cfgStat(def, 'armor')
