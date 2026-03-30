@@ -14,7 +14,7 @@ import { spatialHash } from '../../globals'
 import { editorConfig } from '../../render/meshPools'
 import { getAnimManager } from '../../render/animatedMeshManager'
 import { isVisibleAt } from '../../render/fogOfWar'
-import { FACTION_PLAYER } from '../../game/config'
+import { FACTION_PLAYER, FACTION_ENEMY } from '../../game/config'
 import { MeshRef } from '../components'
 
 const UT_TO_KEY: Record<number, string> = { 0: 'worker', 1: 'marine', 2: 'tank', 3: 'jeep', 4: 'rocket', 5: 'trooper' }
@@ -115,6 +115,9 @@ export function combatSystem(world: IWorld, dt: number) {
       }
       continue
     }
+
+    // AI workers don't auto-acquire — controlled by AI system only
+    if (hasComponent(world, WorkerC, eid) && myFaction === FACTION_ENEMY) continue
 
     // Auto-acquire: skip if moving, unless unit has AttackMove (one-shot attack-move command)
     const isMoving = hasComponent(world, MoveTarget, eid) || hasComponent(world, PathFollower, eid)

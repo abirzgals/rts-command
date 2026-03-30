@@ -781,20 +781,23 @@ function tickWorkerDefense(world: IWorld, census: Census, homeX: number, homeZ: 
   workerFleeTimer = Math.max(0, workerFleeTimer - AI_TICK)
   if (census.workers.length === 0) return
 
-  // First: recall workers that chased too far from home
+  const WORKER_MAX_CHASE = 12 // max distance from home before forced recall
+
+  // First: recall ALL workers that are too far from home
   for (const wid of census.workers) {
     if (hasComponent(world, Dead, wid)) continue
     const wx = Position.x[wid], wz = Position.z[wid]
     const dHome = Math.sqrt((wx - homeX) ** 2 + (wz - homeZ) ** 2)
-    // If worker is far from home AND fighting, pull them back
-    if (dHome > DEFENSE_RADIUS + 10 && hasComponent(world, AttackTarget, wid)) {
-      removeComponent(world, AttackTarget, wid)
+    if (dHome > WORKER_MAX_CHASE) {
+      // Too far — stop fighting and go home immediately
+      if (hasComponent(world, AttackTarget, wid)) removeComponent(world, AttackTarget, wid)
+      if (hasComponent(world, AttackMove, wid)) removeComponent(world, AttackMove, wid)
       WorkerC.state[wid] = 0
       sendMoveTo(world, wid, homeX + (Math.random() - 0.5) * 6, homeZ + (Math.random() - 0.5) * 6)
     }
   }
 
-  // Find threats near home base only (not far away workers)
+  // Find threats near home base only
   const threatenedWorkers: number[] = []
   const nearbyEnemies = new Set<number>()
 
@@ -802,7 +805,7 @@ function tickWorkerDefense(world: IWorld, census: Census, homeX: number, homeZ: 
     if (hasComponent(world, Dead, wid)) continue
     const wx = Position.x[wid], wz = Position.z[wid]
     // Only consider workers near home
-    if (Math.sqrt((wx - homeX) ** 2 + (wz - homeZ) ** 2) > DEFENSE_RADIUS + 5) continue
+    if (Math.sqrt((wx - homeX) ** 2 + (wz - homeZ) ** 2) > WORKER_MAX_CHASE) continue
 
     const _near: number[] = []
     spatialHash.query(wx, wz, WORKER_THREAT_RADIUS, _near)
