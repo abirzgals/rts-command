@@ -985,6 +985,8 @@ function placeBuildingAtCursor(world: IWorld) {
     gameState.buildMode = null
     buildModeEl.style.display = 'none'
     removeBuildPreview()
+    // Deselect workers after placing building (not shift-queued)
+    clearSelection(world)
   }
 }
 
