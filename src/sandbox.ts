@@ -55,7 +55,7 @@ import { initSharedButtons } from './ui/sharedButtons'
 import {
   Position, Faction, Health, UnitTypeC, Dead,
   Selectable, Selected, ResourceNode,
-  MoveTarget, AttackTarget, MoveSpeed,
+  MoveTarget, AttackTarget, MoveSpeed, CollisionRadius,
 } from './ecs/components'
 
 // ── Globals ─────────────────────────────────────────────────────────────────
@@ -701,26 +701,70 @@ function onRightClick(e: MouseEvent) {
     if (d < targetDist) { targetDist = d; targetEid = eid }
   }
 
-  // Command all selected units
-  const allSelected: number[] = []
-  spatialHash.query(0, 0, 9999, allSelected)
-  for (const eid of allSelected) {
+  // Collect movable selected units
+  const movable: number[] = []
+  const allEnts: number[] = []
+  spatialHash.query(0, 0, 9999, allEnts)
+  for (const eid of allEnts) {
     if (!hasComponent(world, Selected, eid)) continue
     if (hasComponent(world, Dead, eid)) continue
+    if (!hasComponent(world, MoveSpeed, eid)) continue
+    movable.push(eid)
+  }
 
-    const myFaction = hasComponent(world, Faction, eid) ? Faction.id[eid] : -1
+  const count = movable.length
+  if (count === 0) return
 
-    if (targetEid >= 0 && targetDist < 3 && hasComponent(world, Faction, targetEid) && Faction.id[targetEid] !== myFaction) {
-      addComponent(world, AttackTarget, eid)
-      AttackTarget.eid[eid] = targetEid
-    } else if (hasComponent(world, MoveSpeed, eid)) {
-      addComponent(world, MoveTarget, eid)
-      MoveTarget.x[eid] = pos.x
-      MoveTarget.z[eid] = pos.z
-      if (hasComponent(world, AttackTarget, eid)) {
-        removeComponent(world, AttackTarget, eid)
+  // Attack target?
+  if (targetEid >= 0 && targetDist < 3 && hasComponent(world, Faction, targetEid)) {
+    for (const eid of movable) {
+      const myFaction = hasComponent(world, Faction, eid) ? Faction.id[eid] : -1
+      if (Faction.id[targetEid] !== myFaction) {
+        addComponent(world, AttackTarget, eid)
+        AttackTarget.eid[eid] = targetEid
       }
     }
+    return
+  }
+
+  // Formation: generate grid slots around click point
+  let maxR = 0.5
+  for (const eid of movable) {
+    if (hasComponent(world, CollisionRadius, eid)) maxR = Math.max(maxR, CollisionRadius.value[eid])
+  }
+  const cols = Math.ceil(Math.sqrt(count))
+  const rows = Math.ceil(count / cols)
+  const spacing = maxR * 2.8
+
+  const slots: { x: number; z: number }[] = []
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (slots.length >= count) break
+      slots.push({
+        x: pos.x + (c - (cols - 1) / 2) * spacing,
+        z: pos.z + (r - (rows - 1) / 2) * spacing,
+      })
+    }
+  }
+
+  // Assign by angle (left units → left slots)
+  const unitA = movable.map(eid => ({
+    eid,
+    angle: Math.atan2(Position.x[eid] - pos.x, Position.z[eid] - pos.z),
+  })).sort((a, b) => a.angle - b.angle)
+
+  const slotA = slots.map((s, i) => ({
+    idx: i,
+    angle: Math.atan2(s.x - pos.x, s.z - pos.z),
+  })).sort((a, b) => a.angle - b.angle)
+
+  for (let i = 0; i < unitA.length; i++) {
+    const eid = unitA[i].eid
+    const slot = slots[slotA[i % slotA.length].idx]
+    if (hasComponent(world, AttackTarget, eid)) removeComponent(world, AttackTarget, eid)
+    addComponent(world, MoveTarget, eid)
+    MoveTarget.x[eid] = slot.x
+    MoveTarget.z[eid] = slot.z
   }
 }
 
