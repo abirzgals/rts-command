@@ -18,6 +18,12 @@ function getTextureUrl(slot: string): string {
 }
 
 /** Replace a terrain texture at runtime (slot: 'grass'|'dirt'|'rock'|'cliff') */
+export function setTerrainFogMap(tex: THREE.Texture) {
+  if (!terrainMesh) return
+  const mat = terrainMesh.material as THREE.ShaderMaterial
+  if (mat.uniforms.fogMap) mat.uniforms.fogMap.value = tex
+}
+
 export function replaceTerrainTexture(slot: string, url: string) {
   // Save override so it persists through mesh rebuilds
   textureOverrides[slot] = url
@@ -118,6 +124,10 @@ export function createTerrainMesh(): THREE.Mesh {
     }
   })
 
+  // Fog texture will be set later via setTerrainFogMap()
+  const defaultFogTex = new THREE.DataTexture(new Uint8Array([255]), 1, 1, THREE.RedFormat)
+  defaultFogTex.needsUpdate = true
+
   const customUniforms = THREE.UniformsUtils.merge([
     THREE.UniformsLib.lights,
     {
@@ -126,6 +136,8 @@ export function createTerrainMesh(): THREE.Mesh {
       texRock:  { value: texRock },
       texCliff: { value: texCliff },
       sunDir:   { value: sunDir },
+      fogMap:   { value: defaultFogTex },
+      mapSize:  { value: MAP_SIZE },
     }
   ])
 
@@ -138,6 +150,7 @@ export function createTerrainMesh(): THREE.Mesh {
       varying vec2 vTileUV;
       varying vec3 vNorm;
       varying float vHeight;
+      varying vec2 vWorldXZ;
 
       #include <common>
       #include <shadowmap_pars_vertex>
@@ -147,6 +160,7 @@ export function createTerrainMesh(): THREE.Mesh {
         vec4 worldPosition = modelMatrix * vec4(position, 1.0);
         vTileUV = worldPosition.xz * 0.1;
         vHeight = worldPosition.y;
+        vWorldXZ = worldPosition.xz;
         vNorm = normalize((modelMatrix * vec4(normal, 0.0)).xyz);
 
         gl_Position = projectionMatrix * viewMatrix * worldPosition;
@@ -157,12 +171,15 @@ export function createTerrainMesh(): THREE.Mesh {
     `,
     fragmentShader: /* glsl */ `
       uniform sampler2D texGrass, texDirt, texRock, texCliff;
+      uniform sampler2D fogMap;
+      uniform float mapSize;
       uniform vec3 sunDir;
 
       varying vec4 vSplat;
       varying vec2 vTileUV;
       varying vec3 vNorm;
       varying float vHeight;
+      varying vec2 vWorldXZ;
 
       #include <common>
       #include <packing>
@@ -199,6 +216,17 @@ export function createTerrainMesh(): THREE.Mesh {
         float shadow = getShadowMask();
 
         vec3 col = albedo * (0.35 + 0.65 * ndl * shadow) * hf;
+
+        // Fog of war: sample fog texture
+        if (mapSize > 0.0) {
+          vec2 fogUV = (vWorldXZ + mapSize * 0.5) / mapSize;
+          fogUV = clamp(fogUV, 0.0, 1.0);
+          float fogVal = texture2D(fogMap, fogUV).r;
+          // 0=black(unexplored), ~0.39=dim(explored), 1.0=visible
+          float fogMul = fogVal < 0.01 ? 0.0 : fogVal < 0.5 ? 0.35 : 1.0;
+          col *= fogMul;
+        }
+
         gl_FragColor = vec4(col, 1.0);
       }
     `,

@@ -38,6 +38,8 @@ import { initHPBars, updateHPBars } from './render/hpBars'
 
 // UI
 import { updateHUD } from './ui/hud'
+import { initFogOfWar, updateFogOfWar, fogTexture } from './render/fogOfWar'
+import { setTerrainFogMap } from './terrain/terrainMesh'
 import { updateMinimap } from './ui/minimap'
 import { initSharedButtons } from './ui/sharedButtons'
 import { fetchMapList, fetchMap, loadMapIntoTerrain } from './terrain/mapData'
@@ -172,7 +174,11 @@ async function init() {
   rtsCamera.target.set(camX, getTerrainHeight(camX, camZ), camZ)
   rtsCamera.setHeightFunction(getTerrainHeight)
 
-  // 8. Debug overlay + HP bars + shared buttons
+  // 8. Fog of war
+  initFogOfWar()
+  setTerrainFogMap(fogTexture)
+
+  // 9. Debug overlay + HP bars + shared buttons
   initDebugOverlay()
   initHPBars()
   initSharedButtons()
@@ -393,6 +399,7 @@ function gameLoop(time: number) {
   updateEffects(dt)
   updateWater(dt)
   selectionVisualSystem(world, dt)
+  updateFogOfWar(world)
   updateDebugOverlay(world)
 
   renderer.render(scene, camera)

@@ -162,6 +162,11 @@ export const AttackMove = defineComponent({
   destZ: Types.f32,
 })
 
+// ── Sight radius (fog of war) ────────────────────────────────
+export const SightRadius = defineComponent({
+  value: Types.f32, // world units — area revealed around unit
+})
+
 // ── Unit mode (0=move, 1=attack-move) ───────────────────────
 export const UnitMode = defineComponent({
   mode: Types.ui8, // 0=move, 1=attackMove

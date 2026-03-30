@@ -337,6 +337,11 @@ export class AnimatedMeshManager {
   getUnitMesh(eid: number): THREE.Object3D | null {
     return this.units.get(eid)?.mesh ?? null
   }
+
+  setVisible(eid: number, visible: boolean) {
+    const entry = this.units.get(eid)
+    if (entry) entry.mesh.visible = visible
+  }
 }
 
 // ── Registry of animated managers by pool ID ─────────────────

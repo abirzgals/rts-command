@@ -6,7 +6,7 @@ import {
   MoveSpeed, Armor, Selectable, MeshRef, CollisionRadius,
   WorkerC, ResourceDropoff, IsBuilding, BuildProgress, Producer,
   SupplyProvider, SupplyCost, ResourceNode, Projectile, Selected,
-  ArcProjectile, TurnRate, Acceleration, MaxSlope, CurrentSpeed, StuckState, UnitMode,
+  ArcProjectile, TurnRate, Acceleration, MaxSlope, CurrentSpeed, StuckState, UnitMode, SightRadius,
 } from './components'
 import {
   UNIT_DEFS, BUILDING_DEFS, FACTION_PLAYER, UT_WORKER,
@@ -86,6 +86,11 @@ export function spawnUnit(
 
   addComponent(world, UnitMode, eid)
   UnitMode.mode[eid] = 0 // default: move
+
+  // Sight radius: 1.3x attack range, minimum 8
+  addComponent(world, SightRadius, eid)
+  const atkRange = def.attack ? cfgStat(def, 'range') ?? def.attack.range : 0
+  SightRadius.value[eid] = Math.max(8, atkRange * 1.3)
 
   addComponent(world, Armor, eid)
   Armor.value[eid] = cfgStat(def, 'armor')
@@ -213,6 +218,10 @@ export function spawnBuilding(
     AttackC.cooldown[eid] = def.attack.cooldown
     AttackC.timer[eid] = 0
   }
+
+  // Sight radius for buildings
+  addComponent(world, SightRadius, eid)
+  SightRadius.value[eid] = def.attack ? Math.max(12, def.attack.range * 1.3) : 12
 
   // Rendering
   addComponent(world, MeshRef, eid)
