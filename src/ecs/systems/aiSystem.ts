@@ -253,7 +253,7 @@ function hasFoundPlayerBase(): boolean {
 }
 
 /** Reset AI state — call after team swap so AI re-evaluates from scratch */
-export function resetAIState() {
+export function resetAIState(world?: IWorld) {
   aiTimer = AI_TICK // tick immediately on next frame
   scoutEid = null
   scoutWaypoints = []
@@ -273,10 +273,8 @@ export function resetAIState() {
   hasBarracks = false
   hasFactory = false
 
-  // Analyze inherited situation from the world
-  const w = (window as any).__ecsWorld
-  if (w) {
-    analyzeInheritedState(w)
+  if (world) {
+    analyzeInheritedState(world)
   } else {
     aiState = AIState.SCOUTING
   }

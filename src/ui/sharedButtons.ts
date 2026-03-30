@@ -223,7 +223,7 @@ function swapTeams() {
   setFogViewFaction(getPlayerFaction())
 
   // 5. Reset AI state so it re-evaluates with its new faction
-  resetAIState()
+  resetAIState(w)
 
   console.log(`[DEBUG] Teams swapped! Now controlling faction ${getPlayerFaction()}`)
 }
