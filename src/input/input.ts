@@ -533,8 +533,9 @@ function handleClick(world: IWorld, sx: number, sy: number) {
     Faction.id[eid] === FACTION_PLAYER && !hasComponent(world, IsBuilding, eid)
   )
 
-  if (movableUnits.length === 0 && producerBuildings.length > 0) {
-    // Building selected — set rally + queue commands for produced units
+  const isMobile = 'ontouchstart' in window
+  if (movableUnits.length === 0 && producerBuildings.length > 0 && !isMobile) {
+    // Desktop: left-click ground with building selected = set rally
     issueBuildingCommand(world, producerBuildings, hit, closestEid, clickedEnemy, clickedResource, shiftHeld)
     return
   }
