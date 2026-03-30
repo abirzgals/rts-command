@@ -18,6 +18,25 @@ import { FACTION_PLAYER, MAP_SIZE } from '../game/config'
 import { getPool } from './meshPools'
 import { getAnimManager } from './animatedMeshManager'
 
+// ── Settings ────────────────────────────────────────────────
+export type FogMode = 'normal' | 'revealed' | 'disabled'
+export let fogMode: FogMode = 'normal'
+
+export function setFogMode(mode: FogMode) {
+  fogMode = mode
+  if (mode === 'disabled') {
+    // Fill everything as visible
+    fogState.fill(2)
+    texPixels.fill(255)
+    if (fogTexture) fogTexture.needsUpdate = true
+  } else if (mode === 'revealed') {
+    // Mark all as explored (not currently visible, but seen)
+    for (let i = 0; i < FOG_RES * FOG_RES; i++) {
+      if (fogState[i] === 0) fogState[i] = 1
+    }
+  }
+}
+
 // ── Config ──────────────────────────────────────────────────
 export const FOG_RES = 128
 const FOG_CELL = MAP_SIZE / FOG_RES
@@ -139,6 +158,9 @@ export function isExploredAt(wx: number, wz: number): boolean {
 
 // ── Per-frame update ────────────────────────────────────────
 export function updateFogOfWar(world: IWorld) {
+  // Disabled mode: everything visible, no enemy hiding
+  if (fogMode === 'disabled') return
+
   // 1. Clear current visibility
   currentVis.fill(0)
 
@@ -177,8 +199,9 @@ export function updateFogOfWar(world: IWorld) {
     } else if (fogState[i] === 2) {
       fogState[i] = 1     // was visible, now explored
       texPixels[i] = 100  // semi-dark
-    } else if (fogState[i] === 1) {
-      texPixels[i] = 100  // still explored
+    } else if (fogState[i] === 1 || fogMode === 'revealed') {
+      fogState[i] = 1
+      texPixels[i] = 100  // explored (revealed mode: everything starts explored)
     } else {
       texPixels[i] = 0    // unexplored = black
     }
@@ -193,7 +216,7 @@ export function updateFogOfWar(world: IWorld) {
 
 /** Call after renderer.render(scene, camera) to apply fog overlay */
 export function renderFogOverlay(rendererRef: THREE.WebGLRenderer, cam: THREE.Camera) {
-  if (!fogOverlayMaterial || !fogOverlayScene) return
+  if (!fogOverlayMaterial || !fogOverlayScene || fogMode === 'disabled') return
 
   // Update inverse view-projection matrix for world reconstruction
   const vp = new THREE.Matrix4()

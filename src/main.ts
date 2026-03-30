@@ -38,7 +38,7 @@ import { initHPBars, updateHPBars } from './render/hpBars'
 
 // UI
 import { updateHUD } from './ui/hud'
-import { initFogOfWar, updateFogOfWar, renderFogOverlay, fogTexture } from './render/fogOfWar'
+import { initFogOfWar, updateFogOfWar, renderFogOverlay, fogTexture, setFogMode, type FogMode } from './render/fogOfWar'
 import { setTerrainFogMap } from './terrain/terrainMesh'
 import { updateMinimap } from './ui/minimap'
 import { initSharedButtons } from './ui/sharedButtons'
@@ -56,7 +56,12 @@ let rtsCamera: RTSCamera
 
 // ── Map selection overlay ────────────────────────────────────
 
-async function showMapSelector(): Promise<'random' | { name: string }> {
+interface MapSelection {
+  map: 'random' | { name: string }
+  fog: FogMode
+}
+
+async function showMapSelector(): Promise<MapSelection> {
   const overlay = document.createElement('div')
   Object.assign(overlay.style, {
     position: 'fixed', inset: '0', zIndex: '1000',
@@ -73,9 +78,21 @@ async function showMapSelector(): Promise<'random' | { name: string }> {
 
   box.innerHTML = `
     <h1 style="color:#8af;font-size:24px;margin-bottom:4px">RTS Command</h1>
-    <p style="color:#666;font-size:13px;margin-bottom:24px">Select a map to start</p>
-    <div id="map-selector-list" style="margin-bottom:16px;max-height:300px;overflow-y:auto">
+    <p style="color:#666;font-size:13px;margin-bottom:16px">Select a map to start</p>
+    <div id="map-selector-list" style="margin-bottom:16px;max-height:250px;overflow-y:auto">
       <div style="color:#666">Loading maps...</div>
+    </div>
+    <div style="margin-bottom:16px;text-align:left;padding:8px 12px;background:#1a1a2a;border-radius:6px;border:1px solid #333">
+      <div style="color:#888;font-size:11px;margin-bottom:6px">FOG OF WAR</div>
+      <label style="color:#ccc;font-size:13px;display:block;margin:4px 0;cursor:pointer">
+        <input type="radio" name="fog" value="normal" checked style="margin-right:6px">Normal — unexplored is hidden
+      </label>
+      <label style="color:#ccc;font-size:13px;display:block;margin:4px 0;cursor:pointer">
+        <input type="radio" name="fog" value="revealed" style="margin-right:6px">Map Revealed — terrain visible, enemies hidden
+      </label>
+      <label style="color:#ccc;font-size:13px;display:block;margin:4px 0;cursor:pointer">
+        <input type="radio" name="fog" value="disabled" style="margin-right:6px">Disabled — everything visible
+      </label>
     </div>
     <button id="btn-random-map" style="
       padding:10px 32px;border:1px solid #4a8a4a;border-radius:6px;
@@ -104,11 +121,17 @@ async function showMapSelector(): Promise<'random' | { name: string }> {
     `).join('')
   }
 
+  function getSelectedFog(): FogMode {
+    const checked = overlay.querySelector<HTMLInputElement>('input[name="fog"]:checked')
+    return (checked?.value as FogMode) || 'normal'
+  }
+
   return new Promise(resolve => {
     // Random map button
     document.getElementById('btn-random-map')!.addEventListener('click', () => {
+      const fog = getSelectedFog()
       overlay.remove()
-      resolve('random')
+      resolve({ map: 'random', fog })
     })
 
     // Map items
@@ -121,8 +144,9 @@ async function showMapSelector(): Promise<'random' | { name: string }> {
       })
       el.addEventListener('click', () => {
         const name = (el as HTMLElement).dataset.name!
+        const fog = getSelectedFog()
         overlay.remove()
-        resolve({ name })
+        resolve({ map: { name }, fog })
       })
     }
   })
@@ -136,19 +160,22 @@ let isLoadedMap = false
 
 async function init() {
   // 0. Map selection
-  const choice = await showMapSelector()
+  const selection = await showMapSelector()
 
-  if (choice === 'random') {
+  if (selection.map === 'random') {
     // 1a. Procedural terrain
     generateTerrain()
   } else {
     // 1b. Load saved map
-    const mapData = await fetchMap(choice.name)
+    const mapData = await fetchMap(selection.map.name)
     const result = loadMapIntoTerrain(mapData)
     mapSpawnPoints = result.spawnPoints
     mapObjects = result.objects
     isLoadedMap = true
   }
+
+  // Apply fog of war setting
+  setFogMode(selection.fog)
 
   // 2. Init Three.js renderer + lighting
   initRenderer(canvas)
