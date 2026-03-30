@@ -701,7 +701,12 @@ function enterBuildMode(buildingType: number) {
   if (!gameState.canAfford(FACTION_PLAYER, def.cost)) return
 
   gameState.buildMode = buildingType
-  buildModeEl.textContent = `Building: ${def.name} — Click to place, ESC to cancel`
+  buildModeEl.innerHTML = `Building: ${def.name} — Click to place <button onclick="this.parentElement.style.display='none'" style="margin-left:12px;padding:2px 10px;border:1px solid #fff;border-radius:3px;background:rgba(0,0,0,0.5);color:#fff;cursor:pointer">Cancel</button>`
+  buildModeEl.querySelector('button')?.addEventListener('click', () => {
+    gameState.buildMode = null
+    buildModeEl.style.display = 'none'
+    removeBuildPreview()
+  })
   buildModeEl.style.display = 'block'
   createBuildPreview(def.radius)
 }
@@ -747,11 +752,12 @@ function handleTouchTap(world: IWorld, sx: number, sy: number) {
   let tappedDist = Infinity
   for (const eid of nearby) {
     if (!hasComponent(world, Selectable, eid)) continue
+    if (hasComponent(world, Dead, eid)) continue
     const dx = Position.x[eid] - hit.x
     const dz = Position.z[eid] - hit.z
     const dist = Math.sqrt(dx * dx + dz * dz)
     const radius = Selectable.radius[eid]
-    if (dist < radius + 1.5 && dist < tappedDist) {
+    if (dist < radius + 0.5 && dist < tappedDist) {
       tappedDist = dist
       tappedEid = eid
     }
@@ -925,11 +931,19 @@ function onTouchEnd(e: TouchEvent, world: IWorld) {
   if (!isTouchPanning && elapsed < TOUCH_TAP_TIME) {
     // It's a tap
     if (gameState.buildMode !== null) {
-      const hit = raycastGround(sx, sy)
-      if (hit) {
-        mouseWorldX = hit.x
-        mouseWorldZ = hit.z
-        placeBuildingAtCursor(world)
+      const def = BUILDING_DEFS[gameState.buildMode]
+      if (def && !gameState.canAfford(FACTION_PLAYER, def.cost)) {
+        // Can't afford — cancel build mode
+        gameState.buildMode = null
+        buildModeEl.style.display = 'none'
+        removeBuildPreview()
+      } else {
+        const hit = raycastGround(sx, sy)
+        if (hit) {
+          mouseWorldX = hit.x
+          mouseWorldZ = hit.z
+          placeBuildingAtCursor(world)
+        }
       }
     } else if (isMoveMode) {
       handleRightClick(world, sx, sy)
