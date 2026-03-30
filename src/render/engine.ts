@@ -100,8 +100,8 @@ export class RTSCamera {
   private getTerrainHeight: ((x: number, z: number) => number) | null = null
   private lastMouseX = 0
   private lastMouseY = 0
-  private rmb = false  // right mouse button held
-  private mmb = false  // middle mouse button held (rotate)
+  private rmb = false  // right mouse button held (rotate)
+  private mmb = false  // middle mouse button held (pan)
   private dragPrevX = 0
   private dragPrevY = 0
 
@@ -120,8 +120,8 @@ export class RTSCamera {
       this.lastMouseX = e.clientX
       this.lastMouseY = e.clientY
 
-      // Middle-click drag → rotate (X) + pitch (Y)
-      if (this.mmb) {
+      // Right-click drag → rotate (yaw) + tilt (pitch)
+      if (this.rmb) {
         const dx = e.clientX - this.dragPrevX
         const dy = e.clientY - this.dragPrevY
         this.dragPrevX = e.clientX
@@ -130,8 +130,8 @@ export class RTSCamera {
         this.pitch = Math.max(0.3, Math.min(1.5, this.pitch + dy * 0.005))
       }
 
-      // Right-click drag → pan camera (rotated by yaw)
-      if (this.rmb) {
+      // Middle-click drag → pan camera (rotated by yaw)
+      if (this.mmb) {
         const dx = e.clientX - this.dragPrevX
         const dy = e.clientY - this.dragPrevY
         this.dragPrevX = e.clientX
