@@ -35,6 +35,9 @@ let dragStartY = 0
 const DRAG_THRESHOLD = 5
 let forceAttackMode = false // when true, next click = attack anything
 let shiftHeld = false
+let lastClickTime = 0
+let lastClickEid = -1
+const DOUBLE_CLICK_TIME = 400 // ms
 
 export function setForceAttackMode(on: boolean) {
   forceAttackMode = on
@@ -348,6 +351,46 @@ function handleClick(world: IWorld, sx: number, sy: number) {
     }
   }
 
+  // Classify what we clicked
+  const clickedFriendly = closestEid >= 0 && hasComponent(world, Faction, closestEid) &&
+    Faction.id[closestEid] === FACTION_PLAYER
+  const clickedEnemy = closestEid >= 0 && hasComponent(world, Faction, closestEid) &&
+    Faction.id[closestEid] !== FACTION_PLAYER && !hasComponent(world, Dead, closestEid)
+  const clickedResource = closestEid >= 0 && hasComponent(world, ResourceNode, closestEid) &&
+    !hasComponent(world, Dead, closestEid)
+  const clickedBuildSite = closestEid >= 0 && hasComponent(world, BuildProgress, closestEid) &&
+    hasComponent(world, Faction, closestEid) && Faction.id[closestEid] === FACTION_PLAYER
+
+  // ── Double-click on friendly → select all visible units of same type ──
+  const now = performance.now()
+  if (closestEid >= 0 && clickedFriendly && !clickedResource &&
+      closestEid === lastClickEid && (now - lastClickTime) < DOUBLE_CLICK_TIME) {
+    const clickedType = hasComponent(world, UnitTypeC, closestEid) ? UnitTypeC.id[closestEid] : -1
+    const isBuilding = hasComponent(world, IsBuilding, closestEid)
+    if (!shiftHeld) clearSelection(world)
+    // Select all visible player units of same type
+    const entities = selectableQuery(world)
+    for (const eid of entities) {
+      if (Faction.id[eid] !== FACTION_PLAYER) continue
+      if (hasComponent(world, Dead, eid)) continue
+      if (hasComponent(world, IsBuilding, eid) !== isBuilding) continue
+      if (!hasComponent(world, UnitTypeC, eid) || UnitTypeC.id[eid] !== clickedType) continue
+      // Check if on screen
+      _vec3.set(Position.x[eid], Position.y[eid], Position.z[eid])
+      _vec3.project(camera)
+      const screenX = ((_vec3.x + 1) / 2) * window.innerWidth
+      const screenY = ((-_vec3.y + 1) / 2) * window.innerHeight
+      if (screenX >= 0 && screenX <= window.innerWidth && screenY >= 0 && screenY <= window.innerHeight) {
+        addComponent(world, Selected, eid)
+      }
+    }
+    lastClickTime = 0
+    lastClickEid = -1
+    return
+  }
+  lastClickTime = now
+  lastClickEid = closestEid
+
   // ── No units selected → select whatever we clicked ──
   if (!hasSelection) {
     if (closestEid >= 0) {
@@ -357,21 +400,9 @@ function handleClick(world: IWorld, sx: number, sy: number) {
     return
   }
 
-  // ── Units selected — context-sensitive command ──
-  // Determine if we clicked on something actionable
-  const clickedEnemy = closestEid >= 0 && hasComponent(world, Faction, closestEid) &&
-    Faction.id[closestEid] !== FACTION_PLAYER && !hasComponent(world, Dead, closestEid)
-  const clickedResource = closestEid >= 0 && hasComponent(world, ResourceNode, closestEid) &&
-    !hasComponent(world, Dead, closestEid)
-  const clickedFriendly = closestEid >= 0 && hasComponent(world, Faction, closestEid) &&
-    Faction.id[closestEid] === FACTION_PLAYER
-  const clickedBuildSite = closestEid >= 0 && hasComponent(world, BuildProgress, closestEid) &&
-    hasComponent(world, Faction, closestEid) && Faction.id[closestEid] === FACTION_PLAYER
-
-  // Click on friendly unit/building → select it instead (unless shift = add to selection)
+  // ── Click on friendly unit/building → select (or toggle with shift) ──
   if (clickedFriendly && !clickedResource && !clickedBuildSite) {
     if (shiftHeld) {
-      // Shift+click friendly → toggle selection
       if (hasComponent(world, Selected, closestEid)) {
         removeComponent(world, Selected, closestEid)
       } else {
@@ -384,12 +415,11 @@ function handleClick(world: IWorld, sx: number, sy: number) {
     return
   }
 
-  // Filter to movable player units from selection
+  // ── Units selected — issue command ──
   const movableUnits = selected.filter(eid =>
     Faction.id[eid] === FACTION_PLAYER && !hasComponent(world, IsBuilding, eid)
   )
   if (movableUnits.length === 0) {
-    // Only buildings selected — clicking does nothing for commands
     if (closestEid >= 0 && clickedFriendly) {
       clearSelection(world)
       addComponent(world, Selected, closestEid)
@@ -397,12 +427,11 @@ function handleClick(world: IWorld, sx: number, sy: number) {
     return
   }
 
-  // Issue command to selected units
   issueCommand(world, movableUnits, hit, closestEid, clickedEnemy, clickedResource, clickedBuildSite, shiftHeld)
 }
 
 function handleBoxSelect(world: IWorld, x1: number, y1: number, x2: number, y2: number) {
-  clearSelection(world)
+  if (!shiftHeld) clearSelection(world)
 
   const minX = Math.min(x1, x2)
   const maxX = Math.max(x1, x2)
@@ -414,7 +443,8 @@ function handleBoxSelect(world: IWorld, x1: number, y1: number, x2: number, y2: 
 
   for (const eid of entities) {
     if (Faction.id[eid] !== FACTION_PLAYER) continue
-    if (hasComponent(world, IsBuilding, eid)) continue // Don't box-select buildings
+    if (hasComponent(world, IsBuilding, eid)) continue
+    if (hasComponent(world, Dead, eid)) continue
 
     _vec3.set(Position.x[eid], Position.y[eid], Position.z[eid])
     _vec3.project(camera)
@@ -423,7 +453,11 @@ function handleBoxSelect(world: IWorld, x1: number, y1: number, x2: number, y2: 
     const screenY = ((-_vec3.y + 1) / 2) * window.innerHeight
 
     if (screenX >= minX && screenX <= maxX && screenY >= minY && screenY <= maxY) {
-      addComponent(world, Selected, eid)
+      if (shiftHeld && hasComponent(world, Selected, eid)) {
+        removeComponent(world, Selected, eid) // toggle off
+      } else {
+        addComponent(world, Selected, eid)
+      }
     }
   }
 }
