@@ -3,7 +3,7 @@ import type { IWorld } from 'bitecs'
 import {
   Dead, DeathTimer, Position, Faction, MeshRef, IsBuilding, SupplyProvider,
   SupplyCost, ResourceNode, Producer, UnitTypeC, PathFollower, WorkerC,
-  MoveTarget, AttackTarget, Velocity,
+  MoveTarget, AttackTarget, Velocity, Wreckage, CollisionRadius,
 } from '../components'
 import { addComponent } from 'bitecs'
 import { getPool } from '../../render/meshPools'
@@ -29,6 +29,7 @@ export function deathSystem(world: IWorld, dt: number) {
     // ── Phase 1: First frame of death — start animation, clean up gameplay state ──
     if (!hasComponent(world, DeathTimer, eid)) {
       addComponent(world, DeathTimer, eid)
+      let isVehicleWreck = false
 
       // Stop all movement/combat
       if (hasComponent(world, MoveTarget, eid)) removeComponent(world, MoveTarget, eid)
@@ -65,16 +66,22 @@ export function deathSystem(world: IWorld, dt: number) {
       }
       if (hasComponent(world, WorkerC, eid)) releaseAllNodes(eid)
 
-      // Vehicle death explosion (tanks, jeeps, rocket tanks)
+      // Vehicle death explosion → wreckage (tanks, jeeps, rocket tanks)
       if (hasComponent(world, UnitTypeC, eid)) {
         const utId = UnitTypeC.id[eid]
         if (utId === UT_TANK || utId === UT_JEEP || utId === UT_ROCKET) {
           spawnTankDeathExplosion(Position.x[eid], Position.y[eid], Position.z[eid])
-          // Hide mesh immediately — explosion replaces it
-          const poolId = MeshRef.poolId[eid]
-          const animMgr = getAnimManager(poolId)
-          if (animMgr) animMgr.setVisible(eid, false)
-          DeathTimer.remaining[eid] = 0.1 // skip death animation, explosion is the visual
+          // Apply burnt wreckage look instead of hiding
+          const poolId2 = MeshRef.poolId[eid]
+          const animMgr2 = getAnimManager(poolId2)
+          if (animMgr2) animMgr2.applyWreckageLook(eid)
+          // Set up wreckage sinking phase
+          addComponent(world, Wreckage, eid)
+          Wreckage.sinkTimer[eid] = 3.0
+          Wreckage.groundY[eid] = Position.y[eid]
+          DeathTimer.remaining[eid] = 4.0 // 3s wreckage visible + 1s sinking buffer
+          // Keep in spatial hash as obstacle during wreckage
+          isVehicleWreck = true
         }
       }
 
@@ -84,17 +91,40 @@ export function deathSystem(world: IWorld, dt: number) {
         onEnemyBuildingDeath(eid, world)
       }
 
-      // Remove from spatial hash and command queue immediately
-      spatialHash.remove(eid)
+      // Remove from spatial hash (unless vehicle wreckage — keeps collider)
+      if (!isVehicleWreck) spatialHash.remove(eid)
       removeFromQueues(eid)
       continue
     }
 
-    // ── Phase 2: Count down timer, remove when done ──
+    // ── Phase 2: Count down timer ──
     DeathTimer.remaining[eid] -= dt
+
+    // ── Wreckage sinking phase ──
+    if (hasComponent(world, Wreckage, eid)) {
+      Wreckage.sinkTimer[eid] -= dt
+      if (Wreckage.sinkTimer[eid] <= 0) {
+        // Start sinking: move mesh downward gradually
+        const poolId = hasComponent(world, MeshRef, eid) ? MeshRef.poolId[eid] : -1
+        const animMgr = getAnimManager(poolId)
+        if (animMgr) {
+          const mesh = animMgr.getMesh(eid)
+          if (mesh) mesh.position.y -= dt * 1.5 // sink speed
+        }
+      }
+      // Remove from spatial hash once sinking starts
+      if (Wreckage.sinkTimer[eid] <= 0 && Wreckage.sinkTimer[eid] > -dt * 2) {
+        spatialHash.remove(eid)
+      }
+    }
+
     if (DeathTimer.remaining[eid] > 0) continue
 
-    // Remove mesh
+    // ── Remove entity ──
+    if (hasComponent(world, Wreckage, eid)) {
+      spatialHash.remove(eid) // ensure removed even if not yet
+    }
+
     if (hasComponent(world, MeshRef, eid)) {
       const poolId = MeshRef.poolId[eid]
       const animMgr = getAnimManager(poolId)

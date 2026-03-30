@@ -343,6 +343,33 @@ export class AnimatedMeshManager {
     const entry = this.units.get(eid)
     if (entry) entry.mesh.visible = visible
   }
+
+  /** Apply burnt wreckage look — darken materials, add black emissive */
+  applyWreckageLook(eid: number) {
+    const entry = this.units.get(eid)
+    if (!entry) return
+    entry.mesh.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        const mesh = child as THREE.Mesh
+        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+        for (const mat of mats) {
+          const m = mat as THREE.MeshStandardMaterial
+          if (m.color) m.color.multiplyScalar(0.15) // very dark
+          if (m.emissive) m.emissive.set(0x110500)  // faint burnt orange glow
+          m.metalness = 0.8
+          m.roughness = 1.0
+        }
+      }
+    })
+    // Stop all animations
+    if (entry.mixer) entry.mixer.stopAllAction()
+  }
+
+  /** Get the mesh Object3D for an entity (for position updates like sinking) */
+  getMesh(eid: number): THREE.Object3D | null {
+    const entry = this.units.get(eid)
+    return entry ? entry.mesh : null
+  }
 }
 
 // ── Registry of animated managers by pool ID ─────────────────

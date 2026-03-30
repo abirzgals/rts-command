@@ -134,6 +134,12 @@ export const DeathTimer = defineComponent({
   remaining: Types.f32, // seconds until entity is removed
 })
 
+// Vehicle wreckage — sinks into ground after explosion
+export const Wreckage = defineComponent({
+  sinkTimer: Types.f32,    // seconds of sinking remaining
+  groundY: Types.f32,      // original ground Y position
+})
+
 export const Projectile = defineComponent({
   targetEid: Types.ui32,
   damage: Types.f32,
