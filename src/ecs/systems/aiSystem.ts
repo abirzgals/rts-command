@@ -126,14 +126,13 @@ export function aiSystem(world: IWorld, dt: number) {
   // ── Unstick AI units ────────────────────────────────────────
   unstickUnits(world, census)
 
-  // ── Check for threats at home base → override to DEFENDING ──
-  const threatAtHome = countThreatsNearBase(world, homeX, homeZ)
-  if (threatAtHome > 0 && aiState !== AIState.ATTACKING) {
+  // ── Check for threats at home base ──────────────────────────
+  const threatSupply = assessThreatAtBase(world, homeX, homeZ)
+  if (threatSupply > 0 && aiState !== AIState.ATTACKING) {
     if (aiState !== AIState.DEFENDING) {
       transitionTo(AIState.DEFENDING)
     }
-  } else if (aiState === AIState.DEFENDING && threatAtHome === 0) {
-    // Threat cleared, go back to whatever makes sense
+  } else if (aiState === AIState.DEFENDING && threatSupply === 0) {
     transitionTo(hasFoundPlayerBase() ? AIState.BUILDING : AIState.SCOUTING)
   }
 
@@ -456,23 +455,59 @@ function tickDefending(
   homeX: number, homeZ: number,
   decisions: string[],
 ) {
-  // Send all combat units back to defend the base
+  const threat = assessThreatAtBase(world, homeX, homeZ)
+  if (threat === 0) return
+
+  // Send only enough to counter: threat * 1.5 supply worth of units
+  const neededSupply = Math.ceil(threat * 1.5)
+
+  // Count how much supply is already defending at home
+  let homeDefenseSupply = 0
   for (const eid of census.combatUnits) {
-    const ux = Position.x[eid]
-    const uz = Position.z[eid]
-    const dToHome = Math.sqrt((ux - homeX) ** 2 + (uz - homeZ) ** 2)
+    const d = Math.sqrt((Position.x[eid] - homeX) ** 2 + (Position.z[eid] - homeZ) ** 2)
+    if (d < DEFENSE_RADIUS) {
+      const ut = hasComponent(world, UnitTypeC, eid) ? UnitTypeC.id[eid] : -1
+      homeDefenseSupply += ut === UT_TANK ? 3 : (ut === UT_JEEP || ut === UT_TROOPER) ? 2 : 1
+    }
+  }
 
-    // Already near home and fighting? Let combat system handle it
-    if (dToHome < DEFENSE_RADIUS) continue
+  // Already enough defenders?
+  if (homeDefenseSupply >= neededSupply) {
+    decisions.push(`Defense OK (${homeDefenseSupply}/${neededSupply} supply home)`)
+    return
+  }
 
-    // Not near home -- recall
+  // Recall closest units until we have enough
+  const deficit = neededSupply - homeDefenseSupply
+  let recalled = 0
+  let recalledSupply = 0
+
+  // Sort by distance to home (closest first — they arrive faster)
+  const awayUnits = census.combatUnits
+    .filter(eid => {
+      const d = Math.sqrt((Position.x[eid] - homeX) ** 2 + (Position.z[eid] - homeZ) ** 2)
+      return d >= DEFENSE_RADIUS
+    })
+    .sort((a, b) => {
+      const dA = (Position.x[a] - homeX) ** 2 + (Position.z[a] - homeZ) ** 2
+      const dB = (Position.x[b] - homeX) ** 2 + (Position.z[b] - homeZ) ** 2
+      return dA - dB // closest first
+    })
+
+  for (const eid of awayUnits) {
+    if (recalledSupply >= deficit) break
+
     const hasOrders = hasComponent(world, AttackTarget, eid)
     if (!hasOrders) {
       sendAttackMoveTo(world, eid, homeX + (Math.random() - 0.5) * 8, homeZ + (Math.random() - 0.5) * 8)
     }
+
+    const ut = hasComponent(world, UnitTypeC, eid) ? UnitTypeC.id[eid] : -1
+    recalledSupply += ut === UT_TANK ? 3 : (ut === UT_JEEP || ut === UT_TROOPER) ? 2 : 1
+    recalled++
   }
 
-  decisions.push(`Defending base (${census.combatUnits.length} units)`)
+  decisions.push(`Defending: threat=${threat} need=${neededSupply} home=${homeDefenseSupply} recalled=${recalled}`)
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -573,21 +608,24 @@ function tryDiscoverPlayerBase(world: IWorld): boolean {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  Threat detection at home base
+//  Threat detection at home base — returns weighted threat supply
 // ═══════════════════════════════════════════════════════════════
 
-function countThreatsNearBase(world: IWorld, homeX: number, homeZ: number): number {
+function assessThreatAtBase(world: IWorld, homeX: number, homeZ: number): number {
   const _near: number[] = []
   spatialHash.query(homeX, homeZ, DEFENSE_RADIUS, _near)
-  let threats = 0
+  let threatSupply = 0
   for (const eid of _near) {
-    if (!hasComponent(world, Faction, eid)) continue
-    if (Faction.id[eid] !== FACTION_PLAYER) continue
+    if (!hasComponent(world, Faction, eid) || Faction.id[eid] !== FACTION_PLAYER) continue
     if (hasComponent(world, Dead, eid)) continue
     if (hasComponent(world, IsBuilding, eid)) continue
-    threats++
+    // Weight by unit type (same as census)
+    const ut = hasComponent(world, UnitTypeC, eid) ? UnitTypeC.id[eid] : -1
+    if (ut === UT_TANK) threatSupply += 3
+    else if (ut === UT_JEEP || ut === UT_TROOPER) threatSupply += 2
+    else threatSupply += 1
   }
-  return threats
+  return threatSupply
 }
 
 // ═══════════════════════════════════════════════════════════════
