@@ -416,38 +416,35 @@ function handleRightClick(world: IWorld, sx: number, sy: number) {
   const spacing = maxR * 2.8
 
   // Generate formation slots (grid positions around target)
-  const slots: { x: number; z: number; taken: boolean }[] = []
+  const slots: { x: number; z: number }[] = []
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       if (slots.length >= count) break
       slots.push({
         x: hit.x + (c - (cols - 1) / 2) * spacing,
         z: hit.z + (r - (rows - 1) / 2) * spacing,
-        taken: false,
       })
     }
   }
 
-  // Assign each unit to the CLOSEST available slot (greedy nearest-neighbor)
-  // This minimizes path crossing
-  const assignments = new Map<number, number>() // eid → slot index
-  const remaining = [...movableUnits]
+  // Sort units by angle from target → assign slots in same angular order
+  // This ensures left units go to left slots, right to right — no crossing
+  const unitAngles = movableUnits.map(eid => ({
+    eid,
+    angle: Math.atan2(Position.x[eid] - hit.x, Position.z[eid] - hit.z),
+  }))
+  unitAngles.sort((a, b) => a.angle - b.angle)
 
-  for (let pass = 0; pass < count; pass++) {
-    let bestUnit = -1, bestSlot = -1, bestDist = Infinity
-    for (let u = 0; u < remaining.length; u++) {
-      const eid = remaining[u]
-      const ux = Position.x[eid], uz = Position.z[eid]
-      for (let s = 0; s < slots.length; s++) {
-        if (slots[s].taken) continue
-        const d = (ux - slots[s].x) ** 2 + (uz - slots[s].z) ** 2
-        if (d < bestDist) { bestDist = d; bestUnit = u; bestSlot = s }
-      }
-    }
-    if (bestUnit < 0) break
-    assignments.set(remaining[bestUnit], bestSlot)
-    slots[bestSlot].taken = true
-    remaining.splice(bestUnit, 1)
+  const slotAngles = slots.map((s, i) => ({
+    idx: i,
+    angle: Math.atan2(s.x - hit.x, s.z - hit.z),
+  }))
+  slotAngles.sort((a, b) => a.angle - b.angle)
+
+  // Map: sorted unit i → sorted slot i
+  const assignments = new Map<number, number>()
+  for (let i = 0; i < unitAngles.length; i++) {
+    assignments.set(unitAngles[i].eid, slotAngles[i % slotAngles.length].idx)
   }
 
   // Issue commands
