@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import { defineQuery, hasComponent, addComponent, removeComponent } from 'bitecs'
 import type { IWorld } from 'bitecs'
 import {
-  Position, Faction, Selected, Selectable, MoveTarget, Velocity, Health,
+  Position, Faction, Selected, Selectable, MoveTarget, Velocity, Health, AttackC,
   AttackTarget, AttackMove, ResourceNode, ResourceDropoff, WorkerC, IsBuilding, UnitTypeC,
   Producer, PathFollower, BuildProgress, Dead, CollisionRadius, UnitMode, MODE_MOVE, MODE_ATTACK_MOVE,
 } from '../ecs/components'
@@ -629,6 +629,27 @@ function issueBuildingCommand(
   }
 }
 
+/** Find a walkable spot at `dist` from (cx,cz), preferring direction toward (fromX,fromZ) */
+function findWalkableSpotAround(cx: number, cz: number, dist: number, fromX: number, fromZ: number) {
+  const dx = fromX - cx, dz = fromZ - cz
+  const baseAngle = Math.atan2(dx, dz)
+  // Try preferred direction first, then sweep around
+  for (let i = 0; i < 16; i++) {
+    const angle = baseAngle + (i % 2 === 0 ? 1 : -1) * Math.floor((i + 1) / 2) * (Math.PI / 8)
+    const mx = cx + Math.sin(angle) * dist
+    const mz = cz + Math.cos(angle) * dist
+    if (isWorldWalkable(mx, mz)) return { x: mx, z: mz }
+  }
+  // Fallback: try larger distance
+  for (let i = 0; i < 8; i++) {
+    const angle = (i / 8) * Math.PI * 2
+    const mx = cx + Math.sin(angle) * (dist + 2)
+    const mz = cz + Math.cos(angle) * (dist + 2)
+    if (isWorldWalkable(mx, mz)) return { x: mx, z: mz }
+  }
+  return { x: cx + Math.sin(baseAngle) * dist, z: cz + Math.cos(baseAngle) * dist }
+}
+
 function handleRightClick(world: IWorld, _sx: number, _sy: number) {
   if (gameState.buildMode !== null) {
     cancelBuildMode()
@@ -745,31 +766,19 @@ function issueCommand(
     if (cmdType === 'attack' && closestEid >= 0) {
       addComponent(world, AttackTarget, eid)
       AttackTarget.eid[eid] = closestEid
-      // Move toward target — if building, find a walkable spot near the edge
+      // Move to attack position based on attacker's range
       const tgtX = Position.x[closestEid], tgtZ = Position.z[closestEid]
+      const tgtR = hasComponent(world, CollisionRadius, closestEid) ? CollisionRadius.value[closestEid] : 0
+      const atkRange = hasComponent(world, AttackC, eid) ? AttackC.range[eid] : 1.5
+      // Stand at: target edge + 80% of attack range (so unit is comfortably in range)
+      const standDist = tgtR + Math.max(1.0, atkRange * 0.8)
       addComponent(world, MoveTarget, eid)
-      if (hasComponent(world, IsBuilding, closestEid)) {
-        const tr = hasComponent(world, CollisionRadius, closestEid) ? CollisionRadius.value[closestEid] : 1.5
-        const adx = Position.x[eid] - tgtX, adz = Position.z[eid] - tgtZ
-        const ad = Math.sqrt(adx * adx + adz * adz) || 1
-        // Try direct edge first, then search around if blocked
-        let mx = tgtX + (adx / ad) * (tr + 1.0)
-        let mz = tgtZ + (adz / ad) * (tr + 1.0)
-        if (!isWorldWalkable(mx, mz)) {
-          // Try 8 directions around the building
-          for (let a = 0; a < 8; a++) {
-            const angle = (a / 8) * Math.PI * 2
-            mx = tgtX + Math.cos(angle) * (tr + 1.5)
-            mz = tgtZ + Math.sin(angle) * (tr + 1.5)
-            if (isWorldWalkable(mx, mz)) break
-          }
-        }
-        MoveTarget.x[eid] = mx
-        MoveTarget.z[eid] = mz
-      } else {
-        MoveTarget.x[eid] = tgtX
-        MoveTarget.z[eid] = tgtZ
-      }
+      const { x: mx, z: mz } = findWalkableSpotAround(
+        tgtX, tgtZ, standDist,
+        Position.x[eid], Position.z[eid],
+      )
+      MoveTarget.x[eid] = mx
+      MoveTarget.z[eid] = mz
     } else if (cmdType === 'gather' && closestEid >= 0 && hasComponent(world, WorkerC, eid)) {
       WorkerC.state[eid] = 1
       WorkerC.targetNode[eid] = closestEid

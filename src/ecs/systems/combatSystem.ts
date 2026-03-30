@@ -76,19 +76,17 @@ export function combatSystem(world: IWorld, dt: number) {
         }
         tryAttack(world, eid, targetEid, dist)
       } else {
-        // Chase — move toward target (edge if building, center if unit)
+        // Chase — move to attack position (within range of target)
         if (!hasComponent(world, IsBuilding, eid) && hasComponent(world, MoveSpeed, eid)) {
+          const targetR = hasComponent(world, CollisionRadius, targetEid) ? CollisionRadius.value[targetEid] : 0
+          const atkRange = AttackC.range[eid]
+          // Move to within attack range of target edge
+          const chaseDist = targetR + Math.max(1.0, atkRange * 0.8)
+          const cdx = px - tx, cdz = pz - tz
+          const cd = Math.sqrt(cdx * cdx + cdz * cdz) || 1
           addComponent(world, MoveTarget, eid)
-          if (hasComponent(world, IsBuilding, targetEid)) {
-            const tr = hasComponent(world, CollisionRadius, targetEid) ? CollisionRadius.value[targetEid] : 1.5
-            const cdx = px - tx, cdz = pz - tz
-            const cd = Math.sqrt(cdx * cdx + cdz * cdz) || 1
-            MoveTarget.x[eid] = tx + (cdx / cd) * (tr + 1.5)
-            MoveTarget.z[eid] = tz + (cdz / cd) * (tr + 1.5)
-          } else {
-            MoveTarget.x[eid] = tx
-            MoveTarget.z[eid] = tz
-          }
+          MoveTarget.x[eid] = tx + (cdx / cd) * chaseDist
+          MoveTarget.z[eid] = tz + (cdz / cd) * chaseDist
         }
       }
       continue
