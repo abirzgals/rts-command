@@ -819,13 +819,12 @@ function onKeyDown(e: KeyboardEvent, world: IWorld) {
     return
   }
 
-  // Stop hotkey (S) — cancel all commands
+  // Stop hotkey (S) — stop moving, keep shooting in range
   if (e.key === 's' || e.key === 'S') {
     if (!e.ctrlKey) {
       const selected = selectedQuery(world)
       for (const eid of selected) {
         if (hasComponent(world, MoveTarget, eid)) removeComponent(world, MoveTarget, eid)
-        if (hasComponent(world, AttackTarget, eid)) removeComponent(world, AttackTarget, eid)
         if (hasComponent(world, AttackMove, eid)) removeComponent(world, AttackMove, eid)
         if (hasComponent(world, PathFollower, eid)) { removePath(PathFollower.pathId[eid]); removeComponent(world, PathFollower, eid) }
         Velocity.x[eid] = 0; Velocity.z[eid] = 0
@@ -836,12 +835,11 @@ function onKeyDown(e: KeyboardEvent, world: IWorld) {
     return
   }
 
-  // Hold position hotkey (H) — stop and cancel attack
+  // Hold position hotkey (H) — stop moving, keep shooting in range
   if (e.key === 'h' || e.key === 'H') {
     const selected = selectedQuery(world)
     for (const eid of selected) {
       if (hasComponent(world, MoveTarget, eid)) removeComponent(world, MoveTarget, eid)
-      if (hasComponent(world, AttackTarget, eid)) removeComponent(world, AttackTarget, eid)
       if (hasComponent(world, AttackMove, eid)) removeComponent(world, AttackMove, eid)
       if (hasComponent(world, PathFollower, eid)) { removePath(PathFollower.pathId[eid]); removeComponent(world, PathFollower, eid) }
       Velocity.x[eid] = 0; Velocity.z[eid] = 0
