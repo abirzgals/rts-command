@@ -202,12 +202,9 @@ function swapTeams() {
     removeComponent(w, Selected, eid)
   }
 
-  // 3. Clear stale commands on new AI faction's units (they had player commands)
-  const aiFaction = getPlayerFaction() === 0 ? 1 : 0
+  // 3. Clear stale commands on ALL units (both factions had orders from old controllers)
   const allUnits = factionQuery(w)
   for (const eid of allUnits) {
-    if (Faction.id[eid] !== aiFaction) continue
-    // Clear player-issued commands so AI can take over
     if (hasComponent(w, MoveTarget, eid)) removeComponent(w, MoveTarget, eid)
     if (hasComponent(w, AttackTarget, eid)) removeComponent(w, AttackTarget, eid)
     if (hasComponent(w, AttackMove, eid)) removeComponent(w, AttackMove, eid)
