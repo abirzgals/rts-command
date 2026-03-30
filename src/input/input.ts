@@ -398,76 +398,93 @@ function handleRightClick(world: IWorld, sx: number, sy: number) {
   }
   if (isBuildSite) return
 
-  // Sort units by distance to target (closest first → less crossing)
+  // Filter movable units
   const movableUnits = selected.filter(eid =>
     Faction.id[eid] === FACTION_PLAYER && !hasComponent(world, IsBuilding, eid)
   )
-  movableUnits.sort((a, b) => {
-    const da = (Position.x[a] - hit.x) ** 2 + (Position.z[a] - hit.z) ** 2
-    const db = (Position.x[b] - hit.x) ** 2 + (Position.z[b] - hit.z) ** 2
-    return da - db
-  })
+
+  const count = movableUnits.length
+  if (count === 0) return
 
   // Formation spacing based on largest unit radius
   let maxR = 0.5
   for (const eid of movableUnits) {
     if (hasComponent(world, CollisionRadius, eid)) maxR = Math.max(maxR, CollisionRadius.value[eid])
   }
-  const count = movableUnits.length
   const cols = Math.ceil(Math.sqrt(count))
-  const spacing = maxR * 2.5
+  const rows = Math.ceil(count / cols)
+  const spacing = maxR * 2.8
 
-  for (let i = 0; i < movableUnits.length; i++) {
-    const eid = movableUnits[i]
+  // Generate formation slots (grid positions around target)
+  const slots: { x: number; z: number; taken: boolean }[] = []
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (slots.length >= count) break
+      slots.push({
+        x: hit.x + (c - (cols - 1) / 2) * spacing,
+        z: hit.z + (r - (rows - 1) / 2) * spacing,
+        taken: false,
+      })
+    }
+  }
 
-    // Remove existing commands
-    if (hasComponent(world, AttackTarget, eid)) {
-      removeComponent(world, AttackTarget, eid)
+  // Assign each unit to the CLOSEST available slot (greedy nearest-neighbor)
+  // This minimizes path crossing
+  const assignments = new Map<number, number>() // eid → slot index
+  const remaining = [...movableUnits]
+
+  for (let pass = 0; pass < count; pass++) {
+    let bestUnit = -1, bestSlot = -1, bestDist = Infinity
+    for (let u = 0; u < remaining.length; u++) {
+      const eid = remaining[u]
+      const ux = Position.x[eid], uz = Position.z[eid]
+      for (let s = 0; s < slots.length; s++) {
+        if (slots[s].taken) continue
+        const d = (ux - slots[s].x) ** 2 + (uz - slots[s].z) ** 2
+        if (d < bestDist) { bestDist = d; bestUnit = u; bestSlot = s }
+      }
     }
-    if (hasComponent(world, PathFollower, eid)) {
-      removeComponent(world, PathFollower, eid)
-    }
+    if (bestUnit < 0) break
+    assignments.set(remaining[bestUnit], bestSlot)
+    slots[bestSlot].taken = true
+    remaining.splice(bestUnit, 1)
+  }
+
+  // Issue commands
+  for (const eid of movableUnits) {
+    // Clear existing commands
+    if (hasComponent(world, AttackTarget, eid)) removeComponent(world, AttackTarget, eid)
+    if (hasComponent(world, PathFollower, eid)) removeComponent(world, PathFollower, eid)
 
     if (targetEid >= 0 && !isResource) {
       // Attack command
       addComponent(world, AttackTarget, eid)
       AttackTarget.eid[eid] = targetEid
-      // Still move toward target
       addComponent(world, MoveTarget, eid)
       MoveTarget.x[eid] = Position.x[targetEid]
       MoveTarget.z[eid] = Position.z[targetEid]
     } else if (targetEid >= 0 && isResource && hasComponent(world, WorkerC, eid)) {
       // Gather command
-      WorkerC.state[eid] = 1 // movingToRes
+      WorkerC.state[eid] = 1
       WorkerC.targetNode[eid] = targetEid
-
-      // Find nearest dropoff
       const buildingEnts = playerBuildingQuery(world)
-      let nearestDropoff = 0xFFFFFFFF
-      let nearestDD = Infinity
+      let nearestDropoff = 0xFFFFFFFF, nearestDD = Infinity
       for (const bid of buildingEnts) {
-        if (Faction.id[bid] !== FACTION_PLAYER) continue
-        if (!hasComponent(world, ResourceDropoff, bid)) continue
-        const ddx = Position.x[bid] - Position.x[eid]
-        const ddz = Position.z[bid] - Position.z[eid]
-        const dd = ddx * ddx + ddz * ddz
+        if (Faction.id[bid] !== FACTION_PLAYER || !hasComponent(world, ResourceDropoff, bid)) continue
+        const dd = (Position.x[bid] - Position.x[eid]) ** 2 + (Position.z[bid] - Position.z[eid]) ** 2
         if (dd < nearestDD) { nearestDD = dd; nearestDropoff = bid }
       }
       WorkerC.returnTarget[eid] = nearestDropoff
-
       addComponent(world, MoveTarget, eid)
       MoveTarget.x[eid] = Position.x[targetEid]
       MoveTarget.z[eid] = Position.z[targetEid]
     } else {
-      // Move command with formation offset
-      const row = Math.floor(i / cols)
-      const col = i % cols
-      const offsetX = (col - (cols - 1) / 2) * spacing
-      const offsetZ = (row - (Math.ceil(count / cols) - 1) / 2) * spacing
-
+      // Move to assigned formation slot
+      const slotIdx = assignments.get(eid) ?? 0
+      const slot = slots[slotIdx]
       addComponent(world, MoveTarget, eid)
-      MoveTarget.x[eid] = hit.x + offsetX
-      MoveTarget.z[eid] = hit.z + offsetZ
+      MoveTarget.x[eid] = slot.x
+      MoveTarget.z[eid] = slot.z
     }
   }
 }
