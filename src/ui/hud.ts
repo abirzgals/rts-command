@@ -176,6 +176,11 @@ function updateActionButtons(world: IWorld, eid: number) {
 
   // ── Unit commands (for all player units) ──
   if (!isBuilding && hasComponent(world, MoveSpeed, eid)) {
+    // Move mode — cancel attack mode, tap ground to move
+    actionButtonsEl.appendChild(createActionButton('🏃', 'Move', 'tap ground', () => {
+      setForceAttackMode(false)
+    }))
+
     // Attack-Move (A) — tap ground = attack-move, tap enemy = attack
     actionButtonsEl.appendChild(createActionButton('⚔️', 'Attack (A)', 'tap target', () => {
       setForceAttackMode(true)
