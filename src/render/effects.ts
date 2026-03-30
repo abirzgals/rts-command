@@ -262,8 +262,8 @@ const debrisMat = new THREE.MeshPhongMaterial({
 })
 
 export function spawnTankDeathExplosion(x: number, y: number, z: number) {
-  // Big central explosion
-  spawnExplosion(x, y, z, 3.5)
+  // Central shockwave explosion
+  spawnExplosion(x, y, z, 1.75)
 
   // Fire burst flash
   const fireMat = new THREE.MeshBasicMaterial({
