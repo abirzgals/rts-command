@@ -176,10 +176,10 @@ export class RTSCamera {
   update(dt: number) {
     // Pan directions aligned to screen: W=up(north), S=down(south), A=left(west), D=right(east)
     let panX = 0, panZ = 0
-    if (this.keys.has('KeyW') || this.keys.has('ArrowUp'))    panZ -= 1
-    if (this.keys.has('KeyS') || this.keys.has('ArrowDown'))  panZ += 1
-    if (this.keys.has('KeyA') || this.keys.has('ArrowLeft'))  panX -= 1
-    if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) panX += 1
+    if (this.keys.has('ArrowUp'))    panZ -= 1
+    if (this.keys.has('ArrowDown'))  panZ += 1
+    if (this.keys.has('ArrowLeft'))  panX -= 1
+    if (this.keys.has('ArrowRight')) panX += 1
 
     // Edge scrolling
     // (handled by the game when mouse is at screen edges — optional future addition)

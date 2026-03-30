@@ -4,7 +4,7 @@ import type { IWorld } from 'bitecs'
 import {
   Position, Faction, Selected, Selectable, MoveTarget, Velocity,
   AttackTarget, ResourceNode, ResourceDropoff, WorkerC, IsBuilding, UnitTypeC,
-  Producer, PathFollower, BuildProgress,
+  Producer, PathFollower, BuildProgress, Dead, CollisionRadius,
 } from '../ecs/components'
 import {
   FACTION_PLAYER, BUILDING_DEFS, UNIT_DEFS,
