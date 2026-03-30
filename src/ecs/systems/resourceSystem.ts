@@ -277,6 +277,8 @@ function returnCargo(world: IWorld, eid: number) {
     // If there are queued commands, go idle so the queue system picks them up
     if (hasQueuedCommands(eid)) {
       WorkerC.state[eid] = 0
+      if (hasComponent(world, MoveTarget, eid)) removeComponent(world, MoveTarget, eid)
+      clearPath(world, eid)
       return
     }
 
