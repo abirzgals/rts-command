@@ -85,6 +85,87 @@ export function spawnMuzzleFlash(x: number, y: number, z: number, cfg?: { color?
   muzzleFlashes.push({ light, life: cfg?.duration ?? 0.1 })
 }
 
+// ── Action target indicator (animated dashed circle) ────────
+
+interface ActionIndicator {
+  line: THREE.Line
+  life: number
+  maxLife: number
+}
+
+const actionIndicators: ActionIndicator[] = []
+
+/**
+ * Spawn an animated dashed circle around a target entity.
+ * @param x,y,z — world position of target
+ * @param radius — visual boundary radius
+ * @param color — 'attack' (red), 'gather' (green), 'assist' (white)
+ */
+export function spawnActionIndicator(
+  x: number, y: number, z: number,
+  radius: number,
+  color: 'attack' | 'gather' | 'assist',
+) {
+  const segments = 64
+  const points: THREE.Vector3[] = []
+  for (let i = 0; i <= segments; i++) {
+    const angle = (i / segments) * Math.PI * 2
+    points.push(new THREE.Vector3(
+      Math.cos(angle) * radius,
+      0,
+      Math.sin(angle) * radius,
+    ))
+  }
+  const geo = new THREE.BufferGeometry().setFromPoints(points)
+
+  const hex = color === 'attack' ? 0xff3333 : color === 'gather' ? 0x44ff88 : 0xffffff
+  const mat = new THREE.LineDashedMaterial({
+    color: hex,
+    dashSize: radius * 0.4,
+    gapSize: radius * 0.25,
+    transparent: true,
+    opacity: 1.0,
+    depthWrite: false,
+    linewidth: 1,
+  })
+
+  const line = new THREE.Line(geo, mat)
+  line.computeLineDistances() // required for LineDashedMaterial
+  line.position.set(x, y + 0.2, z)
+  line.renderOrder = 51
+  scene.add(line)
+
+  actionIndicators.push({ line, life: 0, maxLife: 1.0 })
+}
+
+function updateActionIndicators(dt: number) {
+  for (let i = actionIndicators.length - 1; i >= 0; i--) {
+    const ind = actionIndicators[i]
+    ind.life += dt
+
+    if (ind.life >= ind.maxLife) {
+      scene.remove(ind.line)
+      ind.line.geometry.dispose()
+      ;(ind.line.material as THREE.Material).dispose()
+      actionIndicators.splice(i, 1)
+      continue
+    }
+
+    const t = ind.life / ind.maxLife
+    const mat = ind.line.material as THREE.LineDashedMaterial
+
+    // Rotate the circle to animate the dashes
+    ind.line.rotation.y = ind.life * 3.0
+
+    // Fade out in second half
+    mat.opacity = t < 0.5 ? 1.0 : 2.0 * (1.0 - t)
+
+    // Slight pulse scale
+    const pulse = 1.0 + Math.sin(ind.life * 8) * 0.03
+    ind.line.scale.setScalar(pulse)
+  }
+}
+
 // ── Move target marker (green ring that fades) ─────────────
 
 interface TargetMarker {
@@ -306,6 +387,7 @@ export function updateEffects(dt: number) {
   }
 
   // ── Resource effects (crystals + gas) ─────────────────────
+  updateActionIndicators(dt)
   updateTrailParticles(dt)
   updateFireParticles(dt)
   updateResourceEffects(dt)

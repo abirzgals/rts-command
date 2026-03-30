@@ -13,7 +13,7 @@ import {
 import { gameState } from '../game/state'
 import { raycastGround, camera, scene } from '../render/engine'
 import { toggleDebug } from '../render/debugOverlay'
-import { spawnMoveMarker } from '../render/effects'
+import { spawnMoveMarker, spawnActionIndicator } from '../render/effects'
 import { spawnBuilding } from '../ecs/archetypes'
 import { spatialHash } from '../globals'
 import { getTerrainHeight } from '../terrain/heightmap'
@@ -384,6 +384,7 @@ function handleRightClick(world: IWorld, sx: number, sy: number) {
       isBuildSite = true
       const bx = Position.x[eid], bz = Position.z[eid]
       const bRadius = hasComponent(world, Selectable, eid) ? Selectable.radius[eid] : 2.0
+      spawnActionIndicator(bx, Position.y[eid], bz, bRadius + 0.3, 'assist')
       for (const wid of selected) {
         if (!hasComponent(world, WorkerC, wid)) continue
         WorkerC.state[wid] = 4 // movingToBuild
@@ -467,6 +468,13 @@ function handleRightClick(world: IWorld, sx: number, sy: number) {
   console.log(`[FORMATION] ${count} units, ${slots.length} slots, targetEid=${targetEid}, spacing=${spacing.toFixed(1)}`)
   for (let si = 0; si < Math.min(3, slots.length); si++) {
     console.log(`  slot[${si}]: (${slots[si].x.toFixed(1)}, ${slots[si].z.toFixed(1)})`)
+  }
+
+  // Show animated action indicator on target
+  if (targetEid >= 0) {
+    const tr = hasComponent(world, Selectable, targetEid) ? Selectable.radius[targetEid] : 0.8
+    const tx = Position.x[targetEid], tz = Position.z[targetEid], ty = Position.y[targetEid]
+    spawnActionIndicator(tx, ty, tz, tr + 0.3, isResource ? 'gather' : 'attack')
   }
 
   for (const eid of movableUnits) {
@@ -578,7 +586,8 @@ function forceAttackTarget(world: IWorld, sx: number, sy: number) {
       addComponent(world, AttackTarget, eid)
       AttackTarget.eid[eid] = targetEid
     }
-    spawnMoveMarker(Position.x[targetEid], Position.y[targetEid], Position.z[targetEid])
+    const tr = hasComponent(world, Selectable, targetEid) ? Selectable.radius[targetEid] : 0.8
+    spawnActionIndicator(Position.x[targetEid], Position.y[targetEid], Position.z[targetEid], tr + 0.3, 'attack')
   } else {
     // Attack-move: move to position but attack anything on the way
     for (const eid of selected) {
