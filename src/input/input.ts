@@ -1026,7 +1026,9 @@ function forceAttackTarget(world: IWorld, sx: number, sy: number) {
     const dx = Position.x[eid] - hit.x
     const dz = Position.z[eid] - hit.z
     const dist = Math.sqrt(dx * dx + dz * dz)
-    if (dist < targetDist && dist < 3) {
+    const radius = hasComponent(world, Selectable, eid) ? Selectable.radius[eid] :
+                   hasComponent(world, CollisionRadius, eid) ? CollisionRadius.value[eid] : 0.5
+    if (dist <= radius && dist < targetDist) {
       targetEid = eid
       targetDist = dist
     }
