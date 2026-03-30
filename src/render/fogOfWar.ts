@@ -25,14 +25,16 @@ export let fogMode: FogMode = 'normal'
 export function setFogMode(mode: FogMode) {
   fogMode = mode
   if (mode === 'disabled') {
-    // Fill everything as visible
-    fogState.fill(2)
+    // Fill everything as visible for both factions
+    for (const s of fogStateByFaction) s.fill(2)
     texPixels.fill(255)
     if (fogTexture) fogTexture.needsUpdate = true
   } else if (mode === 'revealed') {
-    // Mark all as explored (not currently visible, but seen)
-    for (let i = 0; i < FOG_RES * FOG_RES; i++) {
-      if (fogState[i] === 0) fogState[i] = 1
+    // Mark all as explored for both factions
+    for (const s of fogStateByFaction) {
+      for (let i = 0; i < FOG_RES * FOG_RES; i++) {
+        if (s[i] === 0) s[i] = 1
+      }
     }
   }
 }
@@ -43,14 +45,54 @@ const FOG_CELL = MAP_SIZE / FOG_RES
 const HALF_MAP = MAP_SIZE / 2
 
 // ── Data arrays ─────────────────────────────────────────────
-// fogState: persistent map state (0=unexplored, 1=explored, 2=visible)
-export const fogState = new Uint8Array(FOG_RES * FOG_RES)
+// Per-faction fog state (0=unexplored, 1=explored, 2=visible)
+const fogStateByFaction: Uint8Array[] = [
+  new Uint8Array(FOG_RES * FOG_RES), // FACTION_PLAYER (0)
+  new Uint8Array(FOG_RES * FOG_RES), // FACTION_ENEMY (1)
+]
 
-// currentVis: which cells are visible THIS frame (reset each frame)
-const currentVis = new Uint8Array(FOG_RES * FOG_RES)
+// Active fog state — points to the current player's fog
+export let fogState = fogStateByFaction[FACTION_PLAYER]
+
+// Per-faction current visibility this frame
+const currentVisByFaction: Uint8Array[] = [
+  new Uint8Array(FOG_RES * FOG_RES),
+  new Uint8Array(FOG_RES * FOG_RES),
+]
+let currentVis = currentVisByFaction[FACTION_PLAYER]
+
+// Which faction the fog is rendered for
+let fogViewFaction = FACTION_PLAYER
 
 // Texture pixel data (single channel, uploaded to GPU)
 const texPixels = new Uint8Array(FOG_RES * FOG_RES)
+
+/** Swap which faction's fog is rendered (call after team swap) */
+export function setFogViewFaction(faction: number) {
+  fogViewFaction = faction
+  fogState = fogStateByFaction[faction]
+  currentVis = currentVisByFaction[faction]
+}
+
+/** Swap fog data between factions (call when teams are swapped) */
+export function swapFogData() {
+  const size = FOG_RES * FOG_RES
+  // Swap fog state arrays content
+  const tmpState = new Uint8Array(size)
+  tmpState.set(fogStateByFaction[0])
+  fogStateByFaction[0].set(fogStateByFaction[1])
+  fogStateByFaction[1].set(tmpState)
+  // Swap current visibility
+  const tmpVis = new Uint8Array(size)
+  tmpVis.set(currentVisByFaction[0])
+  currentVisByFaction[0].set(currentVisByFaction[1])
+  currentVisByFaction[1].set(tmpVis)
+  // Update references
+  fogState = fogStateByFaction[fogViewFaction]
+  currentVis = currentVisByFaction[fogViewFaction]
+  // Clear seen buildings cache
+  seenBuildings.clear()
+}
 
 // ── Three.js texture ────────────────────────────────────────
 export let fogTexture: THREE.DataTexture
@@ -140,20 +182,22 @@ function worldToFog(w: number): number {
   return Math.floor((w + HALF_MAP) / FOG_CELL)
 }
 
-/** Check if a world position is currently visible to the player */
-export function isVisibleAt(wx: number, wz: number): boolean {
+/** Check if a world position is currently visible to a faction (default: view faction) */
+export function isVisibleAt(wx: number, wz: number, faction?: number): boolean {
   const fx = worldToFog(wx)
   const fz = worldToFog(wz)
   if (fx < 0 || fx >= FOG_RES || fz < 0 || fz >= FOG_RES) return false
-  return currentVis[fz * FOG_RES + fx] === 1
+  const vis = faction !== undefined ? currentVisByFaction[faction] : currentVisByFaction[fogViewFaction]
+  return vis[fz * FOG_RES + fx] === 1
 }
 
-/** Check if a world position has been explored */
-export function isExploredAt(wx: number, wz: number): boolean {
+/** Check if a world position has been explored by a faction (default: view faction) */
+export function isExploredAt(wx: number, wz: number, faction?: number): boolean {
   const fx = worldToFog(wx)
   const fz = worldToFog(wz)
   if (fx < 0 || fx >= FOG_RES || fz < 0 || fz >= FOG_RES) return false
-  return fogState[fz * FOG_RES + fx] > 0
+  const state = faction !== undefined ? fogStateByFaction[faction] : fogStateByFaction[fogViewFaction]
+  return state[fz * FOG_RES + fx] > 0
 }
 
 // ── Per-frame update ────────────────────────────────────────
@@ -161,49 +205,60 @@ export function updateFogOfWar(world: IWorld) {
   // Disabled mode: everything visible, no enemy hiding
   if (fogMode === 'disabled') return
 
-  // 1. Clear current visibility
-  currentVis.fill(0)
-
-  // 2. Fill visibility circles for player entities
+  // 1. Update visibility for BOTH factions
   const entities = sightQuery(world)
-  for (const eid of entities) {
-    if (!hasComponent(world, Faction, eid) || Faction.id[eid] !== FACTION_PLAYER) continue
-    if (hasComponent(world, Dead, eid)) continue
+  for (let faction = 0; faction <= 1; faction++) {
+    const vis = currentVisByFaction[faction]
+    const state = fogStateByFaction[faction]
+    vis.fill(0)
 
-    const wx = Position.x[eid]
-    const wz = Position.z[eid]
-    const radius = SightRadius.value[eid]
+    // Fill visibility circles for this faction's entities
+    for (const eid of entities) {
+      if (!hasComponent(world, Faction, eid) || Faction.id[eid] !== faction) continue
+      if (hasComponent(world, Dead, eid)) continue
 
-    const cx = worldToFog(wx)
-    const cz = worldToFog(wz)
-    const fogR = radius / FOG_CELL
-    const fogR2 = fogR * fogR
-    const intR = Math.ceil(fogR)
+      const wx = Position.x[eid]
+      const wz = Position.z[eid]
+      const radius = SightRadius.value[eid]
 
-    for (let dz = -intR; dz <= intR; dz++) {
-      for (let dx = -intR; dx <= intR; dx++) {
-        if (dx * dx + dz * dz > fogR2) continue
-        const fx = cx + dx
-        const fz = cz + dz
-        if (fx < 0 || fx >= FOG_RES || fz < 0 || fz >= FOG_RES) continue
-        currentVis[fz * FOG_RES + fx] = 1
+      const cx = worldToFog(wx)
+      const cz = worldToFog(wz)
+      const fogR = radius / FOG_CELL
+      const fogR2 = fogR * fogR
+      const intR = Math.ceil(fogR)
+
+      for (let dz = -intR; dz <= intR; dz++) {
+        for (let dx = -intR; dx <= intR; dx++) {
+          if (dx * dx + dz * dz > fogR2) continue
+          const fx = cx + dx
+          const fz = cz + dz
+          if (fx < 0 || fx >= FOG_RES || fz < 0 || fz >= FOG_RES) continue
+          vis[fz * FOG_RES + fx] = 1
+        }
+      }
+    }
+
+    // Update fog state for this faction
+    for (let i = 0; i < FOG_RES * FOG_RES; i++) {
+      if (vis[i]) {
+        state[i] = 2
+      } else if (state[i] === 2) {
+        state[i] = 1
+      } else if (fogMode === 'revealed' && state[i] === 0) {
+        state[i] = 1
       }
     }
   }
 
-  // 3. Update fogState + texture pixels
+  // 2. Build texture pixels from the VIEW faction's fog
+  const viewState = fogStateByFaction[fogViewFaction]
   for (let i = 0; i < FOG_RES * FOG_RES; i++) {
-    if (currentVis[i]) {
-      fogState[i] = 2
-      texPixels[i] = 255  // fully visible
-    } else if (fogState[i] === 2) {
-      fogState[i] = 1     // was visible, now explored
-      texPixels[i] = 100  // semi-dark
-    } else if (fogState[i] === 1 || fogMode === 'revealed') {
-      fogState[i] = 1
-      texPixels[i] = 100  // explored (revealed mode: everything starts explored)
+    if (viewState[i] === 2) {
+      texPixels[i] = 255
+    } else if (viewState[i] === 1) {
+      texPixels[i] = 100
     } else {
-      texPixels[i] = 0    // unexplored = black
+      texPixels[i] = 0
     }
   }
 
@@ -266,12 +321,13 @@ function updateEnemyVisibility(world: IWorld) {
   const entities = enemyQuery(world)
 
   for (const eid of entities) {
-    if (Faction.id[eid] === FACTION_PLAYER) continue
+    // Skip entities belonging to the view faction (our own units — always visible)
+    if (Faction.id[eid] === fogViewFaction) continue
     if (hasComponent(world, Dead, eid)) continue
 
     const wx = Position.x[eid], wz = Position.z[eid]
-    const visible = isVisibleAt(wx, wz)
-    const explored = isExploredAt(wx, wz)
+    const visible = isVisibleAt(wx, wz, fogViewFaction)
+    const explored = isExploredAt(wx, wz, fogViewFaction)
     const isBuilding = hasComponent(world, IsBuilding, eid)
     const poolId = MeshRef.poolId[eid]
 

@@ -63,7 +63,7 @@ export function combatSystem(world: IWorld, dt: number) {
           if (hasComponent(world, Dead, other) || !hasComponent(world, Health, other)) continue
           if (hasComponent(world, IsBuilding, other)) continue // don't switch to another building
           if (currentTargetIsWorker && hasComponent(world, WorkerC, other)) continue // don't switch worker→worker
-          if (myFaction === FACTION_PLAYER && !isVisibleAt(Position.x[other], Position.z[other])) continue
+          if (!isVisibleAt(Position.x[other], Position.z[other], myFaction)) continue
           const odx = Position.x[other] - px, odz = Position.z[other] - pz
           const oDist = Math.sqrt(odx * odx + odz * odz)
           const oR = hasComponent(world, CollisionRadius, other) ? CollisionRadius.value[other] : 0
@@ -134,7 +134,7 @@ export function combatSystem(world: IWorld, dt: number) {
       if (Faction.id[other] === myFaction) continue
       if (hasComponent(world, Dead, other)) continue
       if (!hasComponent(world, Health, other)) continue
-      if (myFaction === FACTION_PLAYER && !isVisibleAt(Position.x[other], Position.z[other])) continue
+      if (!isVisibleAt(Position.x[other], Position.z[other], myFaction)) continue
 
       const dx = Position.x[other] - px
       const dz = Position.z[other] - pz

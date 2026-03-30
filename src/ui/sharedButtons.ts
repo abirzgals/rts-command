@@ -13,6 +13,7 @@ import { spawnUnit, spawnBuilding } from '../ecs/archetypes'
 import { mouseWorldX, mouseWorldZ } from '../input/input'
 import { Faction } from '../ecs/components'
 import { resetAIState } from '../ecs/systems/aiSystem'
+import { swapFogData } from '../render/fogOfWar'
 
 const selectedQuery = defineQuery([Selected])
 const factionQuery = defineQuery([Faction])
@@ -217,7 +218,10 @@ function swapTeams() {
     removeComponent(w, Selected, eid)
   }
 
-  // 4. Reset AI state so it re-evaluates with new units
+  // 4. Swap fog of war data between factions
+  swapFogData()
+
+  // 5. Reset AI state so it re-evaluates with new units
   resetAIState()
 
   console.log(`[DEBUG] Teams swapped! ${entities.length} entities affected`)

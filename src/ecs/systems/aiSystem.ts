@@ -53,6 +53,16 @@ const enemyBuildingQuery = defineQuery([Position, Faction, IsBuilding])
 const playerBuildingQuery = defineQuery([Position, Faction, IsBuilding])
 
 // ═══════════════════════════════════════════════════════════════
+//  Seeded RNG — deterministic per map, seeded at game start
+// ═══════════════════════════════════════════════════════════════
+let aiSeed = 1
+export function seedAIRng(seed: number) { aiSeed = seed | 0 || 1 }
+function aiRng(): number {
+  aiSeed = (aiSeed * 1664525 + 1013904223) & 0x7fffffff
+  return aiSeed / 0x7fffffff
+}
+
+// ═══════════════════════════════════════════════════════════════
 //  AI Memory (persistent across ticks)
 // ═══════════════════════════════════════════════════════════════
 
@@ -73,6 +83,14 @@ let rallyX = NaN
 let rallyZ = NaN
 let stagingTimer = 0
 let attackOrderIssued = false
+let attackCount = 0               // how many attacks AI has launched
+let attackTargetX = NaN           // actual attack destination (may differ from player base)
+let attackTargetZ = NaN
+
+// Known player army concentrations
+let knownArmyX = NaN
+let knownArmyZ = NaN
+let knownArmySupply = 0
 
 // Building state
 let hasBarracks = false
@@ -207,10 +225,11 @@ export function aiSystem(world: IWorld, dt: number) {
     `Workers:${census.workerCount} Marines:${census.marineCount} Tanks:${census.tankCount} Jeeps:${census.jeepCount} Troopers:${census.trooperCount}`,
     `Army supply: ${armySupply} | CC:${census.commandCenter ? 'Y' : 'N'} Rax:${hasBarracks ? 'Y' : 'N'} Fac:${hasFactory ? 'Y' : 'N'}`,
     `Min:${Math.floor(res.minerals)} Gas:${Math.floor(res.gas)} Sup:${res.supplyCurrent}/${res.supplyMax}`,
-    `Player base: ${hasFoundPlayerBase() ? `(${Math.round(knownPlayerBaseX)}, ${Math.round(knownPlayerBaseZ)})` : 'unknown'}`,
+    `Player base: ${hasFoundPlayerBase() ? `(${Math.round(knownPlayerBaseX)}, ${Math.round(knownPlayerBaseZ)})` : 'unknown'} | Attacks: ${attackCount}`,
+    knownArmySupply >= 4 ? `Player army: ${knownArmySupply} supply @ (${Math.round(knownArmyX)}, ${Math.round(knownArmyZ)})` : '',
   ]
   if (decisions.length > 0) lines.push('> ' + decisions.join(' | '))
-  aiDebugStatus = lines.join('\n')
+  aiDebugStatus = lines.filter(l => l).join('\n')
   ;(window as any).__aiDebugStatus = aiDebugStatus
 }
 
@@ -241,6 +260,12 @@ export function resetAIState() {
   rallyZ = NaN
   stagingTimer = 0
   attackOrderIssued = false
+  attackCount = 0
+  attackTargetX = NaN
+  attackTargetZ = NaN
+  knownArmyX = NaN
+  knownArmyZ = NaN
+  knownArmySupply = 0
   hasBarracks = false
   hasFactory = false
 }
@@ -342,8 +367,8 @@ function tickBuilding(
 
   // Check if army is strong enough to stage
   if (census.armySupply >= MIN_ATTACK_ARMY && hasFoundPlayerBase()) {
-    // Pick a rally point: halfway between us and player, offset to avoid LOS
-    computeRallyPoint(homeX, homeZ)
+    // Pick a rally point — varies each attack, checks walkability
+    computeRallyPoint(world, homeX, homeZ)
     transitionTo(AIState.STAGING)
     decisions.push(`Army ready (${census.armySupply} supply), moving to staging`)
     return
@@ -352,36 +377,152 @@ function tickBuilding(
   decisions.push(`Building army (${census.armySupply}/${MIN_ATTACK_ARMY} supply)`)
 }
 
-function computeRallyPoint(homeX: number, homeZ: number) {
+/** Scan for player army concentrations visible to AI units */
+function scanPlayerArmy(world: IWorld): void {
+  const units = enemyUnitQuery(world)
+  // Find clusters of player combat units visible to AI
+  const playerUnits: { x: number; z: number; supply: number }[] = []
+  for (const eid of units) {
+    if (Faction.id[eid] !== FACTION_PLAYER) continue
+    if (hasComponent(world, Dead, eid)) continue
+    if (hasComponent(world, IsBuilding, eid)) continue
+    if (hasComponent(world, WorkerC, eid)) continue
+    // Check if any AI unit can see this player unit (within sight range)
+    const px = Position.x[eid], pz = Position.z[eid]
+    const _near: number[] = []
+    spatialHash.query(px, pz, 15, _near)
+    let visible = false
+    for (const other of _near) {
+      if (Faction.id[other] !== FACTION_ENEMY) continue
+      if (hasComponent(world, Dead, other)) continue
+      visible = true
+      break
+    }
+    if (!visible) continue
+    const ut = hasComponent(world, UnitTypeC, eid) ? UnitTypeC.id[eid] : -1
+    const s = ut === UT_TANK ? 3 : (ut === UT_JEEP || ut === UT_TROOPER) ? 2 : 1
+    playerUnits.push({ x: px, z: pz, supply: s })
+  }
+  if (playerUnits.length < 3) {
+    knownArmySupply = 0
+    return
+  }
+  // Compute centroid and total supply
+  let cx = 0, cz = 0, total = 0
+  for (const u of playerUnits) {
+    cx += u.x * u.supply
+    cz += u.z * u.supply
+    total += u.supply
+  }
+  knownArmyX = cx / total
+  knownArmyZ = cz / total
+  knownArmySupply = total
+}
+
+function computeRallyPoint(world: IWorld, homeX: number, homeZ: number) {
   if (!hasFoundPlayerBase()) return
 
-  // Point along the line from AI base to player base, RALLY_DIST away from player
-  const dx = knownPlayerBaseX - homeX
-  const dz = knownPlayerBaseZ - homeZ
-  const dist = Math.sqrt(dx * dx + dz * dz)
-
-  if (dist < RALLY_DIST * 2) {
-    // Bases are very close -- rally at midpoint
-    rallyX = (homeX + knownPlayerBaseX) / 2
-    rallyZ = (homeZ + knownPlayerBaseZ) / 2
+  // Decide attack target: player army (if significant) or base
+  scanPlayerArmy(world)
+  const targetArmy = knownArmySupply >= 4
+  let destX: number, destZ: number
+  if (targetArmy) {
+    destX = knownArmyX
+    destZ = knownArmyZ
   } else {
-    // Rally at RALLY_DIST from player base, on the line toward AI base
-    const t = RALLY_DIST / dist
-    rallyX = knownPlayerBaseX - dx * t
-    rallyZ = knownPlayerBaseZ - dz * t
+    destX = knownPlayerBaseX
+    destZ = knownPlayerBaseZ
+  }
+  attackTargetX = destX
+  attackTargetZ = destZ
+
+  // Generate candidate staging positions around the attack target
+  // Each attack uses a different approach angle
+  const dx = destX - homeX
+  const dz = destZ - homeZ
+  const dist = Math.sqrt(dx * dx + dz * dz)
+  const nx = dx / (dist || 1), nz = dz / (dist || 1) // direction toward target
+  const perpX = -nz, perpZ = nx // perpendicular
+
+  // Rotate approach angle based on attack count to vary staging position
+  const angles = [0, Math.PI / 4, -Math.PI / 4, Math.PI / 3, -Math.PI / 3, Math.PI / 6, -Math.PI / 6]
+  const baseAngle = angles[attackCount % angles.length]
+  // Add some randomness
+  const angle = baseAngle + (aiRng() - 0.5) * 0.3
+
+  const cos = Math.cos(angle), sin = Math.sin(angle)
+  // Rotated direction from target back toward home
+  const backX = -nx * cos - nz * sin
+  const backZ = nx * sin - nz * cos
+
+  const stageDist = Math.min(RALLY_DIST, dist * 0.4)
+  const candidates: { x: number; z: number }[] = []
+
+  // Main candidate
+  candidates.push({
+    x: destX + backX * stageDist,
+    z: destZ + backZ * stageDist,
+  })
+  // Flank candidates
+  candidates.push({
+    x: destX + perpX * stageDist * 0.8 + backX * stageDist * 0.6,
+    z: destZ + perpZ * stageDist * 0.8 + backZ * stageDist * 0.6,
+  })
+  candidates.push({
+    x: destX - perpX * stageDist * 0.8 + backX * stageDist * 0.6,
+    z: destZ - perpZ * stageDist * 0.8 + backZ * stageDist * 0.6,
+  })
+  // Midpoint between home and target
+  candidates.push({
+    x: (homeX + destX) / 2 + perpX * 10 * (aiRng() > 0.5 ? 1 : -1),
+    z: (homeZ + destZ) / 2 + perpZ * 10 * (aiRng() > 0.5 ? 1 : -1),
+  })
+
+  // Pick the best candidate: walkable AND reachable from home via pathfinding
+  const [hgx, hgz] = worldToGrid(homeX, homeZ)
+  const homeSector = sectorId(hgx, hgz)
+
+  for (const c of candidates) {
+    // Clamp to map
+    c.x = Math.max(-MAP_HALF + 5, Math.min(MAP_HALF - 5, c.x))
+    c.z = Math.max(-MAP_HALF + 5, Math.min(MAP_HALF - 5, c.z))
+
+    if (!isWorldWalkable(c.x, c.z)) continue
+
+    // Check reachability via sector graph
+    const [gx, gz] = worldToGrid(c.x, c.z)
+    const cSector = sectorId(gx, gz)
+    if (cSector !== homeSector && !findSectorPath(homeSector, cSector)) continue
+
+    // Also verify path from staging to attack target
+    const [tgx, tgz] = worldToGrid(destX, destZ)
+    const tSector = sectorId(tgx, tgz)
+    if (cSector !== tSector && !findSectorPath(cSector, tSector)) continue
+
+    rallyX = c.x
+    rallyZ = c.z
+    return
   }
 
-  // Offset perpendicular to avoid being on the direct path
-  // (player scouts often go straight toward enemy base)
-  const perpX = -dz / (dist || 1)
-  const perpZ = dx / (dist || 1)
-  const offsetDir = Math.random() > 0.5 ? 1 : -1
-  rallyX += perpX * 8 * offsetDir
-  rallyZ += perpZ * 8 * offsetDir
+  // Fallback: find a walkable spot near home base (safe rally)
+  // Try points along the line from home to target
+  for (let t = 0.3; t <= 0.7; t += 0.1) {
+    const fx = homeX + (destX - homeX) * t
+    const fz = homeZ + (destZ - homeZ) * t
+    if (isWorldWalkable(fx, fz)) {
+      const [gx, gz] = worldToGrid(fx, fz)
+      const fSector = sectorId(gx, gz)
+      if (fSector === homeSector || findSectorPath(homeSector, fSector)) {
+        rallyX = fx
+        rallyZ = fz
+        return
+      }
+    }
+  }
 
-  // Clamp to map bounds
-  rallyX = Math.max(-MAP_HALF + 5, Math.min(MAP_HALF - 5, rallyX))
-  rallyZ = Math.max(-MAP_HALF + 5, Math.min(MAP_HALF - 5, rallyZ))
+  // Last resort: rally at home
+  rallyX = homeX + aiRng() * 10 - 5
+  rallyZ = homeZ + aiRng() * 10 - 5
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -426,8 +567,8 @@ function tickStaging(
 
     if (!hasOrders) {
       // Slight randomization so they don't all stack on one point
-      const rx = rallyX + (Math.random() - 0.5) * 6
-      const rz = rallyZ + (Math.random() - 0.5) * 6
+      const rx = rallyX + (aiRng() - 0.5) * 6
+      const rz = rallyZ + (aiRng() - 0.5) * 6
       sendMoveTo(world, eid, rx, rz)
     }
   }
@@ -463,15 +604,25 @@ function tickAttacking(
   // Refresh player base location -- they might have expanded
   tryDiscoverPlayerBase(world)
 
-  const targetX = hasFoundPlayerBase() ? knownPlayerBaseX : -MAP_HALF + 20
-  const targetZ = hasFoundPlayerBase() ? knownPlayerBaseZ : -MAP_HALF + 20
+  // Use the pre-computed attack target (army or base)
+  let targetX = !isNaN(attackTargetX) ? attackTargetX : (hasFoundPlayerBase() ? knownPlayerBaseX : -MAP_HALF + 20)
+  let targetZ = !isNaN(attackTargetZ) ? attackTargetZ : (hasFoundPlayerBase() ? knownPlayerBaseZ : -MAP_HALF + 20)
+
+  // Re-scan player army — if we were targeting army and it moved, update target
+  scanPlayerArmy(world)
+  if (knownArmySupply >= 4) {
+    // Redirect attack toward player army concentration
+    targetX = knownArmyX
+    targetZ = knownArmyZ
+  }
 
   if (!attackOrderIssued) {
-    // Issue attack-move to all combat units
     const force = selectAttackForce(world, census)
     sendGroupAttackMove(world, force, targetX, targetZ)
     attackOrderIssued = true
-    decisions.push(`Attack order: ${force.length} units → (${Math.round(targetX)}, ${Math.round(targetZ)})`)
+    attackCount++
+    const targetType = knownArmySupply >= 4 ? 'army' : 'base'
+    decisions.push(`Attack #${attackCount} (${targetType}): ${force.length} units → (${Math.round(targetX)}, ${Math.round(targetZ)})`)
   }
 
   // Check if attack is spent
@@ -530,7 +681,7 @@ function tickDefending(
 
       // If idle (no attack target), send to fight
       if (!hasComponent(world, AttackTarget, eid)) {
-        sendAttackMoveTo(world, eid, threatX + (Math.random() - 0.5) * 4, threatZ + (Math.random() - 0.5) * 4)
+        sendAttackMoveTo(world, eid, threatX + (aiRng() - 0.5) * 4, threatZ + (aiRng() - 0.5) * 4)
       }
     }
   }
@@ -561,7 +712,7 @@ function tickDefending(
     if (recalledSupply >= deficit) break
 
     if (!hasComponent(world, AttackTarget, eid)) {
-      sendAttackMoveTo(world, eid, threatX + (Math.random() - 0.5) * 6, threatZ + (Math.random() - 0.5) * 6)
+      sendAttackMoveTo(world, eid, threatX + (aiRng() - 0.5) * 6, threatZ + (aiRng() - 0.5) * 6)
     }
 
     const ut = hasComponent(world, UnitTypeC, eid) ? UnitTypeC.id[eid] : -1
@@ -596,7 +747,7 @@ function tickEconomy(
   if (res.supplyMax - res.supplyCurrent < 5 && census.commandCenter) {
     const def = BUILDING_DEFS[BT_SUPPLY_DEPOT]
     if (gameState.canAfford(FACTION_ENEMY, def.cost)) {
-      const angle = Math.random() * Math.PI * 2
+      const angle = aiRng() * Math.PI * 2
       spawnBuilding(world, BT_SUPPLY_DEPOT, FACTION_ENEMY,
         homeX + Math.cos(angle) * 6, homeZ + Math.sin(angle) * 6, true)
       gameState.spend(FACTION_ENEMY, def.cost)
@@ -742,8 +893,8 @@ function sendAttackMoveTo(world: IWorld, eid: number, x: number, z: number) {
 
 function sendGroupAttackMove(world: IWorld, units: number[], targetX: number, targetZ: number) {
   for (const eid of units) {
-    const destX = targetX + (Math.random() - 0.5) * 10
-    const destZ = targetZ + (Math.random() - 0.5) * 10
+    const destX = targetX + (aiRng() - 0.5) * 10
+    const destZ = targetZ + (aiRng() - 0.5) * 10
     sendAttackMoveTo(world, eid, destX, destZ)
   }
 }
@@ -884,7 +1035,7 @@ function tickWorkerDefense(world: IWorld, census: Census, homeX: number, homeZ: 
       if (hasComponent(world, AttackTarget, wid)) removeComponent(world, AttackTarget, wid)
       if (hasComponent(world, AttackMove, wid)) removeComponent(world, AttackMove, wid)
       WorkerC.state[wid] = 0
-      sendMoveTo(world, wid, homeX + (Math.random() - 0.5) * 6, homeZ + (Math.random() - 0.5) * 6)
+      sendMoveTo(world, wid, homeX + (aiRng() - 0.5) * 6, homeZ + (aiRng() - 0.5) * 6)
     }
   }
 
@@ -1022,8 +1173,8 @@ function unstickUnits(world: IWorld, census: Census) {
     if (!hasComponent(world, StuckState, eid)) continue
 
     if (StuckState.phase[eid] >= 2) {
-      const rx = Position.x[eid] + (Math.random() - 0.5) * 20
-      const rz = Position.z[eid] + (Math.random() - 0.5) * 20
+      const rx = Position.x[eid] + (aiRng() - 0.5) * 20
+      const rz = Position.z[eid] + (aiRng() - 0.5) * 20
       StuckState.phase[eid] = 0
       StuckState.timer[eid] = 0
       addComponent(world, MoveTarget, eid)

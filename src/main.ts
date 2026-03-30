@@ -26,7 +26,7 @@ import { projectileSystem } from './ecs/systems/projectileSystem'
 import { deathSystem } from './ecs/systems/deathSystem'
 import { renderSystem } from './ecs/systems/renderSystem'
 import { supplySystem } from './ecs/systems/supplySystem'
-import { aiSystem } from './ecs/systems/aiSystem'
+import { aiSystem, seedAIRng } from './ecs/systems/aiSystem'
 import { selectionVisualSystem } from './ecs/systems/selectionVisualSystem'
 import { pathfindingSystem } from './ecs/systems/pathfindingSystem'
 import { animationSystem } from './ecs/systems/animationSystem'
@@ -259,6 +259,9 @@ async function init() {
   // 4. Init navigation grid + sector graph from terrain
   initNavGrid()
   buildSectorGraph()
+
+  // Seed AI RNG deterministically from map seed
+  seedAIRng(Date.now())
 
   // 5. Load 3D models and create mesh pools
   await createMeshPools()
