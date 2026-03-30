@@ -1,6 +1,6 @@
 import { defineQuery, hasComponent } from 'bitecs'
 import type { IWorld } from 'bitecs'
-import { Position, Faction, IsBuilding, ResourceNode, Dead, Health, UnitTypeC } from '../ecs/components'
+import { Position, Faction, IsBuilding, ResourceNode, Dead, Health, UnitTypeC, AttackTarget } from '../ecs/components'
 import { MAP_SIZE, FACTION_PLAYER, FACTION_ENEMY } from '../game/config'
 import { camera } from '../render/engine'
 import { GRID_RES, terrainType, T_GRASS, T_DIRT, T_ROCK, T_WATER, T_CLIFF, T_DARK_GRASS } from '../terrain/heightmap'
@@ -125,6 +125,43 @@ export function updateMinimap(world: IWorld, time: number) {
     const size = isBuilding ? 4 : 2
     ctx.fillRect(toX(ux) - size / 2, toY(uz) - size / 2, size, size)
     ctx.globalAlpha = 1.0
+  }
+
+  // Combat pings — flash white where player units are under attack
+  const flash = Math.sin(time * 0.008) > 0 // blink at ~4Hz
+  if (flash) {
+    for (const eid of units) {
+      if (hasComponent(world, Dead, eid)) continue
+      if (Faction.id[eid] !== FACTION_PLAYER) continue
+      // Check if this unit is being attacked (has an attacker targeting it)
+      // Or if this unit is attacking something
+      if (!hasComponent(world, AttackTarget, eid)) continue
+
+      const px = toX(Position.x[eid])
+      const pz = toY(Position.z[eid])
+
+      // White cross ping
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(px - 3, pz - 0.5, 7, 1.5)
+      ctx.fillRect(px - 0.5, pz - 3, 1.5, 7)
+    }
+
+    // Also check enemy units attacking player units (player units under fire)
+    for (const eid of units) {
+      if (hasComponent(world, Dead, eid)) continue
+      if (Faction.id[eid] !== FACTION_ENEMY) continue
+      if (!hasComponent(world, AttackTarget, eid)) continue
+      const targetEid = AttackTarget.eid[eid]
+      if (!hasComponent(world, Faction, targetEid) || Faction.id[targetEid] !== FACTION_PLAYER) continue
+      if (!isVisibleAt(Position.x[eid], Position.z[eid])) continue
+
+      // Flash at target (player unit being attacked)
+      const px = toX(Position.x[targetEid])
+      const pz = toY(Position.z[targetEid])
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(px - 3, pz - 0.5, 7, 1.5)
+      ctx.fillRect(px - 0.5, pz - 3, 1.5, 7)
+    }
   }
 
   // Camera viewport — diamond shape matching perspective view
