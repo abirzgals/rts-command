@@ -50,6 +50,7 @@ import { initHPBars, updateHPBars } from './render/hpBars'
 import { spawnMoveMarker } from './render/effects'
 import { initDebugOverlay, updateDebugOverlay, invalidateDebugOverlay } from './render/debugOverlay'
 import { initSharedButtons } from './ui/sharedButtons'
+import { issueCommand } from './input/unitCommands'
 
 // ── ECS Components (for selection / deletion) ───────────────────────────────
 import {
@@ -673,99 +674,8 @@ function onCanvasClick(e: MouseEvent) {
 function onRightClick(e: MouseEvent) {
   const pos = raycastCanvasToGround(e.clientX, e.clientY)
   if (!pos) return
-
-  // Check if any units are selected — if none, do nothing
-  let hasSelected = false
-  const checkSel: number[] = []
-  spatialHash.query(0, 0, 9999, checkSel)
-  for (const eid of checkSel) {
-    if (hasComponent(world, Selected, eid) && !hasComponent(world, Dead, eid)) { hasSelected = true; break }
-  }
-  if (!hasSelected) return
-
-  // Show target marker
-  spawnMoveMarker(pos.x, pos.y, pos.z)
-
-  // Find enemy near click point
-  const nearby: number[] = []
-  spatialHash.query(pos.x, pos.z, 2.0, nearby)
-
-  let targetEid = -1
-  let targetDist = Infinity
-  for (const eid of nearby) {
-    if (hasComponent(world, Dead, eid)) continue
-    if (!hasComponent(world, Health, eid)) continue
-    const dx = Position.x[eid] - pos.x
-    const dz = Position.z[eid] - pos.z
-    const d = Math.sqrt(dx * dx + dz * dz)
-    if (d < targetDist) { targetDist = d; targetEid = eid }
-  }
-
-  // Collect movable selected units
-  const movable: number[] = []
-  const allEnts: number[] = []
-  spatialHash.query(0, 0, 9999, allEnts)
-  for (const eid of allEnts) {
-    if (!hasComponent(world, Selected, eid)) continue
-    if (hasComponent(world, Dead, eid)) continue
-    if (!hasComponent(world, MoveSpeed, eid)) continue
-    movable.push(eid)
-  }
-
-  const count = movable.length
-  if (count === 0) return
-
-  // Attack target?
-  if (targetEid >= 0 && targetDist < 3 && hasComponent(world, Faction, targetEid)) {
-    for (const eid of movable) {
-      const myFaction = hasComponent(world, Faction, eid) ? Faction.id[eid] : -1
-      if (Faction.id[targetEid] !== myFaction) {
-        addComponent(world, AttackTarget, eid)
-        AttackTarget.eid[eid] = targetEid
-      }
-    }
-    return
-  }
-
-  // Formation: generate grid slots around click point
-  let maxR = 0.5
-  for (const eid of movable) {
-    if (hasComponent(world, CollisionRadius, eid)) maxR = Math.max(maxR, CollisionRadius.value[eid])
-  }
-  const cols = Math.ceil(Math.sqrt(count))
-  const rows = Math.ceil(count / cols)
-  const spacing = maxR * 2.8
-
-  const slots: { x: number; z: number }[] = []
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      if (slots.length >= count) break
-      slots.push({
-        x: pos.x + (c - (cols - 1) / 2) * spacing,
-        z: pos.z + (r - (rows - 1) / 2) * spacing,
-      })
-    }
-  }
-
-  // Assign by angle (left units → left slots)
-  const unitA = movable.map(eid => ({
-    eid,
-    angle: Math.atan2(Position.x[eid] - pos.x, Position.z[eid] - pos.z),
-  })).sort((a, b) => a.angle - b.angle)
-
-  const slotA = slots.map((s, i) => ({
-    idx: i,
-    angle: Math.atan2(s.x - pos.x, s.z - pos.z),
-  })).sort((a, b) => a.angle - b.angle)
-
-  for (let i = 0; i < unitA.length; i++) {
-    const eid = unitA[i].eid
-    const slot = slots[slotA[i % slotA.length].idx]
-    if (hasComponent(world, AttackTarget, eid)) removeComponent(world, AttackTarget, eid)
-    addComponent(world, MoveTarget, eid)
-    MoveTarget.x[eid] = slot.x
-    MoveTarget.z[eid] = slot.z
-  }
+  // Use shared command module (same as main game)
+  issueCommand(world, pos.x, pos.y, pos.z, 0) // faction 0 = player
 }
 
 function onKeyDown(e: KeyboardEvent) {

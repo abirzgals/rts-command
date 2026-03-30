@@ -17,6 +17,7 @@ import { spawnMoveMarker } from '../render/effects'
 import { spawnBuilding } from '../ecs/archetypes'
 import { spatialHash } from '../globals'
 import { getTerrainHeight } from '../terrain/heightmap'
+import { isWorldWalkable } from '../pathfinding/navGrid'
 
 const _vec3 = new THREE.Vector3()
 
@@ -415,16 +416,22 @@ function handleRightClick(world: IWorld, sx: number, sy: number) {
   const rows = Math.ceil(count / cols)
   const spacing = maxR * 2.8
 
-  // Generate formation slots (grid positions around target)
+  // Generate formation slots — skip blocked cells
   const slots: { x: number; z: number }[] = []
-  for (let r = 0; r < rows; r++) {
+  for (let r = 0; r < rows + 5; r++) {
     for (let c = 0; c < cols; c++) {
       if (slots.length >= count) break
-      slots.push({
-        x: hit.x + (c - (cols - 1) / 2) * spacing,
-        z: hit.z + (r - (rows - 1) / 2) * spacing,
-      })
+      const sx = hit.x + (c - (cols - 1) / 2) * spacing
+      const sz = hit.z + (r - (rows - 1) / 2) * spacing
+      if (isWorldWalkable(sx, sz)) {
+        slots.push({ x: sx, z: sz })
+      }
     }
+    if (slots.length >= count) break
+  }
+  // Fallback
+  while (slots.length < count) {
+    slots.push({ x: hit.x + (Math.random() - 0.5) * spacing * 2, z: hit.z + (Math.random() - 0.5) * spacing * 2 })
   }
 
   // Sort units by angle from target → assign slots in same angular order
