@@ -15,7 +15,7 @@ import { releaseAllNodes } from './resourceSystem'
 import { onEnemyBuildingDeath } from '../../render/fogOfWar'
 import { FACTION_PLAYER } from '../../game/config'
 import { unblockCells } from '../../pathfinding/navGrid'
-import { BUILDING_DEFS, UT_TANK } from '../../game/config'
+import { BUILDING_DEFS, UT_TANK, UT_JEEP, UT_ROCKET } from '../../game/config'
 import { removePath } from '../../pathfinding/pathStore'
 import { spawnTankDeathExplosion } from '../../render/effects'
 
@@ -65,9 +65,17 @@ export function deathSystem(world: IWorld, dt: number) {
       }
       if (hasComponent(world, WorkerC, eid)) releaseAllNodes(eid)
 
-      // Tank death explosion
-      if (hasComponent(world, UnitTypeC, eid) && UnitTypeC.id[eid] === UT_TANK) {
-        spawnTankDeathExplosion(Position.x[eid], Position.y[eid], Position.z[eid])
+      // Vehicle death explosion (tanks, jeeps, rocket tanks)
+      if (hasComponent(world, UnitTypeC, eid)) {
+        const utId = UnitTypeC.id[eid]
+        if (utId === UT_TANK || utId === UT_JEEP || utId === UT_ROCKET) {
+          spawnTankDeathExplosion(Position.x[eid], Position.y[eid], Position.z[eid])
+          // Hide mesh immediately — explosion replaces it
+          const poolId = MeshRef.poolId[eid]
+          const animMgr = getAnimManager(poolId)
+          if (animMgr) animMgr.setVisible(eid, false)
+          DeathTimer.remaining[eid] = 0.1 // skip death animation, explosion is the visual
+        }
       }
 
       // Fog snapshot for enemy buildings

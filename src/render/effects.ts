@@ -263,54 +263,76 @@ const debrisMat = new THREE.MeshPhongMaterial({
 
 export function spawnTankDeathExplosion(x: number, y: number, z: number) {
   // Big central explosion
-  spawnExplosion(x, y, z, 3.0)
+  spawnExplosion(x, y, z, 3.5)
 
-  // Extra fire burst
+  // Fire burst flash
   const fireMat = new THREE.MeshBasicMaterial({
-    color: 0xff8800,
-    transparent: true,
-    opacity: 0.85,
-    depthWrite: false,
+    color: 0xff8800, transparent: true, opacity: 0.9, depthWrite: false,
   })
   const fireMesh = new THREE.Mesh(explosionGeo, fireMat)
   fireMesh.position.set(x, y + 1.0, z)
-  fireMesh.scale.setScalar(0.5)
+  fireMesh.scale.setScalar(0.8)
   scene.add(fireMesh)
   explosions.push({ mesh: fireMesh, life: 0, maxLife: 0.6 })
 
-  // Spawn debris pieces that fly apart
-  const DEBRIS_COUNT = 8
+  // Secondary fire explosion
+  const fire2 = new THREE.Mesh(explosionGeo, fireMat.clone())
+  fire2.position.set(x + (Math.random() - 0.5) * 1.5, y + 0.5, z + (Math.random() - 0.5) * 1.5)
+  fire2.scale.setScalar(0.4)
+  scene.add(fire2)
+  explosions.push({ mesh: fire2, life: 0, maxLife: 0.8 })
+
+  // Bright flash light
+  const flashLight = new THREE.PointLight(0xff6600, 20, 25)
+  flashLight.position.set(x, y + 2, z)
+  scene.add(flashLight)
+  muzzleFlashes.push({ light: flashLight, life: 0.4 })
+
+  // Spawn debris pieces — bigger, more dramatic
+  const DEBRIS_COUNT = 14
   for (let i = 0; i < DEBRIS_COUNT; i++) {
-    const geo = debrisGeos[Math.floor(Math.random() * debrisGeos.length)]
+    const geoIdx = Math.floor(Math.random() * debrisGeos.length)
+    const geo = debrisGeos[geoIdx]
     const mat = debrisMat.clone()
-    mat.color.setHex(Math.random() > 0.5 ? 0x555555 : 0x443322)
+    // Variety: dark metal, burnt, or glowing hot
+    const colorRoll = Math.random()
+    mat.color.setHex(colorRoll > 0.7 ? 0x884411 : colorRoll > 0.4 ? 0x555555 : 0x333333)
+    if (colorRoll > 0.85) {
+      mat.emissive = new THREE.Color(0xff4400)
+      mat.emissiveIntensity = 0.5
+    }
     const mesh = new THREE.Mesh(geo, mat)
+    const scale = 0.8 + Math.random() * 1.2
+    mesh.scale.setScalar(scale)
     mesh.position.set(
-      x + (Math.random() - 0.5) * 0.5,
-      y + 0.5 + Math.random() * 0.5,
-      z + (Math.random() - 0.5) * 0.5,
+      x + (Math.random() - 0.5) * 1.0,
+      y + 0.5 + Math.random() * 0.8,
+      z + (Math.random() - 0.5) * 1.0,
     )
     scene.add(mesh)
 
     const angle = Math.random() * Math.PI * 2
-    const speed = 3 + Math.random() * 5
+    const speed = 4 + Math.random() * 8
     debrisPieces.push({
       mesh,
       life: 0,
-      maxLife: 5.0,
+      maxLife: 4.0 + Math.random() * 3.0,
       vx: Math.cos(angle) * speed,
-      vy: 4 + Math.random() * 6,
+      vy: 5 + Math.random() * 10,
       vz: Math.sin(angle) * speed,
       rotSpeed: new THREE.Vector3(
-        (Math.random() - 0.5) * 10,
-        (Math.random() - 0.5) * 10,
-        (Math.random() - 0.5) * 10,
+        (Math.random() - 0.5) * 12,
+        (Math.random() - 0.5) * 12,
+        (Math.random() - 0.5) * 12,
       ),
     })
   }
 
-  // Heavy smoke
-  spawnSmoke(x, y + 0.5, z, 12)
+  // Heavy smoke column
+  spawnSmoke(x, y + 0.5, z, 18)
+
+  // Fire particles lingering on ground
+  spawnFireExplosion(x, y, z, 2.5)
 }
 
 // ── Update all effects each frame ───────────────────────────
@@ -403,6 +425,11 @@ export function updateEffects(dt: number) {
     d.mesh.rotation.x += d.rotSpeed.x * dt
     d.mesh.rotation.y += d.rotSpeed.y * dt
     d.mesh.rotation.z += d.rotSpeed.z * dt
+
+    // Smoke trail while airborne (first 2 seconds only)
+    if (d.life < 2.0 && d.mesh.position.y > 0.5 && Math.random() < 0.3) {
+      spawnSmoke(d.mesh.position.x, d.mesh.position.y, d.mesh.position.z, 1)
+    }
 
     // Fade out in last second
     const remaining = d.maxLife - d.life
