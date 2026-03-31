@@ -1,12 +1,17 @@
 // ─── Lightweight frame profiler ─────────────────────────────────
 // Measures time spent in each system per frame, displays as a tree.
 
+import type { WebGLRenderer } from 'three'
+
 interface ProfileEntry {
   name: string
   depth: number
   start: number
   elapsed: number
 }
+
+let rendererRef: WebGLRenderer | null = null
+export function setProfilerRenderer(r: WebGLRenderer) { rendererRef = r }
 
 const entries: ProfileEntry[] = []
 const stack: number[] = [] // indices into entries
@@ -137,8 +142,21 @@ export function updateProfilerDisplay(visible: boolean) {
     }
   }
 
+  // GPU stats
+  let gpuLine = ''
+  if (rendererRef) {
+    const info = rendererRef.info
+    const draws = info.render.calls
+    const tris = info.render.triangles
+    const geos = info.memory.geometries
+    const texs = info.memory.textures
+    const programs = info.programs?.length ?? 0
+    gpuLine = `<span style="color:#aaa">GPU: ${draws} draws, ${(tris/1000).toFixed(0)}K tris, ${geos} geos, ${texs} tex, ${programs} shaders</span>\n`
+  }
+
   profilerDiv.innerHTML =
     `<span style="color:${fpsColor};font-weight:bold">Frame: ${frameAvg.toFixed(1)}ms (${fps} FPS)</span>\n` +
+    gpuLine +
     lines.join('\n')
 }
 
