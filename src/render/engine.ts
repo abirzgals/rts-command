@@ -26,6 +26,41 @@ export function initRenderer(canvas: HTMLCanvasElement) {
   scene = new THREE.Scene()
   scene.fog = new THREE.FogExp2(0x8faab8, 0.003)
 
+  // Skybox — procedural gradient sky dome
+  const skyGeo = new THREE.SphereGeometry(350, 32, 16)
+  const skyMat = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    depthWrite: false,
+    uniforms: {},
+    vertexShader: `
+      varying vec3 vWorldPos;
+      void main() {
+        vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+        gl_Position = projectionMatrix * viewMatrix * vec4(vWorldPos, 1.0);
+      }
+    `,
+    fragmentShader: `
+      varying vec3 vWorldPos;
+      void main() {
+        float h = normalize(vWorldPos).y;
+        // Sky gradient: horizon warm haze → zenith blue
+        vec3 horizon = vec3(0.75, 0.82, 0.88);
+        vec3 zenith = vec3(0.35, 0.55, 0.82);
+        vec3 ground = vec3(0.55, 0.52, 0.48);
+        vec3 col = h > 0.0
+          ? mix(horizon, zenith, pow(h, 0.6))
+          : mix(horizon, ground, pow(-h, 0.4));
+        // Sun glow near horizon
+        float sunGlow = pow(max(0.0, 1.0 - abs(h) * 3.0), 3.0) * 0.15;
+        col += vec3(1.0, 0.9, 0.7) * sunGlow;
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `,
+  })
+  const sky = new THREE.Mesh(skyGeo, skyMat)
+  sky.renderOrder = -1
+  scene.add(sky)
+
   // Camera
   camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.5, 400)
   camera.position.set(-80, 40, -60)
