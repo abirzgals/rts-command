@@ -233,10 +233,18 @@ export function playSfx(type: string, x?: number, z?: number) {
 }
 
 // ── Preload ─────────────────────────────────────────────────
+const PRELOAD_CATEGORIES = ['select', 'move'] // fetch audio data eagerly for these
+
 export async function preloadSfx() {
   ensureContext()
-  // Load manifest (1 request). Audio buffers are lazy-loaded on first play.
   await loadManifest()
+  // Eagerly load select/move sounds so first click isn't silent
+  for (const [key, files] of sfxRegistry) {
+    const cat = key.split('-').pop() || ''
+    if (PRELOAD_CATEGORIES.includes(cat)) {
+      for (const url of files) loadBuffer(url)
+    }
+  }
 }
 
 // ── Volume / enable control ─────────────────────────────────
