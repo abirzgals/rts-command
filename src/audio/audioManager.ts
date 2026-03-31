@@ -117,29 +117,44 @@ export async function playMenuMusic() {
   currentMusicBuffer = buf
 }
 
+// Shuffled playlist for ingame — all tracks including menu theme
+const ALL_MUSIC = [MENU_MUSIC, ...INGAME_MUSIC]
+let shuffledPlaylist: string[] = []
+let playlistIdx = 0
+
+function shufflePlaylist() {
+  shuffledPlaylist = [...ALL_MUSIC]
+  // Fisher-Yates shuffle
+  for (let i = shuffledPlaylist.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[shuffledPlaylist[i], shuffledPlaylist[j]] = [shuffledPlaylist[j], shuffledPlaylist[i]]
+  }
+  playlistIdx = 0
+}
+
 export async function playIngameMusic() {
   if (!soundEnabled) return
   musicMode = 'ingame'
+  shufflePlaylist()
   await fadeOutCurrent()
-  await playRandomIngame()
+  await playNextTrack()
 }
 
-async function playRandomIngame() {
+async function playNextTrack() {
   if (musicMode !== 'ingame') return
-  // Pick a random track different from last
-  let idx = Math.floor(Math.random() * INGAME_MUSIC.length)
-  if (idx === lastIngameIdx && INGAME_MUSIC.length > 1) {
-    idx = (idx + 1) % INGAME_MUSIC.length
+  if (playlistIdx >= shuffledPlaylist.length) {
+    // Reshuffle and start over
+    shufflePlaylist()
   }
-  lastIngameIdx = idx
 
-  const buf = await loadBuffer(INGAME_MUSIC[idx])
+  const url = shuffledPlaylist[playlistIdx++]
+  const buf = await loadBuffer(url)
   if (!buf || musicMode !== 'ingame') return
   currentMusic = playBuffer(buf, false)
   currentMusicBuffer = buf
-  // When track ends, play another random one
+  // When track ends, play next in shuffled playlist
   currentMusic.onended = () => {
-    if (musicMode === 'ingame') playRandomIngame()
+    if (musicMode === 'ingame') playNextTrack()
   }
 }
 
