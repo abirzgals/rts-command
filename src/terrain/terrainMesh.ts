@@ -288,20 +288,31 @@ export function createTerrainMesh(): THREE.Mesh {
         float slopeFactor = 1.0 - smoothstep(0.57, 0.82, n.y);
         vec3 albedo = mix(painted, tc, slopeFactor);
 
+        // Underwater terrain: blend toward sandy/light-blue for nice water blending
+        float waterLine = -1.2;
+        float submerged = smoothstep(waterLine, waterLine - 2.0, vHeight); // 1.0 = deep, 0.0 = above water
+        vec3 sandColor = vec3(0.55, 0.62, 0.65); // light blue-gray sand
+        albedo = mix(albedo, sandColor, submerged * 0.7);
+
         float ndl = max(dot(n, sunDir), 0.0);
         float hf = 0.9 + clamp(vHeight * 0.015, 0.0, 0.2);
 
         float shadow = getShadowMask();
 
-        // Cloud shadows — two layers scrolling at different speeds for evolving shapes
-        vec2 cloudUV1 = vWorldXZ * cloudScale + cloudSpeed * cloudTime;
-        vec2 cloudUV2 = vWorldXZ * cloudScale * 1.3 - cloudSpeed * 0.7 * cloudTime + vec2(0.37, 0.61);
-        float c1 = texture2D(cloudMap, cloudUV1).r;
-        float c2 = texture2D(cloudMap, cloudUV2).r;
-        float cloudVal = c1 * 0.6 + c2 * 0.4; // blend two layers
-        float cloudShadow = mix(1.0 - cloudDarkness, 1.0, cloudVal);
+        // Cloud shadows — skip for underwater terrain (water handles its own effect)
+        float cloudShadow = 1.0;
+        if (vHeight > waterLine - 0.5) {
+          vec2 cloudUV1 = vWorldXZ * cloudScale + cloudSpeed * cloudTime;
+          vec2 cloudUV2 = vWorldXZ * cloudScale * 1.3 - cloudSpeed * 0.7 * cloudTime + vec2(0.37, 0.61);
+          float c1 = texture2D(cloudMap, cloudUV1).r;
+          float c2 = texture2D(cloudMap, cloudUV2).r;
+          float cloudVal = c1 * 0.6 + c2 * 0.4;
+          cloudShadow = mix(1.0 - cloudDarkness, 1.0, cloudVal);
+        }
 
-        vec3 col = albedo * (0.35 + 0.65 * ndl * shadow) * hf * cloudShadow;
+        // Underwater terrain gets brighter base lighting
+        float baseLit = mix(0.35, 0.55, submerged);
+        vec3 col = albedo * (baseLit + (1.0 - baseLit) * ndl * shadow) * hf * cloudShadow;
         // Fog of war applied via fullscreen overlay — not here
         gl_FragColor = vec4(col, 1.0);
       }
