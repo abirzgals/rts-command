@@ -39,7 +39,7 @@ import { initNotifications } from './ui/notifications'
 import { initUnitCamera, updateUnitCamera } from './render/unitCamera'
 import { isFPSMode, updateFPSMode, getFPSEntity } from './input/fpsMode'
 import { checkVictory, isGameOver } from './game/victory'
-import { profilerBeginFrame, profilerEndFrame, profilerBegin, profilerEnd, updateProfilerDisplay, setProfilerRenderer } from './debug/profiler'
+import { profilerBeginFrame, profilerEndFrame, profilerBegin, profilerEnd, updateProfilerDisplay, setProfilerRenderer, captureGPUStats } from './debug/profiler'
 import { isDebugEnabled } from './render/debugOverlay'
 import { playMenuMusic, playIngameMusic, stopMusic, preloadSfx, setSoundEnabled } from './audio/audioManager'
 
@@ -609,7 +609,7 @@ function gameLoop(time: number) {
 
   // GPU render
   profilerBegin('Render')
-  prof('Scene', () => renderer.render(scene, activeCamera))
+  prof('Scene', () => { renderer.render(scene, activeCamera); captureGPUStats() })
   prof('FogOverlay', () => { if (!fpsCamera) renderFogOverlay(renderer, activeCamera) })
   profilerEnd()
 

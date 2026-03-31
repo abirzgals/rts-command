@@ -13,6 +13,20 @@ interface ProfileEntry {
 let rendererRef: WebGLRenderer | null = null
 export function setProfilerRenderer(r: WebGLRenderer) { rendererRef = r }
 
+// Snapshot GPU stats right after scene render (before fog overlay resets them)
+let gpuSnapshot = { calls: 0, tris: 0, geos: 0, texs: 0, programs: 0 }
+export function captureGPUStats() {
+  if (!rendererRef) return
+  const info = rendererRef.info
+  gpuSnapshot = {
+    calls: info.render.calls,
+    tris: info.render.triangles,
+    geos: info.memory.geometries,
+    texs: info.memory.textures,
+    programs: info.programs?.length ?? 0,
+  }
+}
+
 const entries: ProfileEntry[] = []
 const stack: number[] = [] // indices into entries
 let frameStart = 0
@@ -142,17 +156,9 @@ export function updateProfilerDisplay(visible: boolean) {
     }
   }
 
-  // GPU stats
-  let gpuLine = ''
-  if (rendererRef) {
-    const info = rendererRef.info
-    const draws = info.render.calls
-    const tris = info.render.triangles
-    const geos = info.memory.geometries
-    const texs = info.memory.textures
-    const programs = info.programs?.length ?? 0
-    gpuLine = `<span style="color:#aaa">GPU: ${draws} draws, ${(tris/1000).toFixed(0)}K tris, ${geos} geos, ${texs} tex, ${programs} shaders</span>\n`
-  }
+  // GPU stats from snapshot
+  const g = gpuSnapshot
+  const gpuLine = `<span style="color:#aaa">GPU: ${g.calls} draws, ${(g.tris/1000).toFixed(0)}K tris, ${g.geos} geos, ${g.texs} tex, ${g.programs} shaders</span>\n`
 
   profilerDiv.innerHTML =
     `<span style="color:${fpsColor};font-weight:bold">Frame: ${frameAvg.toFixed(1)}ms (${fps} FPS)</span>\n` +

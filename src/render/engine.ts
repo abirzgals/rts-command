@@ -17,7 +17,7 @@ export function initRenderer(canvas: HTMLCanvasElement) {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
   renderer.setSize(window.innerWidth, window.innerHeight)
   renderer.shadowMap.enabled = true
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap
+  renderer.shadowMap.type = THREE.PCFShadowMap
   renderer.setClearColor(0x88aacc)
   renderer.toneMapping = THREE.ACESFilmicToneMapping
   renderer.toneMappingExposure = 1.1
@@ -79,7 +79,7 @@ export function initRenderer(canvas: HTMLCanvasElement) {
   const sun = new THREE.DirectionalLight(0xfff4e0, 1.5)
   sun.position.set(60, 100, 40)
   sun.castShadow = true
-  sun.shadow.mapSize.set(4096, 4096)
+  sun.shadow.mapSize.set(2048, 2048)
   sun.shadow.camera.left = -130
   sun.shadow.camera.right = 130
   sun.shadow.camera.top = 130
