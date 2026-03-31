@@ -16,6 +16,7 @@ import type { IWorld } from 'bitecs'
 import { Position, Faction, SightRadius, Dead, IsBuilding, MeshRef, Rotation } from '../ecs/components'
 import { FACTION_PLAYER, MAP_SIZE } from '../game/config'
 import { getPlayerFaction } from '../game/factions'
+import { heightData, GRID_RES } from '../terrain/heightmap'
 import { notifyEnemyBaseSpotted } from '../ui/notifications'
 import { getPool } from './meshPools'
 import { getAnimManager } from './animatedMeshManager'
@@ -120,6 +121,19 @@ export function initFogOfWar() {
   fogTexture.wrapT = THREE.ClampToEdgeWrapping
   fogTexture.needsUpdate = true
 
+  // Create heightmap texture for terrain-aware fog
+  const heightPixels = new Float32Array(GRID_RES * GRID_RES)
+  heightPixels.set(heightData)
+  const heightTex = new THREE.DataTexture(
+    heightPixels, GRID_RES, GRID_RES,
+    THREE.RedFormat, THREE.FloatType,
+  )
+  heightTex.minFilter = THREE.LinearFilter
+  heightTex.magFilter = THREE.LinearFilter
+  heightTex.wrapS = THREE.ClampToEdgeWrapping
+  heightTex.wrapT = THREE.ClampToEdgeWrapping
+  heightTex.needsUpdate = true
+
   // Fullscreen overlay quad
   fogOverlayScene = new THREE.Scene()
   fogOverlayCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1)
@@ -127,6 +141,7 @@ export function initFogOfWar() {
   fogOverlayMaterial = new THREE.ShaderMaterial({
     uniforms: {
       fogMap: { value: fogTexture },
+      heightMap: { value: heightTex },
       invViewProj: { value: new THREE.Matrix4() },
       mapSize: { value: MAP_SIZE },
     },
@@ -139,12 +154,18 @@ export function initFogOfWar() {
     `,
     fragmentShader: /* glsl */ `
       uniform sampler2D fogMap;
+      uniform sampler2D heightMap;
       uniform mat4 invViewProj;
       uniform float mapSize;
       varying vec2 vUV;
 
+      float getHeight(vec2 xz) {
+        vec2 uv = (xz + mapSize * 0.5) / mapSize;
+        uv = clamp(uv, 0.0, 1.0);
+        return texture2D(heightMap, uv).r;
+      }
+
       void main() {
-        // Reconstruct world XZ from screen position via ray-plane intersection
         vec4 ndc = vec4(vUV * 2.0 - 1.0, -1.0, 1.0);
         vec4 nearW = invViewProj * ndc;
         nearW /= nearW.w;
@@ -153,11 +174,20 @@ export function initFogOfWar() {
         farW /= farW.w;
 
         vec3 dir = normalize(farW.xyz - nearW.xyz);
-        // Intersect with Y=0 plane (approximate ground)
-        float t = -nearW.y / dir.y;
-        if (t < 0.0) discard;
+        if (dir.y >= 0.0) discard; // looking up — no ground hit
 
+        // Ray-march: iterate to find terrain intersection
+        // Start with Y=0 intersection, then refine with actual height
+        float t = -nearW.y / dir.y;
         vec3 worldPos = nearW.xyz + dir * t;
+
+        // 3 refinement steps — converge on actual terrain surface
+        for (int i = 0; i < 3; i++) {
+          float h = getHeight(worldPos.xz);
+          t = -(nearW.y - h) / dir.y;
+          worldPos = nearW.xyz + dir * t;
+        }
+
         vec2 fogUV = (worldPos.xz + mapSize * 0.5) / mapSize;
         fogUV = clamp(fogUV, 0.0, 1.0);
 
