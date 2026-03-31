@@ -26,6 +26,23 @@ import { pushCommand, clearQueue, getQueue, type Command } from '../ecs/commandQ
 import { matchesAction, getMouseMode, loadBindings, getBindingLabel } from './keybindings'
 import { notifyNotEnoughMinerals, notifyNotEnoughGas, notifyNotEnoughSupply } from '../ui/notifications'
 import { playSfx } from '../audio/audioManager'
+import { UT_WORKER, UT_MARINE, UT_TANK, UT_JEEP, UT_ROCKET, UT_TROOPER } from '../game/config'
+
+const UT_SOUND_KEY: Record<number, string> = {
+  [UT_WORKER]: 'worker', [UT_MARINE]: 'marine', [UT_TANK]: 'tank',
+  [UT_JEEP]: 'jeep', [UT_ROCKET]: 'rocket', [UT_TROOPER]: 'trooper',
+}
+
+/** Get sound key for the first selected unit (e.g. 'marine') */
+function getSelectedUnitSoundKey(world: IWorld): string {
+  const selected = selectedQuery(world)
+  for (const eid of selected) {
+    if (hasComponent(world, UnitTypeC, eid) && !hasComponent(world, IsBuilding, eid)) {
+      return UT_SOUND_KEY[UnitTypeC.id[eid]] || 'marine'
+    }
+  }
+  return 'marine'
+}
 
 const _vec3 = new THREE.Vector3()
 
@@ -786,10 +803,11 @@ function issueCommand(
   else if (clickedBuildSite) cmdType = 'build'
   else if (clickedDamagedBuilding) cmdType = 'repair'
 
-  // Voice line
-  if (cmdType === 'attack') playSfx('voice-attack')
-  else if (cmdType === 'move') playSfx('voice-move')
-  else playSfx('voice-confirm')
+  // Voice line (unit-specific)
+  const uKey = getSelectedUnitSoundKey(world)
+  if (cmdType === 'attack') playSfx(`${uKey}-attack`)
+  else if (cmdType === 'move') playSfx(`${uKey}-move`)
+  else playSfx(`${uKey}-confirm`)
 
   // Show visual feedback
   if (closestEid >= 0 && cmdType !== 'move') {
@@ -1055,7 +1073,7 @@ function forceAttackTarget(world: IWorld, sx: number, sy: number) {
       targetDist = dist
     }
   }
-  playSfx('voice-attack')
+  playSfx(`${getSelectedUnitSoundKey(world)}-attack`)
 
   if (targetEid >= 0) {
     const tr = hasComponent(world, Selectable, targetEid) ? Selectable.radius[targetEid] : 0.8

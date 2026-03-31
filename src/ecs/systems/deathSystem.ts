@@ -38,10 +38,11 @@ export function deathSystem(world: IWorld, dt: number) {
       if (hasComponent(world, PathFollower, eid)) removePath(PathFollower.pathId[eid])
       if (hasComponent(world, Velocity, eid)) { Velocity.x[eid] = 0; Velocity.z[eid] = 0 }
 
-      // Death voice for player infantry
+      // Death voice for player units
       if (hasComponent(world, Faction, eid) && Faction.id[eid] === getPlayerFaction()
-        && !hasComponent(world, IsBuilding, eid)) {
-        playSfx('voice-death')
+        && !hasComponent(world, IsBuilding, eid) && hasComponent(world, UnitTypeC, eid)) {
+        const UT_KEY: Record<number, string> = { 0:'worker', 1:'marine', 2:'tank', 3:'jeep', 4:'rocket', 5:'trooper' }
+        playSfx(`${UT_KEY[UnitTypeC.id[eid]] || 'marine'}-death`)
       }
 
       // Start death animation (animated units)

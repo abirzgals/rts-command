@@ -3,7 +3,7 @@ import { defineQuery, enterQuery, hasComponent } from 'bitecs'
 import type { IWorld } from 'bitecs'
 import {
   Selected, Position, Selectable, Dead, IsBuilding, Producer,
-  PathFollower, MoveTarget, AttackTarget, Faction,
+  PathFollower, MoveTarget, AttackTarget, Faction, UnitTypeC,
 } from '../components'
 import { updateSelectionRings } from '../../render/meshPools'
 import { getTerrainHeight } from '../../terrain/heightmap'
@@ -84,8 +84,10 @@ export function selectionVisualSystem(world: IWorld, _dt: number) {
     for (const eid of newlySelected) {
       if (hasComponent(world, Faction, eid) && Faction.id[eid] === getPlayerFaction()
         && !hasComponent(world, IsBuilding, eid)) {
-        playSfx('voice-select')
-        break // one voice per selection event
+        const utId = hasComponent(world, UnitTypeC, eid) ? UnitTypeC.id[eid] : 1
+        const UT_KEY: Record<number, string> = { 0:'worker', 1:'marine', 2:'tank', 3:'jeep', 4:'rocket', 5:'trooper' }
+        playSfx(`${UT_KEY[utId] || 'marine'}-select`)
+        break
       }
     }
   }

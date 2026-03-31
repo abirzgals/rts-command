@@ -17,22 +17,41 @@ const INGAME_MUSIC = [
   '/sounds/music/siege-of-the-last-banner.mp3',
 ]
 
-// ── SFX pools ───────────────────────────────────────────────
-const SFX_FILES: Record<string, string[]> = {
-  // Per-unit weapon sounds
-  'marine-shot':  ['/sounds/sfx/marine-shot-1.mp3', '/sounds/sfx/marine-shot-2.mp3'],
-  'trooper-shot': ['/sounds/sfx/trooper-shot-1.mp3'],
-  'jeep-shot':    ['/sounds/sfx/jeep-shot-1.mp3'],
-  'tank-shot':    ['/sounds/sfx/tank-shot-1.mp3'],
-  'artillery':    ['/sounds/sfx/artillery.mp3'],
-  'rocket-launch':['/sounds/sfx/rocket-launch.mp3'],
-  'explosion':    ['/sounds/sfx/explosion.mp3'],
-  // Unit voice lines
-  'voice-select':  ['/sounds/sfx/voice-select-1.mp3', '/sounds/sfx/voice-select-2.mp3'],
-  'voice-move':    ['/sounds/sfx/voice-move-1.mp3', '/sounds/sfx/voice-move-2.mp3', '/sounds/sfx/voice-move-3.mp3'],
-  'voice-attack':  ['/sounds/sfx/voice-attack-1.mp3', '/sounds/sfx/voice-attack-2.mp3'],
-  'voice-confirm': ['/sounds/sfx/voice-confirm-1.mp3', '/sounds/sfx/voice-confirm-2.mp3'],
-  'voice-death':   ['/sounds/sfx/voice-death-1.mp3', '/sounds/sfx/voice-death-2.mp3', '/sounds/sfx/voice-death-3.mp3'],
+// ── SFX: dynamic file discovery ─────────────────────────────
+// Pattern: /sounds/sfx/{key}-{N}.mp3 where N = 1,2,3...
+// playSfx('marine-shot') tries marine-shot-1.mp3, marine-shot-2.mp3, etc.
+const sfxRegistry = new Map<string, string[]>()
+const sfxProbed = new Set<string>() // keys we've already probed
+
+// Unit types that have sounds
+const UNIT_NAMES = ['worker', 'marine', 'trooper', 'tank', 'jeep', 'rocket']
+// Sound categories per unit
+const SOUND_CATEGORIES = ['shot', 'select', 'move', 'attack', 'confirm', 'death']
+// Global sounds (not per-unit)
+const GLOBAL_SOUNDS = ['explosion', 'rocket-launch']
+
+/** Probe how many numbered files exist for a key (e.g. 'marine-shot' → 1,2,...) */
+async function probeFiles(key: string): Promise<string[]> {
+  const files: string[] = []
+  for (let i = 1; i <= 10; i++) {
+    const url = `/sounds/sfx/${key}-${i}.mp3`
+    try {
+      const resp = await fetch(url, { method: 'HEAD' })
+      if (resp.ok) files.push(url)
+      else break // stop at first missing
+    } catch { break }
+  }
+  return files
+}
+
+/** Get or discover files for a sound key */
+async function getSfxFiles(key: string): Promise<string[]> {
+  if (sfxRegistry.has(key)) return sfxRegistry.get(key)!
+  if (sfxProbed.has(key)) return []
+  sfxProbed.add(key)
+  const files = await probeFiles(key)
+  if (files.length > 0) sfxRegistry.set(key, files)
+  return files
 }
 
 // ── State ───────────────────────────────────────────────────
@@ -176,49 +195,74 @@ const sfxLastPlayed = new Map<string, number>()
 const SFX_THROTTLE_MS = 80
 const VOICE_THROTTLE_MS = 1500 // voices need longer gap
 
+// Voice-like categories that use longer throttle
+const VOICE_CATS = new Set(['select', 'move', 'attack', 'confirm', 'death'])
+
+function getThrottleKey(type: string): string {
+  // Extract category: 'marine-select' → 'select', 'explosion' → 'explosion'
+  const parts = type.split('-')
+  const cat = parts.length >= 2 ? parts[parts.length - 1] : type
+  if (cat === 'select') return 'voice-select'
+  if (VOICE_CATS.has(cat)) return 'voice-cmd'
+  return type // weapon sounds throttle per-type
+}
+
 export function playSfx(type: string, x?: number, z?: number) {
   if (!soundEnabled) return
   if (!ctx || !sfxGain) {
-    // First interaction hasn't happened yet — queue for later
     ensureContext()
     if (!ctx) return
   }
 
-  // Throttle — voices use longer cooldown, split into select vs command
+  // Throttle
   const now = performance.now()
-  const isVoice = type.startsWith('voice-')
+  const cat = type.split('-').pop() || ''
+  const isVoice = VOICE_CATS.has(cat)
   const throttle = isVoice ? VOICE_THROTTLE_MS : SFX_THROTTLE_MS
-  // Select voice has its own throttle, command voices (move/attack/confirm/death) share one
-  const throttleKey = isVoice
-    ? (type === 'voice-select' ? 'voice-select' : 'voice-cmd')
-    : type
+  const throttleKey = getThrottleKey(type)
   const last = sfxLastPlayed.get(throttleKey) ?? 0
   if (now - last < throttle) return
   sfxLastPlayed.set(throttleKey, now)
 
-  const files = SFX_FILES[type]
-  if (!files || files.length === 0) return
+  const files = sfxRegistry.get(type)
+  if (!files || files.length === 0) {
+    // Not yet probed — probe in background, play next time
+    getSfxFiles(type).then(f => { if (f.length > 0) for (const u of f) loadBuffer(u) })
+    return
+  }
   const url = files[Math.floor(Math.random() * files.length)]
 
   const buf = bufferCache.get(url)
   if (!buf) {
-    // Load in background for next time
     loadBuffer(url)
     return
   }
 
   const src = ctx.createBufferSource()
   src.buffer = buf
-  // Slight pitch variation for variety
   src.playbackRate.value = 0.95 + Math.random() * 0.1
   src.connect(sfxGain!)
   src.start()
 }
 
 // ── Preload ─────────────────────────────────────────────────
-export function preloadSfx() {
+export async function preloadSfx() {
   ensureContext()
-  for (const files of Object.values(SFX_FILES)) {
+  // Probe and preload all unit sounds + global sounds
+  const keys: string[] = []
+  for (const unit of UNIT_NAMES) {
+    for (const cat of SOUND_CATEGORIES) {
+      keys.push(`${unit}-${cat}`)
+    }
+  }
+  for (const g of GLOBAL_SOUNDS) keys.push(g)
+  // Also probe rocket-launch
+  keys.push('rocket-launch')
+
+  // Probe all in parallel
+  const results = await Promise.all(keys.map(k => getSfxFiles(k)))
+  // Preload all discovered files
+  for (const files of results) {
     for (const url of files) loadBuffer(url)
   }
 }

@@ -8,7 +8,7 @@ import {
 import { removePath } from '../../pathfinding/pathStore'
 import { spawnProjectile, spawnArcProjectile, projectileEffects } from '../archetypes'
 import { UnitTypeC } from '../components'
-import { UT_TANK, UT_JEEP, UT_ROCKET, UT_TROOPER, UT_MARINE } from '../../game/config'
+import { UT_TANK, UT_JEEP, UT_ROCKET } from '../../game/config'
 import { spawnMuzzleFlash, spawnRocketTrail, spawnFireExplosion, spawnSmoke, spawnBloodHit } from '../../render/effects'
 import { spatialHash } from '../../globals'
 import { editorConfig } from '../../render/meshPools'
@@ -273,7 +273,7 @@ function tryAttack(world: IWorld, attacker: number, target: number, dist: number
       const poolId = MeshRef.poolId[attacker]
       const animMgr = getAnimManager(poolId)
       if (animMgr) animMgr.triggerRecoil(attacker)
-      playSfx(utId === UT_ROCKET ? 'artillery' : 'tank-shot')
+      playSfx(`${key}-shot`)
     } else if (projType === 'rocket') {
       projEid = spawnArcProjectile(world, fp.x, fp.z, target, damage, splash, projCfg?.arcHeight ?? 2, trailFire, trailSmoke)
       spawnMuzzleFlash(fp.x, fp.y, fp.z, muzzleCfg)
@@ -282,11 +282,7 @@ function tryAttack(world: IWorld, attacker: number, target: number, dist: number
     } else {
       projEid = spawnProjectile(world, fp.x, fp.z, target, damage, projSpeed, { ...projCfg, trailFire, trailSmoke })
       spawnMuzzleFlash(fp.x, fp.y, fp.z, muzzleCfg)
-      // Unit-specific shot sound
-      const shotSound = utId === UT_TROOPER ? 'trooper-shot'
-        : utId === UT_JEEP ? 'jeep-shot'
-        : 'marine-shot'
-      playSfx(shotSound)
+      playSfx(`${key}-shot`)
     }
     // Store effect config on projectile for use on hit
     projectileEffects.set(projEid, { impact: impactCfg, explosion: explosionCfg, smoke: smokeCfg })
