@@ -578,10 +578,9 @@ function createWater() {
         gl_FragColor = vec4(col, alpha);
       }
     `,
-    transparent: true, depthWrite: false, side: THREE.DoubleSide,
+    transparent: true, depthWrite: true, side: THREE.DoubleSide,
   })
 
   waterMesh = new THREE.Mesh(g, m)
-  waterMesh.renderOrder = 1
   scene.add(waterMesh)
 }
