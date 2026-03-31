@@ -2,9 +2,10 @@
 // Music: menu theme + random ingame tracks with crossfade
 // SFX: positional one-shot sounds for combat
 
-const MUSIC_VOLUME = 0.3
+const MUSIC_VOLUME = 0.5
 const SFX_VOLUME = 0.5
 const CROSSFADE_MS = 2000
+let soundEnabled = true
 
 // ── Music tracks ────────────────────────────────────────────
 const MENU_MUSIC = '/sounds/music/strategic-frontier.mp3'
@@ -100,6 +101,7 @@ function fadeOutCurrent(): Promise<void> {
 }
 
 export async function playMenuMusic() {
+  if (!soundEnabled) return
   if (musicMode === 'menu') return
   musicMode = 'menu'
   await fadeOutCurrent()
@@ -110,6 +112,7 @@ export async function playMenuMusic() {
 }
 
 export async function playIngameMusic() {
+  if (!soundEnabled) return
   musicMode = 'ingame'
   await fadeOutCurrent()
   await playRandomIngame()
@@ -146,6 +149,7 @@ const sfxLastPlayed = new Map<string, number>()
 const SFX_THROTTLE_MS = 80
 
 export function playSfx(type: string, x?: number, z?: number) {
+  if (!soundEnabled) return
   if (!ctx || !sfxGain) {
     // First interaction hasn't happened yet — queue for later
     ensureContext()
@@ -185,12 +189,16 @@ export function preloadSfx() {
   }
 }
 
-// ── Volume control ──────────────────────────────────────────
+// ── Volume / enable control ─────────────────────────────────
 export function setMusicVolume(v: number) {
   if (musicGain) musicGain.gain.value = v
 }
 export function setSfxVolume(v: number) {
   if (sfxGain) sfxGain.gain.value = v
+}
+export function setSoundEnabled(enabled: boolean) {
+  soundEnabled = enabled
+  if (!enabled) stopMusic()
 }
 
 // ── Init on first user interaction ──────────────────────────

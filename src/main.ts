@@ -38,7 +38,7 @@ import { initHPBars, updateHPBars } from './render/hpBars'
 import { initNotifications } from './ui/notifications'
 import { profilerBeginFrame, profilerEndFrame, profilerBegin, profilerEnd, updateProfilerDisplay } from './debug/profiler'
 import { isDebugEnabled } from './render/debugOverlay'
-import { playMenuMusic, playIngameMusic, preloadSfx } from './audio/audioManager'
+import { playMenuMusic, playIngameMusic, stopMusic, preloadSfx, setSoundEnabled } from './audio/audioManager'
 
 // UI
 import { updateHUD } from './ui/hud'
@@ -70,7 +70,10 @@ interface MapSelection {
 async function showMapSelector(): Promise<MapSelection> {
   // Load saved keybindings before showing menu
   loadBindings()
-  playMenuMusic()
+  // Respect sound preference
+  const soundPref = localStorage.getItem('rts-sound')
+  if (soundPref === 'off') setSoundEnabled(false)
+  else playMenuMusic()
 
   const overlay = document.createElement('div')
   Object.assign(overlay.style, {
@@ -111,6 +114,9 @@ async function showMapSelector(): Promise<MapSelection> {
           <option value="">Loading...</option>
         </select>
         <button id="menu-settings-btn" style="width:100%;padding:5px;border:1px solid #555;border-radius:4px;background:#252535;color:#aaf;cursor:pointer;font-size:12px">Customize Keys...</button>
+        <label style="color:#ccc;font-size:12px;display:block;margin-top:8px;cursor:pointer">
+          <input type="checkbox" id="menu-sound" checked style="margin-right:4px">Sound &amp; Music
+        </label>
       </div>
     </div>
     <button id="btn-quick-start" style="
@@ -186,6 +192,23 @@ async function showMapSelector(): Promise<MapSelection> {
 
   document.getElementById('menu-settings-btn')!.addEventListener('click', () => {
     openSettingsUI()
+  })
+
+  // Sound preference
+  const soundCheckbox = document.getElementById('menu-sound') as HTMLInputElement
+  const savedSound = localStorage.getItem('rts-sound')
+  const soundEnabled = savedSound !== 'off'
+  soundCheckbox.checked = soundEnabled
+  if (!soundEnabled) stopMusic()
+  soundCheckbox.addEventListener('change', () => {
+    localStorage.setItem('rts-sound', soundCheckbox.checked ? 'on' : 'off')
+    if (soundCheckbox.checked) {
+      setSoundEnabled(true)
+      playMenuMusic()
+    } else {
+      setSoundEnabled(false)
+      stopMusic()
+    }
   })
 
   function getSelectedFog(): FogMode {
