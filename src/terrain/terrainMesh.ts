@@ -52,53 +52,64 @@ export function updateWater(dt: number) {
 }
 
 /** Generate a tileable cloud noise texture on a canvas */
-function createCloudNoiseTexture(size = 256): THREE.Texture {
+function createCloudNoiseTexture(size = 128): THREE.Texture {
   const canvas = document.createElement('canvas')
   canvas.width = canvas.height = size
-  const ctx = canvas.getContext('2d')!
-  const img = ctx.createImageData(size, size)
+  const c2d = canvas.getContext('2d')!
+  const img = c2d.createImageData(size, size)
   const d = img.data
 
-  // Simple hash for noise
-  function hash(x: number, y: number) {
-    let n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453
+  // 3D noise for seamless tiling via torus mapping
+  function hash3(x: number, y: number, z: number) {
+    let n = Math.sin(x * 127.1 + y * 311.7 + z * 74.7) * 43758.5453
     return n - Math.floor(n)
   }
-  function noise(px: number, py: number) {
-    const ix = Math.floor(px), iy = Math.floor(py)
-    const fx = px - ix, fy = py - iy
-    const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy)
-    const a = hash(ix, iy), b = hash(ix + 1, iy)
-    const c = hash(ix, iy + 1), dd = hash(ix + 1, iy + 1)
-    return a + (b - a) * sx + (c - a) * sy + (a - b - c + dd) * sx * sy
-  }
-  function fbm(x: number, y: number) {
-    let v = 0, a = 1, t = 0
-    for (let i = 0; i < 4; i++) {
-      v += noise(x, y) * a; t += a; a *= 0.5; x *= 2; y *= 2
-    }
-    return v / t
-  }
-
-  function smoothstepJS(e0: number, e1: number, x: number) {
-    const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)))
-    return t * t * (3 - 2 * t)
+  function noise3(px: number, py: number, pz: number) {
+    const ix = Math.floor(px), iy = Math.floor(py), iz = Math.floor(pz)
+    const fx = px - ix, fy = py - iy, fz = pz - iz
+    const sx = fx * fx * (3 - 2 * fx)
+    const sy = fy * fy * (3 - 2 * fy)
+    const sz = fz * fz * (3 - 2 * fz)
+    const c000 = hash3(ix,iy,iz),     c100 = hash3(ix+1,iy,iz)
+    const c010 = hash3(ix,iy+1,iz),   c110 = hash3(ix+1,iy+1,iz)
+    const c001 = hash3(ix,iy,iz+1),   c101 = hash3(ix+1,iy,iz+1)
+    const c011 = hash3(ix,iy+1,iz+1), c111 = hash3(ix+1,iy+1,iz+1)
+    const x0 = c000+(c100-c000)*sx, x1 = c010+(c110-c010)*sx
+    const x2 = c001+(c101-c001)*sx, x3 = c011+(c111-c011)*sx
+    const y0 = x0+(x1-x0)*sy, y1 = x2+(x3-x2)*sy
+    return y0+(y1-y0)*sz
   }
 
+  // Seamless: map 2D pixel onto a torus in 3D space
+  const FREQ = 3
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
-      // Tile seamlessly by wrapping coordinates
-      const nx = x / size * 4, ny = y / size * 4
-      // Range 0.0–1.0 with cloud-like contrast (bright centers, dark edges)
-      let v = fbm(nx, ny)
-      v = smoothstepJS(0.3, 0.7, v) // sharpen into cloud blobs
-      const byte = Math.round(v * 255)
+      const u = x / size, v = y / size
+      const ax = u * Math.PI * 2, ay = v * Math.PI * 2
+      const tx = Math.cos(ax) * FREQ, ty = Math.sin(ax) * FREQ
+      const tz = Math.cos(ay) * FREQ, tw = Math.sin(ay) * FREQ
+
+      // FBM 3 octaves, sample two 3D projections for richer pattern
+      let val = 0, amp = 1, tot = 0
+      let fx = tx, fy = ty, fz = tz, fw = tw
+      for (let oct = 0; oct < 3; oct++) {
+        val += (noise3(fx, fy, fz) * 0.5 + noise3(fy, fz, fw) * 0.5) * amp
+        tot += amp; amp *= 0.5
+        fx *= 2; fy *= 2; fz *= 2; fw *= 2
+      }
+      val /= tot
+
+      // Smoothstep for cloud-like blobs
+      const t = Math.max(0, Math.min(1, (val - 0.35) / 0.3))
+      val = t * t * (3 - 2 * t)
+
+      const byte = Math.round(val * 255)
       const i = (y * size + x) * 4
       d[i] = d[i + 1] = d[i + 2] = byte
       d[i + 3] = 255
     }
   }
-  ctx.putImageData(img, 0, 0)
+  c2d.putImageData(img, 0, 0)
   const tex = new THREE.CanvasTexture(canvas)
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping
   tex.minFilter = THREE.LinearMipmapLinearFilter
