@@ -46,7 +46,7 @@ const DEFENSE_RADIUS  = 20    // how far from CC to detect threats
 const DEFENSE_GUARD   = 2     // minimum combat units kept at home
 const STAGING_TIMEOUT = 45    // seconds: max wait at staging point
 const REGROUP_RADIUS  = 15    // units further than this from centroid need to regroup
-const ASSIST_RADIUS   = 18    // idle units within this radius of a fighting ally will join
+const ASSIST_RADIUS   = 20    // idle units within this radius of a fighting ally will join
 const MAP_HALF        = MAP_SIZE / 2
 
 // ── Queries ─────────────────────────────────────────────────
