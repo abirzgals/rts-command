@@ -1112,6 +1112,8 @@ function takeCensus(world: IWorld): Census {
     if (ut === BT_FACTORY) { factory = eid; hasFactory = true }
   }
 
+  const fpsUnit = isFPSMode() ? getFPSEntity() : -1
+
   let workerCount = 0
   let marineCount = 0
   let tankCount = 0
@@ -1127,6 +1129,7 @@ function takeCensus(world: IWorld): Census {
     if (Faction.id[eid] !== aiFaction) continue
     if (hasComponent(world, Dead, eid)) continue
     if (hasComponent(world, IsBuilding, eid)) continue
+    if (eid === fpsUnit) continue // FPS unit is player-controlled
 
     const ut = UnitTypeC.id[eid]
     switch (ut) {

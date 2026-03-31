@@ -137,9 +137,8 @@ export function enterFPSMode(eid: number, w: IWorld) {
   // Hide RTS UI
   toggleUI(false)
 
-  // Listeners — use canvas for mouse to avoid conflicts
-  const cvs = renderer.domElement
-  cvs.addEventListener('mousedown', onMouseDown)
+  // Listeners
+  document.addEventListener('mousedown', onMouseDown)
   document.addEventListener('mousemove', onMouseMove)
   document.addEventListener('keydown', onKeyDown)
   document.addEventListener('keyup', onKeyUp)
@@ -172,8 +171,7 @@ export function exitFPSMode() {
   }
 
   // Cleanup listeners
-  const cvs = renderer.domElement
-  cvs.removeEventListener('mousedown', onMouseDown)
+  document.removeEventListener('mousedown', onMouseDown)
   document.removeEventListener('mousemove', onMouseMove)
   document.removeEventListener('keydown', onKeyDown)
   document.removeEventListener('keyup', onKeyUp)
@@ -194,6 +192,10 @@ export function updateFPSMode(dt: number): THREE.Camera | null {
     exitFPSMode()
     return null
   }
+
+  // Clear any AI-issued orders on the FPS unit
+  if (hasComponent(world, MoveTarget, controlledEid)) removeComponent(world, MoveTarget, controlledEid)
+  if (hasComponent(world, PathFollower, controlledEid)) removeComponent(world, PathFollower, controlledEid)
 
   const speed = hasComponent(world, MoveSpeed, controlledEid) ? MoveSpeed.value[controlledEid] : 5
 

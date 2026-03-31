@@ -39,8 +39,6 @@ export function combatSystem(world: IWorld, dt: number) {
       && !hasComponent(world, AttackTarget, eid) && !hasComponent(world, AttackMove, eid)) continue
     // Dead units don't fight
     if (hasComponent(world, Dead, eid)) continue
-    // FPS-controlled unit — player shoots manually
-    if (isFPSMode() && eid === getFPSEntity()) continue
     // Tick cooldown
     if (AttackC.timer[eid] > 0) {
       AttackC.timer[eid] -= dt
@@ -130,6 +128,9 @@ export function combatSystem(world: IWorld, dt: number) {
       }
       continue
     }
+
+    // FPS unit — no auto-acquire, player shoots manually via click
+    if (isFPSMode() && eid === getFPSEntity()) continue
 
     // AI workers don't auto-acquire — controlled by AI system only
     if (hasComponent(world, WorkerC, eid) && myFaction === getAIFaction()) continue
