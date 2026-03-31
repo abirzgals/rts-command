@@ -20,104 +20,66 @@ export function projectileSystem(world: IWorld, dt: number) {
   const projectiles = projectileQuery(world)
 
   for (const eid of projectiles) {
-    const isDirectional = Projectile.maxRange[eid] > 0
     const speed = Projectile.speed[eid]
     const step = speed * dt
-    let nx: number, ny: number, nz: number
+    const nx = Projectile.dirX[eid]
+    const ny = Projectile.dirY[eid]
+    const nz = Projectile.dirZ[eid]
 
-    if (isDirectional) {
-      // ── Directional projectile (FPS): fly in fixed direction ──
-      nx = Projectile.dirX[eid]
-      ny = Projectile.dirY[eid]
-      nz = Projectile.dirZ[eid]
+    // Move along fixed direction (all projectiles are directional — can miss)
+    Position.x[eid] += nx * step
+    Position.y[eid] += ny * step
+    Position.z[eid] += nz * step
+    Projectile.traveled[eid] += step
 
-      Position.x[eid] += nx * step
-      Position.y[eid] += ny * step
-      Position.z[eid] += nz * step
-      Projectile.traveled[eid] += step
+    const px = Position.x[eid], py = Position.y[eid], pz = Position.z[eid]
 
-      // Check collision with any enemy along path
-      const px = Position.x[eid], py = Position.y[eid], pz = Position.z[eid]
-      const nearby: number[] = []
-      spatialHash.query(px, pz, 1.5, nearby)
-      let hitEid = -1
-      for (const other of nearby) {
-        if (hasComponent(world, Dead, other)) continue
-        if (!hasComponent(world, Health, other)) continue
-        const ox = Position.x[other] - px
-        const oy = (Position.y[other] || 0) + 1.0 - py
-        const oz = Position.z[other] - pz
-        const d = Math.sqrt(ox * ox + oy * oy + oz * oz)
-        const r = hasComponent(world, CollisionRadius, other) ? CollisionRadius.value[other] : 0.5
-        if (d < r + HIT_DIST) { hitEid = other; break }
-      }
+    // Check collision with any entity with Health along path
+    const nearby: number[] = []
+    spatialHash.query(px, pz, 1.5, nearby)
+    let hitEid = -1
+    for (const other of nearby) {
+      if (hasComponent(world, Dead, other)) continue
+      if (!hasComponent(world, Health, other)) continue
+      const ox = Position.x[other] - px
+      const oy = (Position.y[other] + 1.0) - py
+      const oz = Position.z[other] - pz
+      const d = Math.sqrt(ox * ox + oy * oy + oz * oz)
+      const r = hasComponent(world, CollisionRadius, other) ? CollisionRadius.value[other] : 0.5
+      if (d < r + HIT_DIST) { hitEid = other; break }
+    }
 
-      if (hitEid >= 0) {
-        applyDamage(world, hitEid, Projectile.damage[eid], px, pz)
-        const fx = projectileEffects.get(eid)
-        spawnImpact(px, py, pz, fx?.impact)
-        projectileEffects.delete(eid)
-        destroyProjectile(world, eid, 30)
-        continue
-      }
+    if (hitEid >= 0) {
+      applyDamage(world, hitEid, Projectile.damage[eid], px, pz)
+      const fx = projectileEffects.get(eid)
+      spawnImpact(px, py, pz, fx?.impact)
+      projectileEffects.delete(eid)
+      destroyProjectile(world, eid, 30)
+      continue
+    }
 
-      // Hit ground
-      const groundY = getTerrainHeight(px, pz)
-      if (py <= groundY + 0.1) {
-        const fx = projectileEffects.get(eid)
-        spawnImpact(px, groundY, pz, fx?.impact)
-        projectileEffects.delete(eid)
-        destroyProjectile(world, eid, 30)
-        continue
-      }
+    // Hit ground
+    const groundY = getTerrainHeight(px, pz)
+    if (py <= groundY + 0.1) {
+      const fx = projectileEffects.get(eid)
+      spawnImpact(px, groundY, pz, fx?.impact)
+      projectileEffects.delete(eid)
+      destroyProjectile(world, eid, 30)
+      continue
+    }
 
-      // Max range reached
-      if (Projectile.traveled[eid] >= Projectile.maxRange[eid]) {
-        projectileEffects.delete(eid)
-        destroyProjectile(world, eid, 30)
-        continue
-      }
-    } else {
-      // ── Homing projectile (RTS): track target entity ──
-      const targetEid = Projectile.targetEid[eid]
-
-      if (hasComponent(world, Dead, targetEid) || !hasComponent(world, Health, targetEid)) {
-        destroyProjectile(world, eid, 30)
-        continue
-      }
-
-      const tx = Position.x[targetEid]
-      const ty = Position.y[targetEid]
-      const tz = Position.z[targetEid]
-
-      const dx = tx - Position.x[eid]
-      const dy = ty - Position.y[eid]
-      const dz = tz - Position.z[eid]
-      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz)
-
-      if (dist < HIT_DIST) {
-        applyDamage(world, targetEid, Projectile.damage[eid], Position.x[eid], Position.z[eid])
-        const fx = projectileEffects.get(eid)
-        spawnImpact(Position.x[eid], Position.y[eid], Position.z[eid], fx?.impact)
-        projectileEffects.delete(eid)
-        destroyProjectile(world, eid, 30)
-        continue
-      }
-
-      nx = dx / dist
-      ny = dy / dist
-      nz = dz / dist
-
-      Position.x[eid] += nx * step
-      Position.y[eid] += ny * step
-      Position.z[eid] += nz * step
+    // Max range reached — disappear
+    if (Projectile.traveled[eid] >= Projectile.maxRange[eid]) {
+      projectileEffects.delete(eid)
+      destroyProjectile(world, eid, 30)
+      continue
     }
 
     // Orient projectile mesh along movement direction
     const projMesh = projectileMeshes.get(eid)
     if (projMesh) {
-      projMesh.position.set(Position.x[eid], Position.y[eid], Position.z[eid])
-      projMesh.lookAt(Position.x[eid] + nx, Position.y[eid] + ny, Position.z[eid] + nz)
+      projMesh.position.set(px, py, pz)
+      projMesh.lookAt(px + nx, py + ny, pz + nz)
     }
 
     // Trail effects from config

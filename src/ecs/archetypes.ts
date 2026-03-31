@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { addEntity, addComponent } from 'bitecs'
+import { addEntity, addComponent, hasComponent } from 'bitecs'
 import type { IWorld } from 'bitecs'
 import {
   Position, Rotation, Velocity, Faction, UnitTypeC, Health, AttackC,
@@ -327,15 +327,33 @@ export function spawnProjectile(
 ): number {
   const eid = addEntity(world)
 
+  const fromY = Position.y[targetEid] !== undefined ? 1.0 : 1.0
   addComponent(world, Position, eid)
   Position.x[eid] = fromX
   Position.y[eid] = 1.0
   Position.z[eid] = fromZ
 
+  // Compute direction toward target's CURRENT position (no homing — can miss)
+  let dirX = 0, dirY = 0, dirZ = 1, maxRange = 30
+  if (targetEid < 0xFFFFFFFF && hasComponent(world, Position, targetEid)) {
+    const tx = Position.x[targetEid]
+    const ty = Position.y[targetEid] + 1.0 // aim at center mass
+    const tz = Position.z[targetEid]
+    const dx = tx - fromX, dy = ty - 1.0, dz = tz - fromZ
+    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz)
+    if (dist > 0.01) { dirX = dx / dist; dirY = dy / dist; dirZ = dz / dist }
+    maxRange = Math.max(dist + 5, 20) // overshoot a bit past target
+  }
+
   addComponent(world, Projectile, eid)
-  Projectile.targetEid[eid] = targetEid
+  Projectile.targetEid[eid] = 0xFFFFFFFF // all projectiles are directional now
   Projectile.damage[eid] = damage
   Projectile.speed[eid] = speed
+  Projectile.dirX[eid] = dirX
+  Projectile.dirY[eid] = dirY
+  Projectile.dirZ[eid] = dirZ
+  Projectile.maxRange[eid] = maxRange
+  Projectile.traveled[eid] = 0
   Projectile.trailFire[eid] = cfg?.trailFire ?? 0
   Projectile.trailSmoke[eid] = cfg?.trailSmoke ?? 0
 
