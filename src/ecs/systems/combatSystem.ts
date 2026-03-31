@@ -16,6 +16,7 @@ import { getAnimManager } from '../../render/animatedMeshManager'
 import { isVisibleAt } from '../../render/fogOfWar'
 import { getPlayerFaction, getAIFaction } from '../../game/factions'
 import { playSfx } from '../../audio/audioManager'
+import { isFPSMode, getFPSEntity } from '../../input/fpsMode'
 import { MeshRef } from '../components'
 import { notifyUnitUnderAttack, notifyBaseUnderAttack } from '../../ui/notifications'
 
@@ -38,6 +39,8 @@ export function combatSystem(world: IWorld, dt: number) {
       && !hasComponent(world, AttackTarget, eid) && !hasComponent(world, AttackMove, eid)) continue
     // Dead units don't fight
     if (hasComponent(world, Dead, eid)) continue
+    // FPS-controlled unit — player shoots manually
+    if (isFPSMode() && eid === getFPSEntity()) continue
     // Tick cooldown
     if (AttackC.timer[eid] > 0) {
       AttackC.timer[eid] -= dt

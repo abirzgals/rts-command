@@ -12,7 +12,8 @@ import {
   IsBuilding, UnitTypeC, CollisionRadius,
 } from '../ecs/components'
 import { scene, renderer, camera } from '../render/engine'
-import { getTerrainHeight } from '../terrain/heightmap'
+import { getTerrainHeight, getTerrainTypeAt, T_WATER } from '../terrain/heightmap'
+import { isWorldWalkable } from '../pathfinding/navGrid'
 import { spatialHash } from '../globals'
 import { getPlayerFaction } from '../game/factions'
 import { playSfx } from '../audio/audioManager'
@@ -165,15 +166,36 @@ export function updateFPSMode(dt: number): THREE.Camera | null {
   let mx = Math.sin(yaw) * fwd + Math.cos(yaw) * strafe
   let mz = Math.cos(yaw) * fwd - Math.sin(yaw) * strafe
   const len = Math.sqrt(mx * mx + mz * mz)
+
+  // Move position directly (bypass RTS movement system)
   if (len > 0.1) {
     mx /= len; mz /= len
-    const moveScale = Math.min(len, 1) // analog: partial speed
-    Velocity.x[controlledEid] = mx * speed * moveScale
-    Velocity.z[controlledEid] = mz * speed * moveScale
-  } else {
-    Velocity.x[controlledEid] = 0
-    Velocity.z[controlledEid] = 0
+    const moveScale = Math.min(len, 1)
+    const stepX = mx * speed * moveScale * dt
+    const stepZ = mz * speed * moveScale * dt
+    const curX = Position.x[controlledEid]
+    const curZ = Position.z[controlledEid]
+    let newX = curX + stepX
+    let newZ = curZ + stepZ
+
+    // Terrain collision — wall slide
+    const walkable = isWorldWalkable(newX, newZ) && getTerrainTypeAt(newX, newZ) !== T_WATER
+    if (walkable) {
+      Position.x[controlledEid] = newX
+      Position.z[controlledEid] = newZ
+    } else {
+      // Try axis-separated slide
+      const xOk = isWorldWalkable(curX + stepX, curZ) && getTerrainTypeAt(curX + stepX, curZ) !== T_WATER
+      const zOk = isWorldWalkable(curX, curZ + stepZ) && getTerrainTypeAt(curX, curZ + stepZ) !== T_WATER
+      if (xOk) Position.x[controlledEid] = curX + stepX
+      if (zOk) Position.z[controlledEid] = curZ + stepZ
+    }
+    Position.y[controlledEid] = getTerrainHeight(Position.x[controlledEid], Position.z[controlledEid])
+    spatialHash.update(controlledEid, Position.x[controlledEid], Position.z[controlledEid])
   }
+  // Keep velocity zeroed so RTS movement system doesn't interfere
+  Velocity.x[controlledEid] = 0
+  Velocity.z[controlledEid] = 0
 
   // Update unit rotation to match look direction
   if (hasComponent(world, Rotation, controlledEid)) {
