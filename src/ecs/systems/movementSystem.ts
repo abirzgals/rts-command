@@ -107,11 +107,15 @@ function getTerrainRepulsion(x: number, z: number, radius: number, maxSl: number
 }
 
 // ── Main movement system ─────────────────────────────────────
+import { isFPSMode, getFPSEntity } from '../../input/fpsMode'
+
 export function movementSystem(world: IWorld, dt: number) {
+  const fpsEid = isFPSMode() ? getFPSEntity() : -1
 
   // ── 0. Auto-escape: if unit is on blocked terrain with no orders, push out ──
   const allUnits = unitQuery(world)
   for (const eid of allUnits) {
+    if (eid === fpsEid) continue // FPS unit moves itself
     if (hasComponent(world, IsBuilding, eid)) continue
     if (hasComponent(world, Dead, eid)) continue
     if (hasComponent(world, Projectile, eid)) continue
@@ -149,6 +153,7 @@ export function movementSystem(world: IWorld, dt: number) {
 
   // ── 1. Unit separation: push overlapping units apart ───────
   for (const eid of allUnits) {
+    if (eid === fpsEid) continue
     if (hasComponent(world, IsBuilding, eid)) continue
     if (hasComponent(world, Dead, eid)) continue
     if (hasComponent(world, Projectile, eid)) continue

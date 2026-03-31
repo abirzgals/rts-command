@@ -32,11 +32,18 @@ const PITCH_MAX = Math.PI / 4
 const MOUSE_SENS = 0.002
 const EYE_HEIGHT = 1.8
 
+// Damage effects
+let shakeIntensity = 0
+let damageFlashAlpha = 0
+let lastHP = -1
+
 // Movement
 const keys = { w: false, a: false, s: false, d: false }
 
-// Crosshair
+// UI elements
 let crosshairEl: HTMLDivElement | null = null
+let fpsHudEl: HTMLDivElement | null = null
+let vignetteEl: HTMLDivElement | null = null
 
 // ── Public API ──────────────────────────────────────────────
 export function isFPSMode(): boolean { return active }
@@ -92,12 +99,48 @@ export function enterFPSMode(eid: number, w: IWorld) {
   }
   crosshairEl.style.display = 'block'
 
+  // FPS HUD (HP bar)
+  if (!fpsHudEl) {
+    fpsHudEl = document.createElement('div')
+    fpsHudEl.id = 'fps-hud'
+    fpsHudEl.style.cssText = `
+      position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
+      z-index:100; pointer-events:none; text-align:center;
+    `
+    fpsHudEl.innerHTML = `
+      <div style="width:200px;height:8px;background:rgba(0,0,0,0.6);border-radius:4px;border:1px solid #444">
+        <div id="fps-hp-fill" style="height:100%;background:#4caf50;border-radius:3px;transition:width 0.2s"></div>
+      </div>
+      <div id="fps-hp-text" style="color:#ccc;font-size:11px;margin-top:2px;font-family:monospace"></div>
+    `
+    document.body.appendChild(fpsHudEl)
+  }
+  fpsHudEl.style.display = 'block'
+
+  // Damage vignette overlay
+  if (!vignetteEl) {
+    vignetteEl = document.createElement('div')
+    vignetteEl.id = 'fps-vignette'
+    vignetteEl.style.cssText = `
+      position:fixed; inset:0; z-index:95; pointer-events:none;
+      background: radial-gradient(ellipse at center, transparent 50%, rgba(180,0,0,0.6) 100%);
+      opacity:0; transition:opacity 0.1s;
+    `
+    document.body.appendChild(vignetteEl)
+  }
+
+  // Init HP tracking
+  if (hasComponent(w, Health, eid)) lastHP = Health.current[eid]
+  shakeIntensity = 0
+  damageFlashAlpha = 0
+
   // Hide RTS UI
   toggleUI(false)
 
-  // Listeners
+  // Listeners — use canvas for mouse to avoid conflicts
+  const cvs = renderer.domElement
+  cvs.addEventListener('mousedown', onMouseDown)
   document.addEventListener('mousemove', onMouseMove)
-  document.addEventListener('mousedown', onMouseDown)
   document.addEventListener('keydown', onKeyDown)
   document.addEventListener('keyup', onKeyUp)
   document.addEventListener('pointerlockchange', onPointerLockChange)
@@ -110,8 +153,10 @@ export function exitFPSMode() {
   // Unlock pointer
   document.exitPointerLock()
 
-  // Hide crosshair
+  // Hide FPS UI
   if (crosshairEl) crosshairEl.style.display = 'none'
+  if (fpsHudEl) fpsHudEl.style.display = 'none'
+  if (vignetteEl) vignetteEl.style.opacity = '0'
 
   // Show RTS UI
   toggleUI(true)
@@ -127,8 +172,9 @@ export function exitFPSMode() {
   }
 
   // Cleanup listeners
+  const cvs = renderer.domElement
+  cvs.removeEventListener('mousedown', onMouseDown)
   document.removeEventListener('mousemove', onMouseMove)
-  document.removeEventListener('mousedown', onMouseDown)
   document.removeEventListener('keydown', onKeyDown)
   document.removeEventListener('keyup', onKeyUp)
   document.removeEventListener('pointerlockchange', onPointerLockChange)
@@ -202,12 +248,42 @@ export function updateFPSMode(dt: number): THREE.Camera | null {
     Rotation.y[controlledEid] = yaw
   }
 
+  // Damage detection — camera shake + vignette
+  if (hasComponent(world, Health, controlledEid)) {
+    const hp = Health.current[controlledEid]
+    if (lastHP >= 0 && hp < lastHP) {
+      // Took damage!
+      const dmgPct = (lastHP - hp) / Health.max[controlledEid]
+      shakeIntensity = Math.min(0.5, shakeIntensity + dmgPct * 2)
+      damageFlashAlpha = Math.min(1, damageFlashAlpha + dmgPct * 3)
+    }
+    lastHP = hp
+
+    // Update FPS HUD
+    const hpPct = Math.max(0, hp / Health.max[controlledEid] * 100)
+    const hpFill = document.getElementById('fps-hp-fill')
+    const hpText = document.getElementById('fps-hp-text')
+    if (hpFill) {
+      hpFill.style.width = `${hpPct}%`
+      hpFill.style.background = hpPct > 50 ? '#4caf50' : hpPct > 25 ? '#ff9800' : '#f44336'
+    }
+    if (hpText) hpText.textContent = `${Math.ceil(hp)} / ${Health.max[controlledEid]}`
+  }
+
+  // Decay shake and flash
+  shakeIntensity *= Math.pow(0.05, dt) // fast decay
+  damageFlashAlpha *= Math.pow(0.02, dt)
+  if (vignetteEl) vignetteEl.style.opacity = String(Math.min(0.8, damageFlashAlpha))
+
   // Position camera at unit's eyes
   const ux = Position.x[controlledEid]
   const uz = Position.z[controlledEid]
   const uy = getTerrainHeight(ux, uz) + EYE_HEIGHT
 
-  fpsCam.position.set(ux, uy, uz)
+  // Apply camera shake
+  const shakeX = (Math.random() - 0.5) * shakeIntensity
+  const shakeY = (Math.random() - 0.5) * shakeIntensity
+  fpsCam.position.set(ux + shakeX, uy + shakeY, uz)
 
   // Look direction from yaw + pitch
   const lookDir = new THREE.Vector3(
@@ -215,7 +291,7 @@ export function updateFPSMode(dt: number): THREE.Camera | null {
     Math.sin(pitch),
     Math.cos(yaw) * Math.cos(pitch),
   )
-  fpsCam.lookAt(ux + lookDir.x, uy + lookDir.y, uz + lookDir.z)
+  fpsCam.lookAt(ux + shakeX + lookDir.x, uy + shakeY + lookDir.y, uz + lookDir.z)
   fpsCam.aspect = window.innerWidth / window.innerHeight
   fpsCam.updateProjectionMatrix()
 
