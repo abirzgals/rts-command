@@ -423,16 +423,20 @@ function createWater() {
 
   waterUniforms = { time: { value: 0 } }
 
+  // Load stylized water cloud texture
+  const wLoader = new THREE.TextureLoader()
+  const waterCloudTex = wLoader.load('/textures/water-cloud.png')
+  waterCloudTex.wrapS = waterCloudTex.wrapT = THREE.RepeatWrapping
+  waterCloudTex.minFilter = THREE.LinearMipmapLinearFilter
+  waterCloudTex.magFilter = THREE.LinearFilter
+
   const m = new THREE.ShaderMaterial({
     uniforms: {
       time: waterUniforms.time,
       deepColor: { value: new THREE.Color(0.08, 0.22, 0.40) },
       foamColor: { value: new THREE.Color(0.85, 0.92, 0.96) },
-      cloudMap:     { value: cloudNoiseTex },
+      waterCloudMap: { value: waterCloudTex },
       cloudTime:    cloudTimeUniform,
-      cloudScale:   { value: 0.008 },
-      cloudSpeed:   { value: new THREE.Vector2(0.006, 0.0035) },
-      cloudDarkness:{ value: 0.2 },
     },
     vertexShader: `
       uniform float time;
@@ -469,9 +473,8 @@ function createWater() {
     fragmentShader: `
       uniform float time;
       uniform vec3 deepColor, foamColor;
-      uniform sampler2D cloudMap;
-      uniform float cloudTime, cloudScale, cloudDarkness;
-      uniform vec2 cloudSpeed;
+      uniform sampler2D waterCloudMap;
+      uniform float cloudTime;
       varying float vShoreDist;
       varying float vIsWater;
       varying float vPoolSize;
@@ -545,30 +548,21 @@ function createWater() {
         float edgeFoam = smoothstep(0.06, 0.0, vShoreDist) * 0.8;
         foam = max(foam, edgeFoam);
 
-        // === Stylized cloud reflections — voronoi cell edges ===
-        // Two voronoi layers at different scales/speeds for evolving pattern
-        float cv1 = voronoi(vWorld * 0.25 + cloudSpeed * cloudTime * 8.0);
-        float cv2 = voronoi(vWorld * 0.18 - cloudSpeed * cloudTime * 5.0 + vec2(3.7, 6.1));
-
-        // Sharp white edges where cells meet (small voronoi distance = edge)
-        float edge1 = smoothstep(0.15, 0.05, cv1);
-        float edge2 = smoothstep(0.18, 0.06, cv2);
-        float brightEdge = max(edge1 * 0.7, edge2 * 0.5);
-
-        // Dark blue depth lines (slightly thicker, inside cells)
-        float darkLine1 = smoothstep(0.25, 0.18, cv1) * (1.0 - edge1);
-        float darkLine2 = smoothstep(0.28, 0.20, cv2) * (1.0 - edge2);
-        float darkLine = max(darkLine1, darkLine2) * 0.25;
-
-        // Cell interior color variation
-        float cellShade = cv1 * 0.5 + cv2 * 0.5;
-        float cellBright = smoothstep(0.3, 0.7, cellShade) * 0.15;
+        // === Stylized cloud reflections from texture ===
+        // Two layers scrolling at different speeds/scales for evolving pattern
+        vec2 wcUV1 = vWorld * 0.012 + vec2(cloudTime * 0.008, cloudTime * 0.005);
+        vec2 wcUV2 = vWorld * 0.009 - vec2(cloudTime * 0.006, cloudTime * 0.003) + vec2(0.5, 0.3);
+        vec3 wc1 = texture2D(waterCloudMap, wcUV1).rgb;
+        vec3 wc2 = texture2D(waterCloudMap, wcUV2).rgb;
+        // Blend two layers — creates evolving morphing pattern
+        vec3 wcBlend = wc1 * 0.55 + wc2 * 0.45;
+        // Extract brightness (white = bright edges, blue = mid, dark blue = depth)
+        float wcBright = dot(wcBlend, vec3(0.3, 0.3, 0.4));
 
         // === Final color ===
         vec3 col = deepColor + caustic * vec3(0.15, 0.22, 0.28);
-        col += vec3(0.35, 0.5, 0.6) * brightEdge;   // white-blue bright edges
-        col -= vec3(0.04, 0.06, 0.08) * darkLine;     // dark blue depth lines
-        col += vec3(0.08, 0.12, 0.15) * cellBright;   // subtle cell brightness
+        // Apply the texture pattern as color variation
+        col += (wcBlend - vec3(0.4, 0.5, 0.7)) * 0.3;
         col = mix(col, foamColor, foam);
 
         // Transparency layers:
