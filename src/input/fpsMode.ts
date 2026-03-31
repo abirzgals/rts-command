@@ -204,7 +204,7 @@ export function updateFPSMode(dt: number): THREE.Camera | null {
 function onMouseMove(e: MouseEvent) {
   if (!active) return
   yaw -= e.movementX * MOUSE_SENS
-  pitch += e.movementY * MOUSE_SENS
+  pitch -= e.movementY * MOUSE_SENS // normal: mouse up = look up
   pitch = Math.max(PITCH_MIN, Math.min(PITCH_MAX, pitch))
 }
 

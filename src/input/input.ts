@@ -1114,6 +1114,8 @@ function forceAttackTarget(world: IWorld, sx: number, sy: number) {
 }
 
 function onKeyDown(e: KeyboardEvent, world: IWorld) {
+  // FPS mode handles its own keys — block all RTS hotkeys
+  if (isFPSMode()) return
   // F1 handled by sharedButtons.ts
 
   if (matchesAction(e, 'cancel')) {
