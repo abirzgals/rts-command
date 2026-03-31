@@ -80,11 +80,18 @@ function createCloudNoiseTexture(size = 256): THREE.Texture {
     return v / t
   }
 
+  function smoothstepJS(e0: number, e1: number, x: number) {
+    const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)))
+    return t * t * (3 - 2 * t)
+  }
+
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       // Tile seamlessly by wrapping coordinates
       const nx = x / size * 4, ny = y / size * 4
-      const v = fbm(nx, ny) * 0.55 + 0.45 // range 0.45–1.0 (never fully dark)
+      // Range 0.0–1.0 with cloud-like contrast (bright centers, dark edges)
+      let v = fbm(nx, ny)
+      v = smoothstepJS(0.3, 0.7, v) // sharpen into cloud blobs
       const byte = Math.round(v * 255)
       const i = (y * size + x) * 4
       d[i] = d[i + 1] = d[i + 2] = byte
@@ -194,9 +201,9 @@ export function createTerrainMesh(): THREE.Mesh {
       mapSize:  { value: MAP_SIZE },
       cloudMap:     { value: cloudNoiseTex },
       cloudTime:    cloudTimeUniform,
-      cloudScale:   { value: 0.008 },
-      cloudSpeed:   { value: new THREE.Vector2(0.012, 0.007) },
-      cloudDarkness:{ value: 0.25 },
+      cloudScale:   { value: 0.006 },
+      cloudSpeed:   { value: new THREE.Vector2(0.02, 0.012) },
+      cloudDarkness:{ value: 0.35 },
     }
   ])
 
@@ -275,9 +282,12 @@ export function createTerrainMesh(): THREE.Mesh {
 
         float shadow = getShadowMask();
 
-        // Cloud shadows — scrolling noise texture
-        vec2 cloudUV = vWorldXZ * cloudScale + cloudSpeed * cloudTime;
-        float cloudVal = texture2D(cloudMap, cloudUV).r;
+        // Cloud shadows — two layers scrolling at different speeds for evolving shapes
+        vec2 cloudUV1 = vWorldXZ * cloudScale + cloudSpeed * cloudTime;
+        vec2 cloudUV2 = vWorldXZ * cloudScale * 1.3 - cloudSpeed * 0.7 * cloudTime + vec2(0.37, 0.61);
+        float c1 = texture2D(cloudMap, cloudUV1).r;
+        float c2 = texture2D(cloudMap, cloudUV2).r;
+        float cloudVal = c1 * 0.6 + c2 * 0.4; // blend two layers
         float cloudShadow = mix(1.0 - cloudDarkness, 1.0, cloudVal);
 
         vec3 col = albedo * (0.35 + 0.65 * ndl * shadow) * hf * cloudShadow;
@@ -396,7 +406,7 @@ function createWater() {
       cloudTime:    cloudTimeUniform,
       cloudScale:   { value: 0.008 },
       cloudSpeed:   { value: new THREE.Vector2(0.012, 0.007) },
-      cloudDarkness:{ value: 0.15 },
+      cloudDarkness:{ value: 0.2 },
     },
     vertexShader: `
       uniform float time;
@@ -509,10 +519,13 @@ function createWater() {
         float edgeFoam = smoothstep(0.06, 0.0, vShoreDist) * 0.8;
         foam = max(foam, edgeFoam);
 
-        // === Cloud shadows on water (subtle) ===
-        vec2 cloudUV = vWorld * cloudScale + cloudSpeed * cloudTime;
-        float cloudVal = texture2D(cloudMap, cloudUV).r;
-        float waterCloudShadow = mix(1.0 - cloudDarkness, 1.0, cloudVal);
+        // === Cloud shadows on water (subtle, evolving) ===
+        vec2 wCloudUV1 = vWorld * cloudScale + cloudSpeed * cloudTime;
+        vec2 wCloudUV2 = vWorld * cloudScale * 1.3 - cloudSpeed * 0.7 * cloudTime + vec2(0.37, 0.61);
+        float wc1 = texture2D(cloudMap, wCloudUV1).r;
+        float wc2 = texture2D(cloudMap, wCloudUV2).r;
+        float wCloudVal = wc1 * 0.6 + wc2 * 0.4;
+        float waterCloudShadow = mix(1.0 - cloudDarkness, 1.0, wCloudVal);
 
         // === Final color ===
         vec3 col = (deepColor + caustic * vec3(0.15, 0.22, 0.28)) * waterCloudShadow;
