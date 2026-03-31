@@ -36,6 +36,7 @@ import { initDebugOverlay, updateDebugOverlay } from './render/debugOverlay'
 import { updateEffects, updateFallingPieces, updateBloodDecals } from './render/effects'
 import { initHPBars, updateHPBars } from './render/hpBars'
 import { initNotifications } from './ui/notifications'
+import { initUnitCamera, updateUnitCamera } from './render/unitCamera'
 import { profilerBeginFrame, profilerEndFrame, profilerBegin, profilerEnd, updateProfilerDisplay } from './debug/profiler'
 import { isDebugEnabled } from './render/debugOverlay'
 import { playMenuMusic, playIngameMusic, stopMusic, preloadSfx, setSoundEnabled } from './audio/audioManager'
@@ -321,6 +322,7 @@ async function init() {
   initHPBars()
   initSharedButtons()
   initNotifications()
+  initUnitCamera()
 
   // 9. Spawn initial entities (bases, resources, obstacles)
   setupMap(world)
@@ -604,6 +606,7 @@ function gameLoop(time: number) {
   prof('HPBars', () => updateHPBars(world))
   prof('HUD', () => updateHUD(world, dt, time))
   prof('Minimap', () => updateMinimap(world, time))
+  prof('UnitCam', () => updateUnitCamera(world))
   profilerEnd()
 
   profilerEndFrame()

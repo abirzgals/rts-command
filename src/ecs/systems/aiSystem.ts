@@ -6,7 +6,7 @@ import {
   PathFollower, StuckState, Velocity, MoveSpeed,
 } from '../components'
 import {
-  UT_WORKER, UT_MARINE, UT_TANK, UT_JEEP, UT_TROOPER,
+  UT_WORKER, UT_MARINE, UT_TANK, UT_JEEP, UT_TROOPER, UT_ROCKET,
   BT_COMMAND_CENTER, BT_BARRACKS, BT_SUPPLY_DEPOT, BT_FACTORY,
   BUILDING_DEFS, UNIT_DEFS, MAP_SIZE,
 } from '../../game/config'
@@ -880,17 +880,43 @@ function tickEconomy(
   // ── Army production ────────────────────────────────────────
   // During ATTACKING state, don't produce (all-in). Otherwise, build army.
   if (aiState !== AIState.ATTACKING) {
-    if (census.barracks !== null && census.marineCount < 15 && res.supplyCurrent < res.supplyMax) {
-      const def = UNIT_DEFS[UT_MARINE]
-      if (gameState.canAfford(getAIFaction(), def.cost)) {
-        queueProduction(census.barracks, UT_MARINE)
+    // Barracks: marines and troopers
+    if (census.barracks !== null && res.supplyCurrent < res.supplyMax) {
+      if (census.marineCount < 10) {
+        const def = UNIT_DEFS[UT_MARINE]
+        if (gameState.canAfford(getAIFaction(), def.cost)) {
+          queueProduction(census.barracks, UT_MARINE)
+        }
+      } else if (census.trooperCount < 4) {
+        const def = UNIT_DEFS[UT_TROOPER]
+        if (gameState.canAfford(getAIFaction(), def.cost)) {
+          queueProduction(census.barracks, UT_TROOPER)
+        }
       }
     }
 
-    if (census.factory !== null && census.tankCount < 5 && res.supplyCurrent < res.supplyMax) {
-      const def = UNIT_DEFS[UT_TANK]
-      if (gameState.canAfford(getAIFaction(), def.cost)) {
-        queueProduction(census.factory, UT_TANK)
+    // Factory: balanced ratio — 2 jeeps : 1 tank : 1 rocket
+    if (census.factory !== null && res.supplyCurrent < res.supplyMax) {
+      // Pick what's most needed for balance
+      const needJeep = census.jeepCount < census.tankCount * 2 + 2
+      const needRocket = census.rocketCount < census.tankCount + 1
+      const needTank = census.tankCount < 4
+
+      if (needJeep) {
+        const def = UNIT_DEFS[UT_JEEP]
+        if (gameState.canAfford(getAIFaction(), def.cost)) {
+          queueProduction(census.factory, UT_JEEP)
+        }
+      } else if (needTank) {
+        const def = UNIT_DEFS[UT_TANK]
+        if (gameState.canAfford(getAIFaction(), def.cost)) {
+          queueProduction(census.factory, UT_TANK)
+        }
+      } else if (needRocket) {
+        const def = UNIT_DEFS[UT_ROCKET]
+        if (gameState.canAfford(getAIFaction(), def.cost)) {
+          queueProduction(census.factory, UT_ROCKET)
+        }
       }
     }
   }
@@ -1010,6 +1036,7 @@ interface Census {
   marineCount: number
   tankCount: number
   jeepCount: number
+  rocketCount: number
   trooperCount: number
   combatUnits: number[]  // entity IDs of all non-worker combat units
   workers: number[]      // entity IDs of all workers
@@ -1037,6 +1064,7 @@ function takeCensus(world: IWorld): Census {
   let marineCount = 0
   let tankCount = 0
   let jeepCount = 0
+  let rocketCount = 0
   let trooperCount = 0
   const combatUnits: number[] = []
   const workers: number[] = []
@@ -1054,6 +1082,7 @@ function takeCensus(world: IWorld): Census {
       case UT_MARINE: marineCount++; combatUnits.push(eid); armySupply += 1; break
       case UT_TANK:   tankCount++;   combatUnits.push(eid); armySupply += 3; break
       case UT_JEEP:   jeepCount++;   combatUnits.push(eid); armySupply += 2; break
+      case UT_ROCKET: rocketCount++; combatUnits.push(eid); armySupply += 4; break
       case UT_TROOPER: trooperCount++; combatUnits.push(eid); armySupply += 2; break
       default:                        combatUnits.push(eid); armySupply += 1; break
     }
@@ -1061,7 +1090,7 @@ function takeCensus(world: IWorld): Census {
 
   return {
     commandCenter, barracks, factory,
-    workerCount, marineCount, tankCount, jeepCount, trooperCount,
+    workerCount, marineCount, tankCount, jeepCount, rocketCount, trooperCount,
     combatUnits, workers, armySupply,
   }
 }
