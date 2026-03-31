@@ -17,6 +17,8 @@ import { isWorldWalkable } from '../pathfinding/navGrid'
 import { spatialHash } from '../globals'
 import { getPlayerFaction } from '../game/factions'
 import { playSfx } from '../audio/audioManager'
+import { applyDamage } from '../ecs/systems/combatSystem'
+import { spawnMuzzleFlash } from '../render/effects'
 
 // ── State ───────────────────────────────────────────────────
 let active = false
@@ -308,30 +310,45 @@ function onMouseMove(e: MouseEvent) {
   pitch = Math.max(PITCH_MIN, Math.min(PITCH_MAX, pitch))
 }
 
-function onMouseDown(e: MouseEvent) {
-  if (!active || !world || e.button !== 0) return
+function fpsShoot() {
+  if (!active || !world) return
 
-  // Fire weapon
   const eid = controlledEid
   if (!hasComponent(world, AttackC, eid)) return
   if (AttackC.timer[eid] > 0) return
 
-  // Find target in look direction via raycast
+  const damage = AttackC.damage[eid]
+  const range = AttackC.range[eid]
+  const utId = hasComponent(world, UnitTypeC, eid) ? UnitTypeC.id[eid] : 1
+  const UT_KEY: Record<number, string> = { 0:'worker',1:'marine',2:'tank',3:'jeep',4:'rocket',5:'trooper' }
+  const unitKey = UT_KEY[utId] || 'marine'
+
+  // Fire point at eye level
+  const ux = Position.x[eid], uz = Position.z[eid]
+  const uy = getTerrainHeight(ux, uz) + EYE_HEIGHT
+
+  // Look direction
   const lookDir = new THREE.Vector3(
     Math.sin(yaw) * Math.cos(pitch),
     Math.sin(pitch),
     Math.cos(yaw) * Math.cos(pitch),
   )
-  const ux = Position.x[eid], uz = Position.z[eid]
-  const uy = getTerrainHeight(ux, uz) + EYE_HEIGHT
-  const range = AttackC.range[eid]
 
-  // Find closest enemy in look direction cone
+  // Set cooldown + play sound + muzzle flash
+  AttackC.timer[eid] = AttackC.cooldown[eid]
+  playSfx(`${unitKey}-shot`)
+  spawnMuzzleFlash(
+    ux + lookDir.x * 0.8,
+    uy + lookDir.y * 0.8 - 0.3,
+    uz + lookDir.z * 0.8,
+  )
+
+  // Hitscan: find closest enemy in look direction
   const nearby: number[] = []
   spatialHash.query(ux, uz, range, nearby)
 
   let bestTarget = -1
-  let bestDot = 0.7 // must be roughly in front (cos ~45°)
+  let bestDot = 0.85 // tighter cone for FPS aiming
 
   for (const other of nearby) {
     if (other === eid) continue
@@ -341,12 +358,11 @@ function onMouseDown(e: MouseEvent) {
     if (!hasComponent(world, Health, other)) continue
 
     const dx = Position.x[other] - ux
-    const dy = (Position.y[other] || getTerrainHeight(Position.x[other], Position.z[other])) - uy
+    const dy = (getTerrainHeight(Position.x[other], Position.z[other]) + 1.0) - uy
     const dz = Position.z[other] - uz
     const dist = Math.sqrt(dx * dx + dy * dy + dz * dz)
     if (dist > range || dist < 0.5) continue
 
-    // Dot product with look direction
     const dot = (dx / dist) * lookDir.x + (dy / dist) * lookDir.y + (dz / dist) * lookDir.z
     if (dot > bestDot) {
       bestDot = dot
@@ -355,16 +371,13 @@ function onMouseDown(e: MouseEvent) {
   }
 
   if (bestTarget >= 0) {
-    // Attack the target
-    addComponent(world, AttackTarget, eid)
-    AttackTarget.eid[eid] = bestTarget
-  } else {
-    // Fire at ground point — trigger attack animation/sound
-    const utId = hasComponent(world, UnitTypeC, eid) ? UnitTypeC.id[eid] : 1
-    const UT_KEY: Record<number, string> = { 0:'worker',1:'marine',2:'tank',3:'jeep',4:'rocket',5:'trooper' }
-    playSfx(`${UT_KEY[utId] || 'marine'}-shot`)
-    AttackC.timer[eid] = AttackC.cooldown[eid]
+    applyDamage(world, bestTarget, damage, ux, uz)
   }
+}
+
+function onMouseDown(e: MouseEvent) {
+  if (!active || e.button !== 0) return
+  fpsShoot()
 }
 
 function onKeyDown(e: KeyboardEvent) {
@@ -464,7 +477,7 @@ function createTouchControls() {
   fireBtn.addEventListener('touchstart', (e) => {
     e.preventDefault()
     e.stopPropagation()
-    onMouseDown({ button: 0 } as MouseEvent)
+    fpsShoot()
     fireBtn.style.background = 'rgba(255,100,50,0.8)'
   })
   fireBtn.addEventListener('touchend', () => {
