@@ -19,11 +19,14 @@ const INGAME_MUSIC = [
 
 // ── SFX pools ───────────────────────────────────────────────
 const SFX_FILES: Record<string, string[]> = {
-  rifle:    ['/sounds/sfx/rifle-1.mp3', '/sounds/sfx/rifle-2.mp3'],
-  tank:     ['/sounds/sfx/tank-shot-1.mp3', '/sounds/sfx/tank-shot-2.mp3'],
-  artillery:['/sounds/sfx/artillery.mp3'],
-  rocket:   ['/sounds/sfx/rocket-launch.mp3'],
-  explosion:['/sounds/sfx/explosion.mp3'],
+  // Per-unit weapon sounds
+  'marine-shot':  ['/sounds/sfx/marine-shot-1.mp3', '/sounds/sfx/marine-shot-2.mp3'],
+  'trooper-shot': ['/sounds/sfx/trooper-shot-1.mp3'],
+  'jeep-shot':    ['/sounds/sfx/jeep-shot-1.mp3'],
+  'tank-shot':    ['/sounds/sfx/tank-shot-1.mp3'],
+  'artillery':    ['/sounds/sfx/artillery.mp3'],
+  'rocket-launch':['/sounds/sfx/rocket-launch.mp3'],
+  'explosion':    ['/sounds/sfx/explosion.mp3'],
   // Unit voice lines
   'voice-select':  ['/sounds/sfx/voice-select-1.mp3', '/sounds/sfx/voice-select-2.mp3'],
   'voice-move':    ['/sounds/sfx/voice-move-1.mp3', '/sounds/sfx/voice-move-2.mp3', '/sounds/sfx/voice-move-3.mp3'],
