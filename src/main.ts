@@ -230,6 +230,11 @@ async function showMapSelector(): Promise<MapSelection> {
       if (lastMap) {
         localStorage.setItem('rts-last-map', lastMap)
         resolve({ map: { name: lastMap }, fog })
+      } else if (maps.length > 0) {
+        // Pick a random map from the list
+        const pick = maps[Math.floor(Math.random() * maps.length)]
+        localStorage.setItem('rts-last-map', pick.name)
+        resolve({ map: { name: pick.name }, fog })
       } else {
         resolve({ map: 'random', fog })
       }
