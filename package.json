@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "gen-sfx-manifest": "node -e \"const fs=require('fs'),p='public/sounds/sfx';fs.writeFileSync('public/sounds/sfx-manifest.json',JSON.stringify(fs.readdirSync(p).filter(f=>f.endsWith('.mp3')).map(f=>f.replace('.mp3','')).sort()))\"",
+    "build": "npm run gen-sfx-manifest && vite build",
     "serve": "node server.mjs",
     "preview": "vite preview"
   },
