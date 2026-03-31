@@ -213,7 +213,7 @@ export function createTerrainMesh(): THREE.Mesh {
       cloudMap:     { value: cloudNoiseTex },
       cloudTime:    cloudTimeUniform,
       cloudScale:   { value: 0.005 },
-      cloudSpeed:   { value: new THREE.Vector2(0.03, 0.02) },
+      cloudSpeed:   { value: new THREE.Vector2(0.015, 0.01) },
       cloudDarkness:{ value: 0.5 },
     }
   ])
@@ -431,7 +431,7 @@ function createWater() {
       cloudMap:     { value: cloudNoiseTex },
       cloudTime:    cloudTimeUniform,
       cloudScale:   { value: 0.008 },
-      cloudSpeed:   { value: new THREE.Vector2(0.012, 0.007) },
+      cloudSpeed:   { value: new THREE.Vector2(0.006, 0.0035) },
       cloudDarkness:{ value: 0.2 },
     },
     vertexShader: `
