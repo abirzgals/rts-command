@@ -216,6 +216,7 @@ function worldToFog(w: number): number {
 
 /** Check if a world position is currently visible to a faction (default: view faction) */
 export function isVisibleAt(wx: number, wz: number, faction?: number): boolean {
+  if (fogMode === 'disabled') return true
   const fx = worldToFog(wx)
   const fz = worldToFog(wz)
   if (fx < 0 || fx >= FOG_RES || fz < 0 || fz >= FOG_RES) return false

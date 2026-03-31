@@ -36,6 +36,8 @@ export function combatSystem(world: IWorld, dt: number) {
     // Under pressure: skip half, but never skip units with attack targets or attack-move
     if (perfBudget.combatSkip && (i + combatFrame) % 2 === 0
       && !hasComponent(world, AttackTarget, eid) && !hasComponent(world, AttackMove, eid)) continue
+    // Dead units don't fight
+    if (hasComponent(world, Dead, eid)) continue
     // Tick cooldown
     if (AttackC.timer[eid] > 0) {
       AttackC.timer[eid] -= dt
