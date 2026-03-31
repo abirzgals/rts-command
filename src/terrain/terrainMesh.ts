@@ -201,9 +201,9 @@ export function createTerrainMesh(): THREE.Mesh {
       mapSize:  { value: MAP_SIZE },
       cloudMap:     { value: cloudNoiseTex },
       cloudTime:    cloudTimeUniform,
-      cloudScale:   { value: 0.006 },
-      cloudSpeed:   { value: new THREE.Vector2(0.02, 0.012) },
-      cloudDarkness:{ value: 0.35 },
+      cloudScale:   { value: 0.005 },
+      cloudSpeed:   { value: new THREE.Vector2(0.03, 0.02) },
+      cloudDarkness:{ value: 0.5 },
     }
   ])
 
@@ -296,6 +296,9 @@ export function createTerrainMesh(): THREE.Mesh {
       }
     `,
   })
+
+  // Fix: UniformsUtils.merge clones objects, so re-link the shared time uniform
+  mat.uniforms.cloudTime = cloudTimeUniform
 
   terrainMesh = new THREE.Mesh(geo, mat)
   terrainMesh.castShadow = true
