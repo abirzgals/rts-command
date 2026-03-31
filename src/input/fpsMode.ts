@@ -408,8 +408,7 @@ function fpsShoot() {
 
   // Spawn directional projectile from hand toward crosshair aim point
   const myFaction = hasComponent(world, Faction, eid) ? Faction.id[eid] : 0
-  const projEid = spawnProjectile(world, fpX, fpZ, 0, damage, projSpeed, projCfg, myFaction)
-  Position.y[projEid] = fpY
+  const projEid = spawnProjectile(world, fpX, fpZ, 0, damage, projSpeed, projCfg, myFaction, fpY)
   Projectile.dirX[projEid] = dirX
   Projectile.dirY[projEid] = dirY
   Projectile.dirZ[projEid] = dirZ

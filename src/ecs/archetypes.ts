@@ -325,13 +325,15 @@ export function spawnProjectile(
   speed = 25,
   cfg?: { color?: string; size?: number; trailFire?: number; trailSmoke?: number },
   ownerFaction = 0xFF,
+  fromY?: number,
 ): number {
   const eid = addEntity(world)
 
-  const fromY = Position.y[targetEid] !== undefined ? 1.0 : 1.0
+  // Use provided Y or default to terrain + 1.5
+  const spawnY = fromY ?? (getTerrainHeight(fromX, fromZ) + 1.5)
   addComponent(world, Position, eid)
   Position.x[eid] = fromX
-  Position.y[eid] = 1.0
+  Position.y[eid] = spawnY
   Position.z[eid] = fromZ
 
   // Compute direction toward target's CURRENT position (no homing — can miss)
@@ -340,7 +342,7 @@ export function spawnProjectile(
     const tx = Position.x[targetEid]
     const ty = Position.y[targetEid] + 1.0 // aim at center mass
     const tz = Position.z[targetEid]
-    const dx = tx - fromX, dy = ty - 1.0, dz = tz - fromZ
+    const dx = tx - fromX, dy = ty - spawnY, dz = tz - fromZ
     const dist = Math.sqrt(dx * dx + dy * dy + dz * dz)
     if (dist > 0.01) { dirX = dx / dist; dirY = dy / dist; dirZ = dz / dist }
     maxRange = Math.max(dist + 5, 20) // overshoot a bit past target
@@ -365,7 +367,7 @@ export function spawnProjectile(
   const geo = new THREE.SphereGeometry(sz, 6, 6)
   const mat = new THREE.MeshBasicMaterial({ color })
   const mesh = new THREE.Mesh(geo, mat)
-  mesh.position.set(fromX, 1.0, fromZ)
+  mesh.position.set(fromX, spawnY, fromZ)
   getScene().add(mesh)
   projectileMeshes.set(eid, mesh)
 

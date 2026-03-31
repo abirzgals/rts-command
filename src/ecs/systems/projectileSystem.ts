@@ -61,9 +61,9 @@ export function projectileSystem(world: IWorld, dt: number) {
       continue
     }
 
-    // Hit ground
+    // Hit ground (only after traveling a minimum distance to avoid instant ground hits)
     const groundY = getTerrainHeight(px, pz)
-    if (py <= groundY + 0.1) {
+    if (Projectile.traveled[eid] > 1.0 && py <= groundY + 0.1) {
       const fx = projectileEffects.get(eid)
       spawnImpact(px, groundY, pz, fx?.impact)
       projectileEffects.delete(eid)
