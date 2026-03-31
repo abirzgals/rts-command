@@ -514,7 +514,7 @@ function createTouchControls() {
   // Fire button
   const fireBtn = document.createElement('div')
   fireBtn.style.cssText = `
-    position:absolute; bottom:40px; right:30px; width:70px; height:70px;
+    position:absolute; bottom:180px; right:30px; width:70px; height:70px;
     border-radius:50%; background:rgba(220,60,30,0.6); border:2px solid rgba(255,100,80,0.5);
     display:flex; align-items:center; justify-content:center;
     font-size:28px; color:#fff; user-select:none;
@@ -607,7 +607,7 @@ function fpsTouchMove(e: TouchEvent) {
       const dx = t.clientX - lookLastX
       const dy = t.clientY - lookLastY
       yaw -= dx * 0.004
-      pitch += dy * 0.004
+      pitch -= dy * 0.004
       pitch = Math.max(PITCH_MIN, Math.min(PITCH_MAX, pitch))
       lookLastX = t.clientX
       lookLastY = t.clientY
