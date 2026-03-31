@@ -332,26 +332,31 @@ function fpsShoot() {
   const utId = hasComponent(world, UnitTypeC, eid) ? UnitTypeC.id[eid] : 1
   const unitKey = UT_KEY[utId] || 'marine'
 
-  // Look direction
-  const dirX = Math.sin(yaw) * Math.cos(pitch)
-  const dirY = Math.sin(pitch)
-  const dirZ = Math.cos(yaw) * Math.cos(pitch)
+  // Eye position (camera)
+  const ux = Position.x[eid], uz = Position.z[eid]
+  const uy = getTerrainHeight(ux, uz) + EYE_HEIGHT
 
-  // Get fire point from editor config (bone-attached)
+  // Look direction from camera center (crosshair)
+  const lookX = Math.sin(yaw) * Math.cos(pitch)
+  const lookY = Math.sin(pitch)
+  const lookZ = Math.cos(yaw) * Math.cos(pitch)
+
+  // Aim point: where the crosshair hits at max range
+  const aimX = ux + lookX * range
+  const aimY = uy + lookY * range
+  const aimZ = uz + lookZ * range
+
+  // Get fire point from editor config (bone-attached hand position)
   const key = UT_KEY[utId]
   const cfg = key ? editorConfig?.[key] : null
   const projCfg = cfg?.projectile ?? null
   const muzzleCfg = cfg?.muzzle ?? null
   const projSpeed = projCfg?.speed ?? 25
 
-  // Fire point: use bone position if available, else offset from eye
-  const ux = Position.x[eid], uz = Position.z[eid]
-  const uy = getTerrainHeight(ux, uz) + EYE_HEIGHT
-  let fpX = ux + dirX * 0.5
-  let fpY = uy + dirY * 0.5 - 0.3
-  let fpZ = uz + dirZ * 0.5
+  let fpX = ux + lookX * 0.5
+  let fpY = uy + lookY * 0.5 - 0.3
+  let fpZ = uz + lookZ * 0.5
 
-  // Try to get bone-attached fire point
   if (hasComponent(world, MeshRef, eid)) {
     const poolId = MeshRef.poolId[eid]
     const animMgr = getAnimManager(poolId)
@@ -362,6 +367,15 @@ function fpsShoot() {
     }
   }
 
+  // Calculate direction from hand → aim point (converges at crosshair)
+  const toAimX = aimX - fpX
+  const toAimY = aimY - fpY
+  const toAimZ = aimZ - fpZ
+  const toAimLen = Math.sqrt(toAimX * toAimX + toAimY * toAimY + toAimZ * toAimZ) || 1
+  const dirX = toAimX / toAimLen
+  const dirY = toAimY / toAimLen
+  const dirZ = toAimZ / toAimLen
+
   // Set cooldown
   AttackC.timer[eid] = AttackC.cooldown[eid]
 
@@ -369,17 +383,16 @@ function fpsShoot() {
   playSfx(`${unitKey}-shot`)
   spawnMuzzleFlash(fpX, fpY, fpZ, muzzleCfg)
 
-  // Spawn directional projectile
+  // Spawn directional projectile from hand toward crosshair aim point
   const myFaction = hasComponent(world, Faction, eid) ? Faction.id[eid] : 0
   const projEid = spawnProjectile(world, fpX, fpZ, 0, damage, projSpeed, projCfg, myFaction)
-  // Override to directional mode
   Position.y[projEid] = fpY
   Projectile.dirX[projEid] = dirX
   Projectile.dirY[projEid] = dirY
   Projectile.dirZ[projEid] = dirZ
   Projectile.maxRange[projEid] = range
   Projectile.traveled[projEid] = 0
-  Projectile.targetEid[projEid] = 0xFFFFFFFF // no homing target
+  Projectile.targetEid[projEid] = 0xFFFFFFFF
 }
 
 function onMouseDown(e: MouseEvent) {
