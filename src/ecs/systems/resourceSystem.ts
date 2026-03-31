@@ -6,6 +6,7 @@ import {
   CollisionRadius, Selectable, Health, UnitTypeC,
 } from '../components'
 import { gameState } from '../../game/state'
+import { gameStats } from '../../game/victory'
 import { BUILDING_DEFS } from '../../game/config'
 import { hasQueuedCommands } from '../commandQueue'
 import { spatialHash } from '../../globals'
@@ -91,6 +92,28 @@ function releaseNode(nodeEid: number, workerEid: number) {
   }
 }
 
+/** Validate all claims — release stale ones where worker is dead, gone, or not gathering this node */
+function validateClaims(world: IWorld) {
+  for (const [nodeEid, workerEid] of nodeOccupant) {
+    // Worker no longer exists or is dead
+    if (!hasComponent(world, WorkerC, workerEid) || hasComponent(world, Dead, workerEid)) {
+      nodeOccupant.delete(nodeEid)
+      continue
+    }
+    // Worker is not targeting this node (switched to something else)
+    const state = WorkerC.state[workerEid]
+    const target = WorkerC.targetNode[workerEid]
+    if (target !== nodeEid) {
+      nodeOccupant.delete(nodeEid)
+      continue
+    }
+    // Worker is not in gathering state (1=moving, 2=gathering are valid)
+    if (state !== 1 && state !== 2) {
+      nodeOccupant.delete(nodeEid)
+    }
+  }
+}
+
 /** Find nearest free (unoccupied) resource node within radius */
 function findFreeNode(world: IWorld, wx: number, wz: number, radius: number, resType?: number): number {
   const nearby: number[] = []
@@ -117,7 +140,16 @@ function findFreeNode(world: IWorld, wx: number, wz: number, radius: number, res
   return bestNode
 }
 
+let validateTimer = 0
+
 export function resourceSystem(world: IWorld, dt: number) {
+  // Validate claims periodically to release stale ones
+  validateTimer += dt
+  if (validateTimer > 2.0) {
+    validateTimer = 0
+    validateClaims(world)
+  }
+
   const workers = workerQuery(world)
 
   for (const eid of workers) {
@@ -209,7 +241,8 @@ function moveToResource(world: IWorld, eid: number) {
         MoveTarget.x[eid] = Position.x[freeNode]
         MoveTarget.z[eid] = Position.z[freeNode]
       } else {
-        // No free nodes — wait nearby (idle but keep state 1, will retry)
+        // No free nodes — go idle, will re-search next tick
+        WorkerC.state[eid] = 0
         if (hasComponent(world, MoveTarget, eid)) removeComponent(world, MoveTarget, eid)
       }
       return
@@ -278,7 +311,9 @@ function returnCargo(world: IWorld, eid: number) {
   if (dist <= DROPOFF_RANGE) {
     // Deposit resources
     const faction = Faction.id[eid]
-    gameState.addResources(faction, WorkerC.carryType[eid], WorkerC.carryAmount[eid])
+    const carryAmt = WorkerC.carryAmount[eid]
+    gameState.addResources(faction, WorkerC.carryType[eid], carryAmt)
+    gameStats[faction].resourcesGathered += carryAmt
     WorkerC.carryAmount[eid] = 0
 
     // If there are queued commands, go idle so the queue system picks them up

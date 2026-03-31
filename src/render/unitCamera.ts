@@ -53,8 +53,17 @@ export function initUnitCamera() {
 
 const _pixelBuf = new Uint8Array(CAM_WIDTH * CAM_HEIGHT * 4)
 
+import { perfBudget } from '../globals'
+
+let ucThrottle = 0
+
 export function updateUnitCamera(world: IWorld) {
   if (!unitCam || !renderTarget || !canvas || !ctx2d || !container) return
+
+  // Throttle: reduce update rate when FPS is low
+  ucThrottle += 1
+  const skipFrames = perfBudget.maxPaths < 4 ? 30 : perfBudget.maxPaths < 2 ? 60 : 0
+  if (skipFrames > 0 && ucThrottle % skipFrames !== 0) return
 
   // In FPS mode: show RTS overhead view in the mini viewport
   if (isFPSMode()) {

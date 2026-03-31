@@ -38,6 +38,7 @@ import { initHPBars, updateHPBars } from './render/hpBars'
 import { initNotifications } from './ui/notifications'
 import { initUnitCamera, updateUnitCamera } from './render/unitCamera'
 import { isFPSMode, updateFPSMode, getFPSEntity } from './input/fpsMode'
+import { checkVictory, isGameOver } from './game/victory'
 import { profilerBeginFrame, profilerEndFrame, profilerBegin, profilerEnd, updateProfilerDisplay } from './debug/profiler'
 import { isDebugEnabled } from './render/debugOverlay'
 import { playMenuMusic, playIngameMusic, stopMusic, preloadSfx, setSoundEnabled } from './audio/audioManager'
@@ -572,6 +573,10 @@ function gameLoop(time: number) {
     }
     prof('Camera', () => rtsCamera.update(dt))
   }
+
+  // Victory check
+  checkVictory(world, dt)
+  if (isGameOver()) { profilerEndFrame(); return }
 
   // ECS systems
   profilerBegin('ECS')

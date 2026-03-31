@@ -20,6 +20,8 @@ import { removePath } from '../../pathfinding/pathStore'
 import { spawnTankDeathExplosion, spawnFallingPieces, spawnBloodDeath } from '../../render/effects'
 import { scene } from '../../render/engine'
 import { playSfx } from '../../audio/audioManager'
+import { gameStats } from '../../game/victory'
+import { FACTION_PLAYER, FACTION_ENEMY } from '../../game/config'
 
 const deadQuery = defineQuery([Dead])
 const DEATH_ANIM_DURATION = 2.0 // seconds to play death animation
@@ -43,6 +45,19 @@ export function deathSystem(world: IWorld, dt: number) {
         && !hasComponent(world, IsBuilding, eid) && hasComponent(world, UnitTypeC, eid)) {
         const UT_KEY: Record<number, string> = { 0:'worker', 1:'marine', 2:'tank', 3:'jeep', 4:'rocket', 5:'trooper' }
         playSfx(`${UT_KEY[UnitTypeC.id[eid]] || 'marine'}-death`)
+      }
+
+      // Track kill stats
+      if (hasComponent(world, Faction, eid)) {
+        const victimFaction = Faction.id[eid]
+        const killerFaction = victimFaction === FACTION_PLAYER ? FACTION_ENEMY : FACTION_PLAYER
+        const isBuilding = hasComponent(world, IsBuilding, eid)
+        if (isBuilding) {
+          gameStats[killerFaction].buildingsDestroyed++
+        } else {
+          gameStats[killerFaction].unitsKilled++
+          gameStats[victimFaction].unitsLost++
+        }
       }
 
       // Start death animation (animated units)
