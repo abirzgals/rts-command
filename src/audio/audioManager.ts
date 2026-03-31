@@ -24,6 +24,12 @@ const SFX_FILES: Record<string, string[]> = {
   artillery:['/sounds/sfx/artillery.mp3'],
   rocket:   ['/sounds/sfx/rocket-launch.mp3'],
   explosion:['/sounds/sfx/explosion.mp3'],
+  // Unit voice lines
+  'voice-select':  ['/sounds/sfx/voice-select-1.mp3', '/sounds/sfx/voice-select-2.mp3'],
+  'voice-move':    ['/sounds/sfx/voice-move-1.mp3', '/sounds/sfx/voice-move-2.mp3', '/sounds/sfx/voice-move-3.mp3'],
+  'voice-attack':  ['/sounds/sfx/voice-attack-1.mp3', '/sounds/sfx/voice-attack-2.mp3'],
+  'voice-confirm': ['/sounds/sfx/voice-confirm-1.mp3', '/sounds/sfx/voice-confirm-2.mp3'],
+  'voice-death':   ['/sounds/sfx/voice-death-1.mp3', '/sounds/sfx/voice-death-2.mp3', '/sounds/sfx/voice-death-3.mp3'],
 }
 
 // ── State ───────────────────────────────────────────────────
@@ -144,9 +150,10 @@ export async function stopMusic() {
 
 // ── SFX ─────────────────────────────────────────────────────
 
-// Throttle: max N sounds of same type per 100ms
+// Throttle: prevent same sound type from spamming
 const sfxLastPlayed = new Map<string, number>()
 const SFX_THROTTLE_MS = 80
+const VOICE_THROTTLE_MS = 1500 // voices need longer gap
 
 export function playSfx(type: string, x?: number, z?: number) {
   if (!soundEnabled) return
@@ -156,11 +163,15 @@ export function playSfx(type: string, x?: number, z?: number) {
     if (!ctx) return
   }
 
-  // Throttle
+  // Throttle — voices use longer cooldown
   const now = performance.now()
-  const last = sfxLastPlayed.get(type) ?? 0
-  if (now - last < SFX_THROTTLE_MS) return
-  sfxLastPlayed.set(type, now)
+  const isVoice = type.startsWith('voice-')
+  const throttle = isVoice ? VOICE_THROTTLE_MS : SFX_THROTTLE_MS
+  // All voice types share one throttle so they don't overlap
+  const throttleKey = isVoice ? 'voice' : type
+  const last = sfxLastPlayed.get(throttleKey) ?? 0
+  if (now - last < throttle) return
+  sfxLastPlayed.set(throttleKey, now)
 
   const files = SFX_FILES[type]
   if (!files || files.length === 0) return

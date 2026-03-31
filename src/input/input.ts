@@ -25,6 +25,7 @@ import { removePath } from '../pathfinding/pathStore'
 import { pushCommand, clearQueue, getQueue, type Command } from '../ecs/commandQueue'
 import { matchesAction, getMouseMode, loadBindings, getBindingLabel } from './keybindings'
 import { notifyNotEnoughMinerals, notifyNotEnoughGas, notifyNotEnoughSupply } from '../ui/notifications'
+import { playSfx } from '../audio/audioManager'
 
 const _vec3 = new THREE.Vector3()
 
@@ -516,6 +517,7 @@ function handleClick(world: IWorld, sx: number, sy: number) {
     if (closestEid >= 0) {
       if (!shiftHeld) clearSelection(world)
       addComponent(world, Selected, closestEid)
+      if (clickedFriendly && !hasComponent(world, IsBuilding, closestEid)) playSfx('voice-select')
     }
     return
   }
@@ -536,6 +538,7 @@ function handleClick(world: IWorld, sx: number, sy: number) {
     } else {
       clearSelection(world)
       addComponent(world, Selected, closestEid)
+      if (!hasComponent(world, IsBuilding, closestEid)) playSfx('voice-select')
     }
     return
   }
@@ -784,6 +787,11 @@ function issueCommand(
   else if (clickedResource) cmdType = 'gather'
   else if (clickedBuildSite) cmdType = 'build'
   else if (clickedDamagedBuilding) cmdType = 'repair'
+
+  // Voice line
+  if (cmdType === 'attack') playSfx('voice-attack')
+  else if (cmdType === 'move') playSfx('voice-move')
+  else playSfx('voice-confirm')
 
   // Show visual feedback
   if (closestEid >= 0 && cmdType !== 'move') {

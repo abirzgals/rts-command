@@ -38,6 +38,12 @@ export function deathSystem(world: IWorld, dt: number) {
       if (hasComponent(world, PathFollower, eid)) removePath(PathFollower.pathId[eid])
       if (hasComponent(world, Velocity, eid)) { Velocity.x[eid] = 0; Velocity.z[eid] = 0 }
 
+      // Death voice for player infantry
+      if (hasComponent(world, Faction, eid) && Faction.id[eid] === getPlayerFaction()
+        && !hasComponent(world, IsBuilding, eid)) {
+        playSfx('voice-death')
+      }
+
       // Start death animation (animated units)
       const poolId = hasComponent(world, MeshRef, eid) ? MeshRef.poolId[eid] : -1
       const animMgr = getAnimManager(poolId)
