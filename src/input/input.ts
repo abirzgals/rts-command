@@ -845,46 +845,63 @@ function issueCommand(
   let assignments: Map<number, number> | null = null
 
   if (cmdType === 'move' && count > 0) {
-    let maxR = 0.5
-    for (const eid of movableUnits) {
-      if (hasComponent(world, CollisionRadius, eid)) maxR = Math.max(maxR, CollisionRadius.value[eid])
-    }
-    const cols = Math.ceil(Math.sqrt(count))
-    const rows = Math.ceil(count / cols)
-    const spacing = maxR * 2.8
-    const srcX = Position.x[movableUnits[0]]
-    const srcZ = Position.z[movableUnits[0]]
+    // Sort units: largest first so they get center slots
+    const sorted = [...movableUnits].sort((a, b) => {
+      const ra = hasComponent(world, CollisionRadius, a) ? CollisionRadius.value[a] : 0.4
+      const rb = hasComponent(world, CollisionRadius, b) ? CollisionRadius.value[b] : 0.4
+      return rb - ra
+    })
+    const srcX = Position.x[sorted[0]]
+    const srcZ = Position.z[sorted[0]]
 
+    // Place units one by one with per-unit spacing
     slots = []
-    for (let ring = 0; ring < 8 && slots.length < count; ring++) {
-      const rStart = -Math.floor(rows / 2) - ring
-      const rEnd = Math.ceil(rows / 2) + ring
-      for (let r = rStart; r <= rEnd; r++) {
-        for (let c = 0; c < cols + ring * 2; c++) {
-          if (slots!.length >= count) break
-          const sx = hit.x + (c - (cols + ring * 2 - 1) / 2) * spacing
-          const sz = hit.z + r * spacing
-          if (!isWorldWalkable(sx, sz)) continue
-          const path = findPathHierarchical(srcX, srcZ, sx, sz, 0, 100)
-          if (path && path.length >= 0) slots!.push({ x: sx, z: sz })
-        }
-        if (slots!.length >= count) break
-      }
-    }
-    while (slots.length < count) slots.push({ x: hit.x, z: hit.z })
+    const placed: { x: number; z: number; r: number }[] = []
 
-    // Angle-sorted slot assignment
-    const unitAngles = movableUnits.map(eid => ({
-      eid, angle: Math.atan2(Position.x[eid] - hit.x, Position.z[eid] - hit.z),
-    }))
-    unitAngles.sort((a, b) => a.angle - b.angle)
-    const slotAngles = slots.map((s, i) => ({
-      idx: i, angle: Math.atan2(s.x - hit.x, s.z - hit.z),
-    }))
-    slotAngles.sort((a, b) => a.angle - b.angle)
+    for (const eid of sorted) {
+      const unitR = hasComponent(world, CollisionRadius, eid) ? CollisionRadius.value[eid] : 0.4
+      if (placed.length === 0) {
+        // First unit at target
+        slots.push({ x: hit.x, z: hit.z })
+        placed.push({ x: hit.x, z: hit.z, r: unitR })
+        continue
+      }
+
+      // Find nearest open spot that doesn't overlap placed units
+      let bestX = hit.x, bestZ = hit.z, bestDist = Infinity
+      const spacing = unitR * 2.5
+      const searchR = Math.ceil(Math.sqrt(count)) + 2
+      for (let ring = 1; ring <= searchR && bestDist > 0.01; ring++) {
+        for (let a = 0; a < ring * 6; a++) {
+          const angle = (a / (ring * 6)) * Math.PI * 2
+          const sx = hit.x + Math.cos(angle) * ring * spacing
+          const sz = hit.z + Math.sin(angle) * ring * spacing
+          // Check overlap with already placed
+          let overlap = false
+          for (const p of placed) {
+            const minDist = unitR + p.r + 0.3
+            const dx = sx - p.x, dz = sz - p.z
+            if (dx * dx + dz * dz < minDist * minDist) { overlap = true; break }
+          }
+          if (overlap) continue
+          if (!isWorldWalkable(sx, sz)) continue
+          const d = (sx - hit.x) ** 2 + (sz - hit.z) ** 2
+          if (d < bestDist) { bestDist = d; bestX = sx; bestZ = sz }
+        }
+      }
+      slots.push({ x: bestX, z: bestZ })
+      placed.push({ x: bestX, z: bestZ, r: unitR })
+    }
+
+    // Reorder slots to match original movableUnits order
+    const slotByEid = new Map<number, { x: number; z: number }>()
+    for (let i = 0; i < sorted.length; i++) slotByEid.set(sorted[i], slots[i])
+    slots = movableUnits.map(eid => slotByEid.get(eid) || { x: hit.x, z: hit.z })
+
+    // Direct 1:1 slot assignment — slots already matched per unit
     assignments = new Map()
-    for (let i = 0; i < unitAngles.length; i++) {
-      assignments.set(unitAngles[i].eid, slotAngles[i % slotAngles.length].idx)
+    for (let i = 0; i < movableUnits.length; i++) {
+      assignments.set(movableUnits[i], i)
     }
   }
 
