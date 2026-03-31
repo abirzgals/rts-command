@@ -2,7 +2,7 @@
 // Music: menu theme + random ingame tracks with crossfade
 // SFX: positional one-shot sounds for combat
 
-const MUSIC_VOLUME = 0.5
+const MUSIC_VOLUME = 0.25
 const SFX_VOLUME = 0.5
 const CROSSFADE_MS = 2000
 let soundEnabled = true
@@ -181,12 +181,14 @@ export function playSfx(type: string, x?: number, z?: number) {
     if (!ctx) return
   }
 
-  // Throttle — voices use longer cooldown
+  // Throttle — voices use longer cooldown, split into select vs command
   const now = performance.now()
   const isVoice = type.startsWith('voice-')
   const throttle = isVoice ? VOICE_THROTTLE_MS : SFX_THROTTLE_MS
-  // All voice types share one throttle so they don't overlap
-  const throttleKey = isVoice ? 'voice' : type
+  // Select voice has its own throttle, command voices (move/attack/confirm/death) share one
+  const throttleKey = isVoice
+    ? (type === 'voice-select' ? 'voice-select' : 'voice-cmd')
+    : type
   const last = sfxLastPlayed.get(throttleKey) ?? 0
   if (now - last < throttle) return
   sfxLastPlayed.set(throttleKey, now)
