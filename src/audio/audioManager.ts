@@ -17,41 +17,31 @@ const INGAME_MUSIC = [
   '/sounds/music/siege-of-the-last-banner.mp3',
 ]
 
-// ── SFX: dynamic file discovery ─────────────────────────────
-// Pattern: /sounds/sfx/{key}-{N}.mp3 where N = 1,2,3...
-// playSfx('marine-shot') tries marine-shot-1.mp3, marine-shot-2.mp3, etc.
+// ── SFX: manifest-based lazy loading ────────────────────────
+// Manifest lists all available files. Audio data loaded on first play.
+// Pattern: /sounds/sfx/{key}-{N}.mp3 → playSfx('marine-shot') picks random variant
 const sfxRegistry = new Map<string, string[]>()
-const sfxProbed = new Set<string>() // keys we've already probed
+let manifestLoaded = false
 
-// Unit types that have sounds
-const UNIT_NAMES = ['worker', 'marine', 'trooper', 'tank', 'jeep', 'rocket']
-// Sound categories per unit
-const SOUND_CATEGORIES = ['shot', 'select', 'move', 'attack', 'confirm', 'death']
-// Global sounds (not per-unit)
-const GLOBAL_SOUNDS = ['explosion', 'rocket-launch']
-
-/** Probe how many numbered files exist for a key (e.g. 'marine-shot' → 1,2,...) */
-async function probeFiles(key: string): Promise<string[]> {
-  const files: string[] = []
-  for (let i = 1; i <= 10; i++) {
-    const url = `/sounds/sfx/${key}-${i}.mp3`
-    try {
-      const resp = await fetch(url, { method: 'HEAD' })
-      if (resp.ok) files.push(url)
-      else break // stop at first missing
-    } catch { break }
+/** Load manifest once, build registry by grouping files into keys */
+async function loadManifest() {
+  if (manifestLoaded) return
+  manifestLoaded = true
+  try {
+    const resp = await fetch('/sounds/sfx-manifest.json')
+    const names: string[] = await resp.json()
+    for (const name of names) {
+      // 'marine-shot-1' → key='marine-shot', url='/sounds/sfx/marine-shot-1.mp3'
+      const match = name.match(/^(.+)-(\d+)$/)
+      if (!match) continue
+      const key = match[1]
+      const url = `/sounds/sfx/${name}.mp3`
+      if (!sfxRegistry.has(key)) sfxRegistry.set(key, [])
+      sfxRegistry.get(key)!.push(url)
+    }
+  } catch (e) {
+    console.warn('[Audio] Failed to load sfx manifest:', e)
   }
-  return files
-}
-
-/** Get or discover files for a sound key */
-async function getSfxFiles(key: string): Promise<string[]> {
-  if (sfxRegistry.has(key)) return sfxRegistry.get(key)!
-  if (sfxProbed.has(key)) return []
-  sfxProbed.add(key)
-  const files = await probeFiles(key)
-  if (files.length > 0) sfxRegistry.set(key, files)
-  return files
 }
 
 // ── State ───────────────────────────────────────────────────
@@ -224,12 +214,9 @@ export function playSfx(type: string, x?: number, z?: number) {
   if (now - last < throttle) return
   sfxLastPlayed.set(throttleKey, now)
 
+  if (!manifestLoaded) { loadManifest(); return }
   const files = sfxRegistry.get(type)
-  if (!files || files.length === 0) {
-    // Not yet probed — probe in background, play next time
-    getSfxFiles(type).then(f => { if (f.length > 0) for (const u of f) loadBuffer(u) })
-    return
-  }
+  if (!files || files.length === 0) return
   const url = files[Math.floor(Math.random() * files.length)]
 
   const buf = bufferCache.get(url)
@@ -248,23 +235,8 @@ export function playSfx(type: string, x?: number, z?: number) {
 // ── Preload ─────────────────────────────────────────────────
 export async function preloadSfx() {
   ensureContext()
-  // Probe and preload all unit sounds + global sounds
-  const keys: string[] = []
-  for (const unit of UNIT_NAMES) {
-    for (const cat of SOUND_CATEGORIES) {
-      keys.push(`${unit}-${cat}`)
-    }
-  }
-  for (const g of GLOBAL_SOUNDS) keys.push(g)
-  // Also probe rocket-launch
-  keys.push('rocket-launch')
-
-  // Probe all in parallel
-  const results = await Promise.all(keys.map(k => getSfxFiles(k)))
-  // Preload all discovered files
-  for (const files of results) {
-    for (const url of files) loadBuffer(url)
-  }
+  // Load manifest (1 request). Audio buffers are lazy-loaded on first play.
+  await loadManifest()
 }
 
 // ── Volume / enable control ─────────────────────────────────
