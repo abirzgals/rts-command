@@ -90,24 +90,56 @@ export function updateProfilerDisplay(visible: boolean) {
   profilerDiv.style.display = 'block'
 
   const frameAvg = avg(avgMap.get('__frame'))
-  const lines: string[] = [
-    `\x1b[1mFrame: ${frameAvg.toFixed(1)}ms (${Math.round(1000 / (frameAvg || 1))} FPS)\x1b[0m`,
-  ]
+  const fps = Math.round(1000 / (frameAvg || 1))
+  const fpsColor = fps >= 30 ? '#4c4' : fps >= 15 ? '#fa0' : '#f44'
+  const lines: string[] = []
 
-  // Build tree
-  for (const e of entries) {
+  // Group entries by depth — collapse fast groups, expand slow ones
+  const SLOW_THRESHOLD = 1.0 // ms — show children only if parent > this
+  let i = 0
+  while (i < entries.length) {
+    const e = entries[i]
     const a = avg(avgMap.get(e.name))
-    if (a < 0.01) continue // skip negligible entries
-    const indent = '  '.repeat(e.depth)
-    const bar = makeBar(a, frameAvg)
-    const ms = a.toFixed(1).padStart(5)
-    const pct = frameAvg > 0 ? Math.round(a / frameAvg * 100).toString().padStart(3) : '  0'
-    lines.push(`${indent}${bar} ${ms}ms ${pct}% ${e.name}`)
+
+    if (e.depth === 0) {
+      // Top-level group
+      const ms = a.toFixed(1).padStart(6)
+      const pct = frameAvg > 0 ? Math.round(a / frameAvg * 100).toString().padStart(3) : '  0'
+      const bar = makeBar(a, frameAvg)
+      const isSlow = a >= SLOW_THRESHOLD
+
+      if (isSlow) {
+        lines.push(`${bar} ${ms}ms ${pct}% ${e.name}`)
+        // Show children
+        let j = i + 1
+        while (j < entries.length && entries[j].depth > 0) {
+          const child = entries[j]
+          const ca = avg(avgMap.get(child.name))
+          if (ca >= 0.05) {
+            const cms = ca.toFixed(1).padStart(6)
+            const cpct = frameAvg > 0 ? Math.round(ca / frameAvg * 100).toString().padStart(3) : '  0'
+            const hot = ca >= SLOW_THRESHOLD ? ' !' : ''
+            lines.push(`  ${cms}ms ${cpct}% ${child.name}${hot}`)
+          }
+          j++
+        }
+        i = j
+      } else {
+        // Collapsed — single line
+        lines.push(`${bar} ${ms}ms ${pct}% ${e.name}`)
+        // Skip children
+        let j = i + 1
+        while (j < entries.length && entries[j].depth > 0) j++
+        i = j
+      }
+    } else {
+      i++
+    }
   }
 
-  // Use textContent for performance (no innerHTML reflow)
-  profilerDiv.textContent = lines.join('\n')
-    .replace(/\x1b\[\d+m/g, '') // strip ANSI (textContent doesn't support)
+  profilerDiv.innerHTML =
+    `<span style="color:${fpsColor};font-weight:bold">Frame: ${frameAvg.toFixed(1)}ms (${fps} FPS)</span>\n` +
+    lines.join('\n')
 }
 
 function makeBar(ms: number, total: number): string {
