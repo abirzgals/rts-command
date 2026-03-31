@@ -150,17 +150,26 @@ export function updateFPSMode(dt: number): THREE.Camera | null {
 
   const speed = hasComponent(world, MoveSpeed, controlledEid) ? MoveSpeed.value[controlledEid] : 5
 
-  // Movement direction relative to yaw
-  let mx = 0, mz = 0
-  if (keys.w) { mx += Math.sin(yaw); mz += Math.cos(yaw) }
-  if (keys.s) { mx -= Math.sin(yaw); mz -= Math.cos(yaw) }
-  if (keys.a) { mx += Math.cos(yaw); mz -= Math.sin(yaw) }
-  if (keys.d) { mx -= Math.cos(yaw); mz += Math.sin(yaw) }
+  // Movement direction relative to yaw — combine keyboard + mobile analog
+  let fwd = 0, strafe = 0
+  if (keys.w) fwd += 1
+  if (keys.s) fwd -= 1
+  if (keys.a) strafe += 1
+  if (keys.d) strafe -= 1
+  // Mobile analog overrides if active
+  if (moveInputX !== 0 || moveInputZ !== 0) {
+    strafe = -moveInputX
+    fwd = moveInputZ
+  }
+
+  let mx = Math.sin(yaw) * fwd + Math.cos(yaw) * strafe
+  let mz = Math.cos(yaw) * fwd - Math.sin(yaw) * strafe
   const len = Math.sqrt(mx * mx + mz * mz)
-  if (len > 0) {
+  if (len > 0.1) {
     mx /= len; mz /= len
-    Velocity.x[controlledEid] = mx * speed
-    Velocity.z[controlledEid] = mz * speed
+    const moveScale = Math.min(len, 1) // analog: partial speed
+    Velocity.x[controlledEid] = mx * speed * moveScale
+    Velocity.z[controlledEid] = mz * speed * moveScale
   } else {
     Velocity.x[controlledEid] = 0
     Velocity.z[controlledEid] = 0
@@ -292,106 +301,171 @@ function toggleUI(show: boolean) {
   if (touchControlsEl) touchControlsEl.style.display = show ? 'none' : 'flex'
 }
 
-// ── Mobile touch controls (dual virtual sticks) ─────────────
+// ── Mobile touch controls ───────────────────────────────────
+// Full-screen touch: left side = move joystick, right side = look
+// Fire button bottom-right, exit button top-right
+
 let touchControlsEl: HTMLDivElement | null = null
-let moveStickOrigin = { x: 0, y: 0 }
-let lookStickOrigin = { x: 0, y: 0 }
-let moveStickActive = false
-let lookStickActive = false
+let moveStickEl: HTMLDivElement | null = null
+let moveKnobEl: HTMLDivElement | null = null
 let moveTouchId = -1
+let moveOriginX = 0, moveOriginY = 0
+let moveInputX = 0, moveInputZ = 0 // -1 to 1 analog
+
 let lookTouchId = -1
+let lookLastX = 0, lookLastY = 0
+
+const STICK_RADIUS = 50
+const STICK_DEAD = 0.2
+
+/** Analog move input for FPS update (replaces keys.w/a/s/d on mobile) */
+export function getMobileMove(): { x: number; z: number } {
+  return { x: moveInputX, z: moveInputZ }
+}
 
 function createTouchControls() {
   if (touchControlsEl) return
-  const isMobile = 'ontouchstart' in window
-  if (!isMobile) return
+  if (!('ontouchstart' in window)) return
 
   touchControlsEl = document.createElement('div')
-  touchControlsEl.id = 'fps-touch'
+  touchControlsEl.id = 'fps-touch-overlay'
   touchControlsEl.style.cssText = `
-    position:fixed; bottom:0; left:0; right:0; height:50%;
-    display:none; z-index:90; pointer-events:auto;
+    position:fixed; inset:0; z-index:89; display:none;
+    -webkit-tap-highlight-color:transparent;
   `
-  // Exit button
-  const exitBtn = document.createElement('button')
-  exitBtn.textContent = 'EXIT'
-  exitBtn.style.cssText = `
-    position:absolute; top:10px; right:10px; padding:8px 16px;
-    background:rgba(200,50,50,0.8); border:1px solid #f66; border-radius:6px;
-    color:#fff; font-size:14px; font-weight:bold; z-index:91; cursor:pointer;
+
+  // Move joystick base (visible circle, bottom-left)
+  moveStickEl = document.createElement('div')
+  moveStickEl.style.cssText = `
+    position:absolute; bottom:40px; left:30px; width:${STICK_RADIUS * 2}px; height:${STICK_RADIUS * 2}px;
+    border-radius:50%; background:rgba(255,255,255,0.1); border:2px solid rgba(255,255,255,0.25);
+    pointer-events:none;
   `
-  exitBtn.addEventListener('touchstart', (e) => { e.preventDefault(); exitFPSMode() })
-  touchControlsEl.appendChild(exitBtn)
+  moveKnobEl = document.createElement('div')
+  moveKnobEl.style.cssText = `
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    width:40px; height:40px; border-radius:50%;
+    background:rgba(255,255,255,0.35); border:1px solid rgba(255,255,255,0.5);
+    pointer-events:none;
+  `
+  moveStickEl.appendChild(moveKnobEl)
+  touchControlsEl.appendChild(moveStickEl)
 
   // Fire button
-  const fireBtn = document.createElement('button')
-  fireBtn.textContent = '🔥'
+  const fireBtn = document.createElement('div')
   fireBtn.style.cssText = `
-    position:absolute; bottom:20px; right:20px; width:64px; height:64px;
-    background:rgba(200,100,50,0.8); border:2px solid #fa0; border-radius:50%;
-    color:#fff; font-size:28px; z-index:91; cursor:pointer;
+    position:absolute; bottom:40px; right:30px; width:70px; height:70px;
+    border-radius:50%; background:rgba(220,60,30,0.6); border:2px solid rgba(255,100,80,0.5);
+    display:flex; align-items:center; justify-content:center;
+    font-size:28px; color:#fff; user-select:none;
+    -webkit-tap-highlight-color:transparent;
   `
+  fireBtn.textContent = '🎯'
   fireBtn.addEventListener('touchstart', (e) => {
     e.preventDefault()
+    e.stopPropagation()
     onMouseDown({ button: 0 } as MouseEvent)
+    fireBtn.style.background = 'rgba(255,100,50,0.8)'
+  })
+  fireBtn.addEventListener('touchend', () => {
+    fireBtn.style.background = 'rgba(220,60,30,0.6)'
   })
   touchControlsEl.appendChild(fireBtn)
 
-  // Touch areas: left half = move, right half = look
-  touchControlsEl.addEventListener('touchstart', onTouchStart, { passive: false })
-  touchControlsEl.addEventListener('touchmove', onTouchMove, { passive: false })
-  touchControlsEl.addEventListener('touchend', onTouchEnd, { passive: false })
+  // Exit button
+  const exitBtn = document.createElement('div')
+  exitBtn.style.cssText = `
+    position:absolute; top:12px; left:50%; transform:translateX(-50%);
+    padding:8px 24px; background:rgba(180,40,40,0.7); border:1px solid rgba(255,80,80,0.4);
+    border-radius:20px; color:#fff; font-size:13px; font-weight:600;
+    user-select:none; -webkit-tap-highlight-color:transparent;
+  `
+  exitBtn.textContent = 'EXIT FPS'
+  exitBtn.addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); exitFPSMode() })
+  touchControlsEl.appendChild(exitBtn)
+
+  // Touch handler on the full overlay
+  touchControlsEl.addEventListener('touchstart', fpsTouchStart, { passive: false })
+  touchControlsEl.addEventListener('touchmove', fpsTouchMove, { passive: false })
+  touchControlsEl.addEventListener('touchend', fpsTouchEnd, { passive: false })
+  touchControlsEl.addEventListener('touchcancel', fpsTouchEnd, { passive: false })
 
   document.body.appendChild(touchControlsEl)
 }
 
-function onTouchStart(e: TouchEvent) {
+function fpsTouchStart(e: TouchEvent) {
   e.preventDefault()
-  const w = window.innerWidth
+  const hw = window.innerWidth / 2
   for (const t of Array.from(e.changedTouches)) {
-    if (t.clientX < w / 2 && !moveStickActive) {
-      moveStickActive = true
+    if (t.clientX < hw && moveTouchId < 0) {
+      // Left side — move joystick
       moveTouchId = t.identifier
-      moveStickOrigin = { x: t.clientX, y: t.clientY }
-    } else if (t.clientX >= w / 2 && !lookStickActive) {
-      lookStickActive = true
+      moveOriginX = t.clientX
+      moveOriginY = t.clientY
+      // Show joystick at touch position
+      if (moveStickEl) {
+        moveStickEl.style.left = `${t.clientX - STICK_RADIUS}px`
+        moveStickEl.style.top = `${t.clientY - STICK_RADIUS}px`
+        moveStickEl.style.bottom = 'auto'
+      }
+    } else if (t.clientX >= hw && lookTouchId < 0) {
+      // Right side — look (but not on fire/exit buttons handled by stopPropagation)
       lookTouchId = t.identifier
-      lookStickOrigin = { x: t.clientX, y: t.clientY }
+      lookLastX = t.clientX
+      lookLastY = t.clientY
     }
   }
 }
 
-function onTouchMove(e: TouchEvent) {
+function fpsTouchMove(e: TouchEvent) {
   e.preventDefault()
-  for (const t of Array.from(e.changedTouches)) {
-    if (t.identifier === moveTouchId && moveStickActive) {
-      const dx = (t.clientX - moveStickOrigin.x) / 50
-      const dy = (t.clientY - moveStickOrigin.y) / 50
-      keys.w = dy < -0.3
-      keys.s = dy > 0.3
-      keys.a = dx < -0.3
-      keys.d = dx > 0.3
-    }
-    if (t.identifier === lookTouchId && lookStickActive) {
-      const dx = t.clientX - lookStickOrigin.x
-      const dy = t.clientY - lookStickOrigin.y
-      yaw -= dx * 0.003
-      pitch += dy * 0.003
-      pitch = Math.max(PITCH_MIN, Math.min(PITCH_MAX, pitch))
-      lookStickOrigin = { x: t.clientX, y: t.clientY }
-    }
-  }
-}
-
-function onTouchEnd(e: TouchEvent) {
   for (const t of Array.from(e.changedTouches)) {
     if (t.identifier === moveTouchId) {
-      moveStickActive = false
-      moveTouchId = -1
-      keys.w = keys.a = keys.s = keys.d = false
+      // Move joystick
+      let dx = t.clientX - moveOriginX
+      let dy = t.clientY - moveOriginY
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      const clamped = Math.min(dist, STICK_RADIUS)
+      if (dist > 0) { dx = (dx / dist) * clamped; dy = (dy / dist) * clamped }
+
+      // Update knob position
+      if (moveKnobEl) {
+        moveKnobEl.style.left = `${50 + (dx / STICK_RADIUS) * 40}%`
+        moveKnobEl.style.top = `${50 + (dy / STICK_RADIUS) * 40}%`
+      }
+
+      // Analog input normalized -1 to 1
+      const nx = dx / STICK_RADIUS
+      const ny = dy / STICK_RADIUS
+      moveInputX = Math.abs(nx) > STICK_DEAD ? nx : 0
+      moveInputZ = Math.abs(ny) > STICK_DEAD ? -ny : 0 // invert Y: up = forward
     }
     if (t.identifier === lookTouchId) {
-      lookStickActive = false
+      // Look — delta from last position
+      const dx = t.clientX - lookLastX
+      const dy = t.clientY - lookLastY
+      yaw -= dx * 0.004
+      pitch += dy * 0.004
+      pitch = Math.max(PITCH_MIN, Math.min(PITCH_MAX, pitch))
+      lookLastX = t.clientX
+      lookLastY = t.clientY
+    }
+  }
+}
+
+function fpsTouchEnd(e: TouchEvent) {
+  for (const t of Array.from(e.changedTouches)) {
+    if (t.identifier === moveTouchId) {
+      moveTouchId = -1
+      moveInputX = 0
+      moveInputZ = 0
+      // Reset knob
+      if (moveKnobEl) {
+        moveKnobEl.style.left = '50%'
+        moveKnobEl.style.top = '50%'
+      }
+    }
+    if (t.identifier === lookTouchId) {
       lookTouchId = -1
     }
   }

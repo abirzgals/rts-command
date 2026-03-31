@@ -26,6 +26,7 @@ import { pushCommand, clearQueue, getQueue, type Command } from '../ecs/commandQ
 import { matchesAction, getMouseMode, loadBindings, getBindingLabel } from './keybindings'
 import { notifyNotEnoughMinerals, notifyNotEnoughGas, notifyNotEnoughSupply } from '../ui/notifications'
 import { playSfx } from '../audio/audioManager'
+import { isFPSMode } from './fpsMode'
 import { UT_WORKER, UT_MARINE, UT_TANK, UT_JEEP, UT_ROCKET, UT_TROOPER } from '../game/config'
 
 const UT_SOUND_KEY: Record<number, string> = {
@@ -301,6 +302,7 @@ let rmbHeld = false      // right button currently held
 let wasRotating = false   // both buttons were used for camera rotation
 
 function onMouseDown(e: MouseEvent, world: IWorld) {
+  if (isFPSMode()) return
   if (e.button === 2) {
     rmbHeld = true
     rmbStartX = e.clientX
@@ -338,6 +340,7 @@ function onMouseDown(e: MouseEvent, world: IWorld) {
 }
 
 function onMouseMove(e: MouseEvent, _world: IWorld) {
+  if (isFPSMode()) return
   mouseX = e.clientX
   mouseY = e.clientY
 
@@ -387,6 +390,7 @@ function onMouseMove(e: MouseEvent, _world: IWorld) {
 }
 
 function onMouseUp(e: MouseEvent, world: IWorld) {
+  if (isFPSMode()) return
   if (e.button === 0) {
     if (isDragging && !wasRotating) {
       isDragging = false
@@ -1324,6 +1328,7 @@ let twoFingerPrevX = 0
 let twoFingerPrevY = 0
 
 function onTouchStart(e: TouchEvent, _world: IWorld) {
+  if (isFPSMode()) return
   e.preventDefault()
 
   if (e.touches.length === 1) {
@@ -1354,6 +1359,7 @@ function onTouchStart(e: TouchEvent, _world: IWorld) {
 }
 
 function onTouchMove(e: TouchEvent, _world: IWorld) {
+  if (isFPSMode()) return
   e.preventDefault()
 
   // ── Single finger: box select ──
@@ -1412,6 +1418,7 @@ function onTouchMove(e: TouchEvent, _world: IWorld) {
 }
 
 function onTouchEnd(e: TouchEvent, world: IWorld) {
+  if (isFPSMode()) return
   e.preventDefault()
   cancelLongPress()
 
