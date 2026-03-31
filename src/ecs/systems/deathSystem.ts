@@ -19,6 +19,7 @@ import { BUILDING_DEFS, UT_TANK, UT_JEEP, UT_ROCKET } from '../../game/config'
 import { removePath } from '../../pathfinding/pathStore'
 import { spawnTankDeathExplosion, spawnFallingPieces } from '../../render/effects'
 import { scene } from '../../render/engine'
+import { playSfx } from '../../audio/audioManager'
 
 const deadQuery = defineQuery([Dead])
 const DEATH_ANIM_DURATION = 2.0 // seconds to play death animation
@@ -72,6 +73,7 @@ export function deathSystem(world: IWorld, dt: number) {
         if (utId === UT_TANK || utId === UT_JEEP || utId === UT_ROCKET) {
           const vx = Position.x[eid], vy = Position.y[eid], vz = Position.z[eid]
           spawnTankDeathExplosion(vx, vy, vz)
+          playSfx('explosion')
           // Break model apart into falling pieces
           const poolId2 = MeshRef.poolId[eid]
           const animMgr2 = getAnimManager(poolId2)

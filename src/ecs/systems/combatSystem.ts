@@ -15,6 +15,7 @@ import { editorConfig } from '../../render/meshPools'
 import { getAnimManager } from '../../render/animatedMeshManager'
 import { isVisibleAt } from '../../render/fogOfWar'
 import { getPlayerFaction, getAIFaction } from '../../game/factions'
+import { playSfx } from '../../audio/audioManager'
 import { MeshRef } from '../components'
 import { notifyUnitUnderAttack, notifyBaseUnderAttack } from '../../ui/notifications'
 
@@ -272,13 +273,16 @@ function tryAttack(world: IWorld, attacker: number, target: number, dist: number
       const poolId = MeshRef.poolId[attacker]
       const animMgr = getAnimManager(poolId)
       if (animMgr) animMgr.triggerRecoil(attacker)
+      playSfx('tank')
     } else if (projType === 'rocket') {
       projEid = spawnArcProjectile(world, fp.x, fp.z, target, damage, splash, projCfg?.arcHeight ?? 2, trailFire, trailSmoke)
       spawnMuzzleFlash(fp.x, fp.y, fp.z, muzzleCfg)
       spawnSmoke(fp.x, fp.y, fp.z, smokeLaunchCount)
+      playSfx('rocket')
     } else {
       projEid = spawnProjectile(world, fp.x, fp.z, target, damage, projSpeed, { ...projCfg, trailFire, trailSmoke })
       spawnMuzzleFlash(fp.x, fp.y, fp.z, muzzleCfg)
+      playSfx('rifle')
     }
     // Store effect config on projectile for use on hit
     projectileEffects.set(projEid, { impact: impactCfg, explosion: explosionCfg, smoke: smokeCfg })

@@ -3,6 +3,7 @@ import type { IWorld } from 'bitecs'
 import { Position, Projectile, ArcProjectile, Dead, Health, MeshRef, Faction, Rotation } from '../components'
 import { addComponent as addComp } from 'bitecs'
 import { applyDamage } from './combatSystem'
+import { playSfx } from '../../audio/audioManager'
 import { getPool } from '../../render/meshPools'
 import { projectileMeshes, removeProjectileMesh, projectileEffects } from '../archetypes'
 import { getTerrainHeight } from '../../terrain/heightmap'
@@ -97,6 +98,7 @@ export function projectileSystem(world: IWorld, dt: number) {
       } else {
         spawnExplosion(tx, ty, tz, explRadius)
       }
+      playSfx('explosion')
       projectileEffects.delete(eid)
 
       // Apply splash damage to all nearby enemies

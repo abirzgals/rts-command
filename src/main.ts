@@ -38,6 +38,7 @@ import { initHPBars, updateHPBars } from './render/hpBars'
 import { initNotifications } from './ui/notifications'
 import { profilerBeginFrame, profilerEndFrame, profilerBegin, profilerEnd, updateProfilerDisplay } from './debug/profiler'
 import { isDebugEnabled } from './render/debugOverlay'
+import { playMenuMusic, playIngameMusic, preloadSfx } from './audio/audioManager'
 
 // UI
 import { updateHUD } from './ui/hud'
@@ -69,6 +70,7 @@ interface MapSelection {
 async function showMapSelector(): Promise<MapSelection> {
   // Load saved keybindings before showing menu
   loadBindings()
+  playMenuMusic()
 
   const overlay = document.createElement('div')
   Object.assign(overlay.style, {
@@ -304,6 +306,10 @@ async function init() {
 
   // Set rally points on CCs to nearest minerals
   initRallyPoints(world)
+
+  // Start ingame music + preload SFX
+  playIngameMusic()
+  preloadSfx()
 
   // Start game loop
   requestAnimationFrame(gameLoop)
