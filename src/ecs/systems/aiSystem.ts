@@ -16,6 +16,7 @@ import { queueProduction } from '../../input/input'
 import { spatialHash } from '../../globals'
 import { isVisibleAt } from '../../render/fogOfWar'
 import { getAIFaction, getPlayerFaction } from '../../game/factions'
+import { isFPSMode, getFPSEntity } from '../../input/fpsMode'
 import { isWorldWalkable } from '../../pathfinding/navGrid'
 import { worldToGrid } from '../../terrain/heightmap'
 import { sectorId, findSectorPath } from '../../pathfinding/sectorGraph'
@@ -64,44 +65,97 @@ function aiRng(): number {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  AI Memory (persistent across ticks)
+//  AI Memory — per-faction state (supports AI vs AI in FPS mode)
 // ═══════════════════════════════════════════════════════════════
 
-let aiState: AIState = AIState.SCOUTING
-let aiTimer = 0
+interface AIBrain {
+  state: AIState
+  timer: number
+  scoutEid: number | null
+  scoutWaypoints: { x: number; z: number }[]
+  scoutWaypointIdx: number
+  knownEnemyBaseX: number; knownEnemyBaseZ: number
+  suspectedBaseX: number; suspectedBaseZ: number
+  scoutLastX: number; scoutLastZ: number
+  rallyX: number; rallyZ: number
+  stagingTimer: number; attackOrderIssued: boolean
+  attackCount: number; attackTimer: number
+  attackTargetX: number; attackTargetZ: number
+  knownArmyX: number; knownArmyZ: number; knownArmySupply: number
+  hasBarracks: boolean; hasFactory: boolean
+}
 
-// Scouting
-let scoutEid: number | null = null               // entity doing the scouting
-let scoutWaypoints: { x: number; z: number }[] = [] // systematic grid of points
-let scoutWaypointIdx = 0
+function createBrain(): AIBrain {
+  return {
+    state: AIState.SCOUTING, timer: AI_TICK,
+    scoutEid: null, scoutWaypoints: [], scoutWaypointIdx: 0,
+    knownEnemyBaseX: NaN, knownEnemyBaseZ: NaN,
+    suspectedBaseX: NaN, suspectedBaseZ: NaN,
+    scoutLastX: NaN, scoutLastZ: NaN,
+    rallyX: NaN, rallyZ: NaN,
+    stagingTimer: 0, attackOrderIssued: false,
+    attackCount: 0, attackTimer: 0,
+    attackTargetX: NaN, attackTargetZ: NaN,
+    knownArmyX: NaN, knownArmyZ: NaN, knownArmySupply: 0,
+    hasBarracks: false, hasFactory: false,
+  }
+}
 
-// Known player base location (found by scouting or combat contact)
-let knownPlayerBaseX = NaN
-let knownPlayerBaseZ = NaN
+// Two brains: one per faction
+const brains: Record<number, AIBrain> = { 0: createBrain(), 1: createBrain() }
 
-// Suspected enemy base (where scout died)
-let suspectedBaseX = NaN
-let suspectedBaseZ = NaN
-let scoutLastX = NaN
-let scoutLastZ = NaN
+// Active brain pointer — set by current tick
+let B: AIBrain = brains[1]
+// Which faction this brain controls / which is the enemy
+let aiFaction = 1
+let enemyFaction = 0
 
-// Staging / rally point
-let rallyX = NaN
-let rallyZ = NaN
-let stagingTimer = 0
-let attackOrderIssued = false
-let attackCount = 0               // how many attacks AI has launched
-let attackTargetX = NaN           // actual attack destination (may differ from player base)
-let attackTargetZ = NaN
+// Legacy module-level aliases (point to active brain for existing code)
+// These are reassigned each tick before any function uses them
+let aiState: AIState
+let aiTimer: number
+let scoutEid: number | null
+let scoutWaypoints: { x: number; z: number }[]
+let scoutWaypointIdx: number
+let knownPlayerBaseX: number; let knownPlayerBaseZ: number
+let suspectedBaseX: number; let suspectedBaseZ: number
+let scoutLastX: number; let scoutLastZ: number
+let rallyX: number; let rallyZ: number
+let stagingTimer: number; let attackOrderIssued: boolean
+let attackCount: number; let attackTimer: number; let attackTargetX: number; let attackTargetZ: number
+let knownArmyX: number; let knownArmyZ: number; let knownArmySupply: number
+let hasBarracks: boolean; let hasFactory: boolean
 
-// Known player army concentrations
-let knownArmyX = NaN
-let knownArmyZ = NaN
-let knownArmySupply = 0
+/** Load brain state into module-level aliases */
+function loadBrain(faction: number) {
+  B = brains[faction]
+  aiFaction = faction
+  enemyFaction = faction === 0 ? 1 : 0
+  aiState = B.state; aiTimer = B.timer
+  scoutEid = B.scoutEid; scoutWaypoints = B.scoutWaypoints; scoutWaypointIdx = B.scoutWaypointIdx
+  knownPlayerBaseX = B.knownEnemyBaseX; knownPlayerBaseZ = B.knownEnemyBaseZ
+  suspectedBaseX = B.suspectedBaseX; suspectedBaseZ = B.suspectedBaseZ
+  scoutLastX = B.scoutLastX; scoutLastZ = B.scoutLastZ
+  rallyX = B.rallyX; rallyZ = B.rallyZ
+  stagingTimer = B.stagingTimer; attackOrderIssued = B.attackOrderIssued
+  attackCount = B.attackCount; attackTimer = B.attackTimer; attackTargetX = B.attackTargetX; attackTargetZ = B.attackTargetZ
+  knownArmyX = B.knownArmyX; knownArmyZ = B.knownArmyZ; knownArmySupply = B.knownArmySupply
+  hasBarracks = B.hasBarracks; hasFactory = B.hasFactory
+}
 
-// Building state
-let hasBarracks = false
-let hasFactory  = false
+/** Save module-level aliases back to brain */
+function saveBrain() {
+  B.state = aiState; B.timer = aiTimer
+  B.scoutEid = scoutEid; B.scoutWaypoints = scoutWaypoints; B.scoutWaypointIdx = scoutWaypointIdx
+  B.knownEnemyBaseX = knownPlayerBaseX; B.knownEnemyBaseZ = knownPlayerBaseZ
+  B.suspectedBaseX = suspectedBaseX; B.suspectedBaseZ = suspectedBaseZ
+  B.scoutLastX = scoutLastX; B.scoutLastZ = scoutLastZ
+  B.rallyX = rallyX; B.rallyZ = rallyZ
+  B.stagingTimer = stagingTimer; B.attackOrderIssued = attackOrderIssued
+  B.attackCount = attackCount; B.attackTimer = attackTimer; B.attackTargetX = attackTargetX; B.attackTargetZ = attackTargetZ
+  B.knownArmyX = knownArmyX; B.knownArmyZ = knownArmyZ; B.knownArmySupply = knownArmySupply
+  B.hasBarracks = hasBarracks; B.hasFactory = hasFactory
+}
 
 // Debug
 export let aiDebugStatus = ''
@@ -143,19 +197,32 @@ function generateScoutWaypoints(homeX: number, homeZ: number): { x: number; z: n
 // ═══════════════════════════════════════════════════════════════
 
 export function aiSystem(world: IWorld, dt: number) {
+  // Always run AI for the enemy faction
+  runAIForFaction(world, dt, getAIFaction())
+
+  // In FPS mode: also run AI for the player's faction (AI vs AI + player as FPS unit)
+  if (isFPSMode()) {
+    runAIForFaction(world, dt, getPlayerFaction())
+  }
+}
+
+function runAIForFaction(world: IWorld, dt: number, faction: number) {
+  loadBrain(faction)
+
   aiTimer += dt
-  if (aiTimer < AI_TICK) return
+  if (aiTimer < AI_TICK) { saveBrain(); return }
   aiTimer = 0
 
   // ── Census: count everything ────────────────────────────────
   const census = takeCensus(world)
   if (census.commandCenter === null) {
-    aiDebugStatus = `AI Faction: ${getAIFaction()} | NO COMMAND CENTER FOUND`
-    ;(window as any).__aiDebugStatus = aiDebugStatus
+    aiDebugStatus = `AI Faction: ${aiFaction} | NO COMMAND CENTER FOUND`
+    if (aiFaction === getAIFaction()) (window as any).__aiDebugStatus = aiDebugStatus
+    saveBrain()
     return
   }
 
-  const res = gameState.getResources(getAIFaction())
+  const res = gameState.getResources(aiFaction)
   const homeX = Position.x[census.commandCenter]
   const homeZ = Position.z[census.commandCenter]
 
@@ -232,7 +299,7 @@ export function aiSystem(world: IWorld, dt: number) {
   // ── Debug overlay ──────────────────────────────────────────
   const armySupply = census.armySupply
   const lines: string[] = [
-    `AI Faction: ${getAIFaction()} | State: ${STATE_NAMES[aiState]}`,
+    `AI Faction: ${aiFaction} | State: ${STATE_NAMES[aiState]}`,
     `Workers:${census.workerCount} Marines:${census.marineCount} Tanks:${census.tankCount} Jeeps:${census.jeepCount} Troopers:${census.trooperCount}`,
     `Army supply: ${armySupply} | CC:${census.commandCenter !== null ? 'Y' : 'N'} Rax:${hasBarracks ? 'Y' : 'N'} Fac:${hasFactory ? 'Y' : 'N'}`,
     `Min:${Math.floor(res.minerals)} Gas:${Math.floor(res.gas)} Sup:${res.supplyCurrent}/${res.supplyMax}`,
@@ -241,7 +308,11 @@ export function aiSystem(world: IWorld, dt: number) {
   ]
   if (decisions.length > 0) lines.push('> ' + decisions.join(' | '))
   aiDebugStatus = lines.filter(l => l).join('\n')
-  ;(window as any).__aiDebugStatus = aiDebugStatus
+  // Only show debug for the enemy AI (not player's AI in FPS mode)
+  if (aiFaction === getAIFaction()) {
+    ;(window as any).__aiDebugStatus = aiDebugStatus
+  }
+  saveBrain()
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -261,41 +332,24 @@ function hasFoundPlayerBase(): boolean {
 
 /** Reset AI state — call after team swap so AI re-evaluates from scratch */
 export function resetAIState(world?: IWorld) {
-  aiTimer = AI_TICK // tick immediately on next frame
-  scoutEid = null
-  scoutWaypoints = []
-  scoutWaypointIdx = 0
-  knownPlayerBaseX = NaN
-  knownPlayerBaseZ = NaN
-  suspectedBaseX = NaN
-  suspectedBaseZ = NaN
-  scoutLastX = NaN
-  scoutLastZ = NaN
-  rallyX = NaN
-  rallyZ = NaN
-  stagingTimer = 0
-  attackOrderIssued = false
-  attackCount = 0
-  attackTargetX = NaN
-  attackTargetZ = NaN
-  knownArmyX = NaN
-  knownArmyZ = NaN
-  knownArmySupply = 0
-  hasBarracks = false
-  hasFactory = false
+  // Reset the AI brain for the current AI faction
+  const f = getAIFaction()
+  brains[f] = createBrain()
+  loadBrain(f)
 
   if (world) {
     analyzeInheritedState(world)
   } else {
     aiState = AIState.SCOUTING
   }
+  saveBrain()
 }
 
 /** After team swap: check fog, find enemy base, assess force, pick correct state */
 function analyzeInheritedState(world: IWorld) {
   // 1. Take census of new faction
   const census = takeCensus(world)
-  console.log(`[AI] analyzeInheritedState: faction=${getAIFaction()} CC=${census.commandCenter} army=${census.armySupply} workers=${census.workerCount} rax=${hasBarracks} fac=${hasFactory}`)
+  console.log(`[AI] analyzeInheritedState: faction=${aiFaction} CC=${census.commandCenter} army=${census.armySupply} workers=${census.workerCount} rax=${hasBarracks} fac=${hasFactory}`)
 
   if (census.commandCenter === null) {
     aiState = AIState.SCOUTING
@@ -404,7 +458,7 @@ function isValidScout(world: IWorld, eid: number | null): boolean {
   if (eid === null) return false
   if (hasComponent(world, Dead, eid)) return false
   if (!hasComponent(world, Position, eid)) return false
-  if (Faction.id[eid] !== getAIFaction()) return false
+  if (Faction.id[eid] !== aiFaction) return false
   return true
 }
 
@@ -460,13 +514,13 @@ function scanPlayerArmy(world: IWorld): void {
   // Find clusters of player combat units visible to AI
   const playerUnits: { x: number; z: number; supply: number }[] = []
   for (const eid of units) {
-    if (Faction.id[eid] !== getPlayerFaction()) continue
+    if (Faction.id[eid] !== enemyFaction) continue
     if (hasComponent(world, Dead, eid)) continue
     if (hasComponent(world, IsBuilding, eid)) continue
     if (hasComponent(world, WorkerC, eid)) continue
     // Check if visible in AI's fog of war
     const px = Position.x[eid], pz = Position.z[eid]
-    if (!isVisibleAt(px, pz, getAIFaction())) continue
+    if (!isVisibleAt(px, pz, aiFaction)) continue
     const ut = hasComponent(world, UnitTypeC, eid) ? UnitTypeC.id[eid] : -1
     const s = ut === UT_TANK ? 3 : (ut === UT_JEEP || ut === UT_TROOPER) ? 2 : 1
     playerUnits.push({ x: px, z: pz, supply: s })
@@ -663,8 +717,6 @@ function tickStaging(
 //  Once the attack is over (most units dead), go back to BUILDING.
 // ═══════════════════════════════════════════════════════════════
 
-let attackTimer = 0
-
 function tickAttacking(
   world: IWorld,
   census: Census,
@@ -757,7 +809,7 @@ function tickDefending(
   spatialHash.query(homeX, homeZ, DEFENSE_RADIUS, _near)
   let threatX = 0, threatZ = 0, threatCount = 0
   for (const eid of _near) {
-    if (!hasComponent(world, Faction, eid) || Faction.id[eid] !== getPlayerFaction()) continue
+    if (!hasComponent(world, Faction, eid) || Faction.id[eid] !== enemyFaction) continue
     if (hasComponent(world, Dead, eid)) continue
     if (hasComponent(world, IsBuilding, eid)) continue
     threatX += Position.x[eid]
@@ -840,7 +892,7 @@ function tickEconomy(
   // ── Workers (up to 8) ──────────────────────────────────────
   if (census.commandCenter !== null && census.workerCount < 8 && res.supplyCurrent < res.supplyMax) {
     const def = UNIT_DEFS[UT_WORKER]
-    if (gameState.canAfford(getAIFaction(), def.cost)) {
+    if (gameState.canAfford(aiFaction, def.cost)) {
       queueProduction(census.commandCenter, UT_WORKER)
       decisions.push('+Worker')
     }
@@ -849,20 +901,20 @@ function tickEconomy(
   // ── Supply depots ──────────────────────────────────────────
   if (res.supplyMax - res.supplyCurrent < 5 && census.commandCenter !== null) {
     const def = BUILDING_DEFS[BT_SUPPLY_DEPOT]
-    if (gameState.canAfford(getAIFaction(), def.cost)) {
+    if (gameState.canAfford(aiFaction, def.cost)) {
       const angle = aiRng() * Math.PI * 2
-      spawnBuilding(world, BT_SUPPLY_DEPOT, getAIFaction(),
+      spawnBuilding(world, BT_SUPPLY_DEPOT, aiFaction,
         homeX + Math.cos(angle) * 6, homeZ + Math.sin(angle) * 6, true)
-      gameState.spend(getAIFaction(), def.cost)
+      gameState.spend(aiFaction, def.cost)
     }
   }
 
   // ── Barracks ───────────────────────────────────────────────
   if (!hasBarracks && census.commandCenter !== null) {
     const def = BUILDING_DEFS[BT_BARRACKS]
-    if (gameState.canAfford(getAIFaction(), def.cost)) {
-      spawnBuilding(world, BT_BARRACKS, getAIFaction(), homeX + 8, homeZ + 4, true)
-      gameState.spend(getAIFaction(), def.cost)
+    if (gameState.canAfford(aiFaction, def.cost)) {
+      spawnBuilding(world, BT_BARRACKS, aiFaction, homeX + 8, homeZ + 4, true)
+      gameState.spend(aiFaction, def.cost)
       decisions.push('+Barracks')
     }
   }
@@ -870,9 +922,9 @@ function tickEconomy(
   // ── Factory (after some marines) ───────────────────────────
   if (!hasFactory && hasBarracks && census.marineCount >= 3 && census.commandCenter !== null) {
     const def = BUILDING_DEFS[BT_FACTORY]
-    if (gameState.canAfford(getAIFaction(), def.cost)) {
-      spawnBuilding(world, BT_FACTORY, getAIFaction(), homeX - 8, homeZ + 4, true)
-      gameState.spend(getAIFaction(), def.cost)
+    if (gameState.canAfford(aiFaction, def.cost)) {
+      spawnBuilding(world, BT_FACTORY, aiFaction, homeX - 8, homeZ + 4, true)
+      gameState.spend(aiFaction, def.cost)
       decisions.push('+Factory')
     }
   }
@@ -884,12 +936,12 @@ function tickEconomy(
     if (census.barracks !== null && res.supplyCurrent < res.supplyMax) {
       if (census.marineCount < 10) {
         const def = UNIT_DEFS[UT_MARINE]
-        if (gameState.canAfford(getAIFaction(), def.cost)) {
+        if (gameState.canAfford(aiFaction, def.cost)) {
           queueProduction(census.barracks, UT_MARINE)
         }
       } else if (census.trooperCount < 4) {
         const def = UNIT_DEFS[UT_TROOPER]
-        if (gameState.canAfford(getAIFaction(), def.cost)) {
+        if (gameState.canAfford(aiFaction, def.cost)) {
           queueProduction(census.barracks, UT_TROOPER)
         }
       }
@@ -904,17 +956,17 @@ function tickEconomy(
 
       if (needJeep) {
         const def = UNIT_DEFS[UT_JEEP]
-        if (gameState.canAfford(getAIFaction(), def.cost)) {
+        if (gameState.canAfford(aiFaction, def.cost)) {
           queueProduction(census.factory, UT_JEEP)
         }
       } else if (needTank) {
         const def = UNIT_DEFS[UT_TANK]
-        if (gameState.canAfford(getAIFaction(), def.cost)) {
+        if (gameState.canAfford(aiFaction, def.cost)) {
           queueProduction(census.factory, UT_TANK)
         }
       } else if (needRocket) {
         const def = UNIT_DEFS[UT_ROCKET]
-        if (gameState.canAfford(getAIFaction(), def.cost)) {
+        if (gameState.canAfford(aiFaction, def.cost)) {
           queueProduction(census.factory, UT_ROCKET)
         }
       }
@@ -929,14 +981,14 @@ function tickEconomy(
 function tryDiscoverPlayerBase(world: IWorld): boolean {
   const pBuildings = playerBuildingQuery(world)
   for (const eid of pBuildings) {
-    if (Faction.id[eid] !== getPlayerFaction()) continue
+    if (Faction.id[eid] !== enemyFaction) continue
     if (hasComponent(world, Dead, eid)) continue
 
     const bx = Position.x[eid]
     const bz = Position.z[eid]
 
     // Check if the building is visible in the AI faction's fog of war
-    if (isVisibleAt(bx, bz, getAIFaction())) {
+    if (isVisibleAt(bx, bz, aiFaction)) {
       knownPlayerBaseX = bx
       knownPlayerBaseZ = bz
       return true
@@ -954,7 +1006,7 @@ function assessThreatAtBase(world: IWorld, homeX: number, homeZ: number): number
   spatialHash.query(homeX, homeZ, DEFENSE_RADIUS, _near)
   let threatSupply = 0
   for (const eid of _near) {
-    if (!hasComponent(world, Faction, eid) || Faction.id[eid] !== getPlayerFaction()) continue
+    if (!hasComponent(world, Faction, eid) || Faction.id[eid] !== enemyFaction) continue
     if (hasComponent(world, Dead, eid)) continue
     if (hasComponent(world, IsBuilding, eid)) continue
     // Weight by unit type (same as census)
@@ -1052,7 +1104,7 @@ function takeCensus(world: IWorld): Census {
 
   const buildings = enemyBuildingQuery(world)
   for (const eid of buildings) {
-    if (Faction.id[eid] !== getAIFaction()) continue
+    if (Faction.id[eid] !== aiFaction) continue
     if (hasComponent(world, Dead, eid)) continue
     const ut = UnitTypeC.id[eid]
     if (ut === BT_COMMAND_CENTER) commandCenter = eid
@@ -1072,7 +1124,7 @@ function takeCensus(world: IWorld): Census {
 
   const units = enemyUnitQuery(world)
   for (const eid of units) {
-    if (Faction.id[eid] !== getAIFaction()) continue
+    if (Faction.id[eid] !== aiFaction) continue
     if (hasComponent(world, Dead, eid)) continue
     if (hasComponent(world, IsBuilding, eid)) continue
 
@@ -1180,7 +1232,7 @@ function tickWorkerDefense(world: IWorld, census: Census, homeX: number, homeZ: 
     const _near: number[] = []
     spatialHash.query(wx, wz, WORKER_THREAT_RADIUS, _near)
     for (const eid of _near) {
-      if (!hasComponent(world, Faction, eid) || Faction.id[eid] !== getPlayerFaction()) continue
+      if (!hasComponent(world, Faction, eid) || Faction.id[eid] !== enemyFaction) continue
       if (hasComponent(world, Dead, eid)) continue
       if (hasComponent(world, IsBuilding, eid)) continue
       nearbyEnemies.add(eid)
@@ -1295,7 +1347,7 @@ function tickWorkerDefense(world: IWorld, census: Census, homeX: number, homeZ: 
 function unstickUnits(world: IWorld, census: Census) {
   const units = enemyUnitQuery(world)
   for (const eid of units) {
-    if (Faction.id[eid] !== getAIFaction()) continue
+    if (Faction.id[eid] !== aiFaction) continue
     if (hasComponent(world, Dead, eid)) continue
     if (hasComponent(world, IsBuilding, eid)) continue
     if (!hasComponent(world, StuckState, eid)) continue
