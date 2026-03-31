@@ -43,8 +43,60 @@ export function replaceTerrainTexture(slot: string, url: string) {
 }
 
 let waterUniforms: { time: { value: number } } | null = null
+let cloudTimeUniform = { value: 0 }
+let cloudNoiseTex: THREE.Texture
+
 export function updateWater(dt: number) {
   if (waterUniforms) waterUniforms.time.value += dt
+  cloudTimeUniform.value += dt
+}
+
+/** Generate a tileable cloud noise texture on a canvas */
+function createCloudNoiseTexture(size = 256): THREE.Texture {
+  const canvas = document.createElement('canvas')
+  canvas.width = canvas.height = size
+  const ctx = canvas.getContext('2d')!
+  const img = ctx.createImageData(size, size)
+  const d = img.data
+
+  // Simple hash for noise
+  function hash(x: number, y: number) {
+    let n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453
+    return n - Math.floor(n)
+  }
+  function noise(px: number, py: number) {
+    const ix = Math.floor(px), iy = Math.floor(py)
+    const fx = px - ix, fy = py - iy
+    const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy)
+    const a = hash(ix, iy), b = hash(ix + 1, iy)
+    const c = hash(ix, iy + 1), dd = hash(ix + 1, iy + 1)
+    return a + (b - a) * sx + (c - a) * sy + (a - b - c + dd) * sx * sy
+  }
+  function fbm(x: number, y: number) {
+    let v = 0, a = 1, t = 0
+    for (let i = 0; i < 4; i++) {
+      v += noise(x, y) * a; t += a; a *= 0.5; x *= 2; y *= 2
+    }
+    return v / t
+  }
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      // Tile seamlessly by wrapping coordinates
+      const nx = x / size * 4, ny = y / size * 4
+      const v = fbm(nx, ny) * 0.55 + 0.45 // range 0.45–1.0 (never fully dark)
+      const byte = Math.round(v * 255)
+      const i = (y * size + x) * 4
+      d[i] = d[i + 1] = d[i + 2] = byte
+      d[i + 3] = 255
+    }
+  }
+  ctx.putImageData(img, 0, 0)
+  const tex = new THREE.CanvasTexture(canvas)
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+  tex.minFilter = THREE.LinearMipmapLinearFilter
+  tex.magFilter = THREE.LinearFilter
+  return tex
 }
 
 // Splat weights computed per-vertex in createTerrainMesh (no texture needed)
@@ -128,6 +180,8 @@ export function createTerrainMesh(): THREE.Mesh {
   const defaultFogTex = new THREE.DataTexture(new Uint8Array([255]), 1, 1, THREE.RedFormat)
   defaultFogTex.needsUpdate = true
 
+  cloudNoiseTex = createCloudNoiseTexture()
+
   const customUniforms = THREE.UniformsUtils.merge([
     THREE.UniformsLib.lights,
     {
@@ -138,6 +192,11 @@ export function createTerrainMesh(): THREE.Mesh {
       sunDir:   { value: sunDir },
       fogMap:   { value: defaultFogTex },
       mapSize:  { value: MAP_SIZE },
+      cloudMap:     { value: cloudNoiseTex },
+      cloudTime:    cloudTimeUniform,
+      cloudScale:   { value: 0.008 },
+      cloudSpeed:   { value: new THREE.Vector2(0.012, 0.007) },
+      cloudDarkness:{ value: 0.25 },
     }
   ])
 
@@ -150,6 +209,7 @@ export function createTerrainMesh(): THREE.Mesh {
       varying vec2 vTileUV;
       varying vec3 vNorm;
       varying float vHeight;
+      varying vec2 vWorldXZ;
 
       #include <common>
       #include <shadowmap_pars_vertex>
@@ -159,6 +219,7 @@ export function createTerrainMesh(): THREE.Mesh {
         vec4 worldPosition = modelMatrix * vec4(position, 1.0);
         vTileUV = worldPosition.xz * 0.1;
         vHeight = worldPosition.y;
+        vWorldXZ = worldPosition.xz;
         vNorm = normalize((modelMatrix * vec4(normal, 0.0)).xyz);
 
         gl_Position = projectionMatrix * viewMatrix * worldPosition;
@@ -169,12 +230,16 @@ export function createTerrainMesh(): THREE.Mesh {
     `,
     fragmentShader: /* glsl */ `
       uniform sampler2D texGrass, texDirt, texRock, texCliff;
+      uniform sampler2D cloudMap;
+      uniform float cloudTime, cloudScale, cloudDarkness;
+      uniform vec2 cloudSpeed;
       uniform vec3 sunDir;
 
       varying vec4 vSplat;
       varying vec2 vTileUV;
       varying vec3 vNorm;
       varying float vHeight;
+      varying vec2 vWorldXZ;
 
       #include <common>
       #include <packing>
@@ -210,7 +275,12 @@ export function createTerrainMesh(): THREE.Mesh {
 
         float shadow = getShadowMask();
 
-        vec3 col = albedo * (0.35 + 0.65 * ndl * shadow) * hf;
+        // Cloud shadows — scrolling noise texture
+        vec2 cloudUV = vWorldXZ * cloudScale + cloudSpeed * cloudTime;
+        float cloudVal = texture2D(cloudMap, cloudUV).r;
+        float cloudShadow = mix(1.0 - cloudDarkness, 1.0, cloudVal);
+
+        vec3 col = albedo * (0.35 + 0.65 * ndl * shadow) * hf * cloudShadow;
         // Fog of war applied via fullscreen overlay — not here
         gl_FragColor = vec4(col, 1.0);
       }
@@ -322,6 +392,11 @@ function createWater() {
       time: waterUniforms.time,
       deepColor: { value: new THREE.Color(0.08, 0.22, 0.40) },
       foamColor: { value: new THREE.Color(0.85, 0.92, 0.96) },
+      cloudMap:     { value: cloudNoiseTex },
+      cloudTime:    cloudTimeUniform,
+      cloudScale:   { value: 0.008 },
+      cloudSpeed:   { value: new THREE.Vector2(0.012, 0.007) },
+      cloudDarkness:{ value: 0.15 },
     },
     vertexShader: `
       uniform float time;
@@ -358,6 +433,9 @@ function createWater() {
     fragmentShader: `
       uniform float time;
       uniform vec3 deepColor, foamColor;
+      uniform sampler2D cloudMap;
+      uniform float cloudTime, cloudScale, cloudDarkness;
+      uniform vec2 cloudSpeed;
       varying float vShoreDist;
       varying float vIsWater;
       varying float vPoolSize;
@@ -431,8 +509,13 @@ function createWater() {
         float edgeFoam = smoothstep(0.06, 0.0, vShoreDist) * 0.8;
         foam = max(foam, edgeFoam);
 
+        // === Cloud shadows on water (subtle) ===
+        vec2 cloudUV = vWorld * cloudScale + cloudSpeed * cloudTime;
+        float cloudVal = texture2D(cloudMap, cloudUV).r;
+        float waterCloudShadow = mix(1.0 - cloudDarkness, 1.0, cloudVal);
+
         // === Final color ===
-        vec3 col = deepColor + caustic * vec3(0.15, 0.22, 0.28);
+        vec3 col = (deepColor + caustic * vec3(0.15, 0.22, 0.28)) * waterCloudShadow;
         col = mix(col, foamColor, foam);
 
         // Transparency layers:
