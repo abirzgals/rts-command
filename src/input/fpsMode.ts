@@ -370,7 +370,8 @@ function fpsShoot() {
   spawnMuzzleFlash(fpX, fpY, fpZ, muzzleCfg)
 
   // Spawn directional projectile
-  const projEid = spawnProjectile(world, fpX, fpZ, 0, damage, projSpeed, projCfg)
+  const myFaction = hasComponent(world, Faction, eid) ? Faction.id[eid] : 0
+  const projEid = spawnProjectile(world, fpX, fpZ, 0, damage, projSpeed, projCfg, myFaction)
   // Override to directional mode
   Position.y[projEid] = fpY
   Projectile.dirX[projEid] = dirX

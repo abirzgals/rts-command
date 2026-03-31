@@ -141,17 +141,17 @@ export const Wreckage = defineComponent({
 })
 
 export const Projectile = defineComponent({
-  targetEid: Types.ui32,  // 0 = directional (no homing)
+  targetEid: Types.ui32,
   damage: Types.f32,
   speed: Types.f32,
-  // Directional mode (FPS): fixed direction, max range
   dirX: Types.f32,
   dirY: Types.f32,
   dirZ: Types.f32,
-  maxRange: Types.f32,    // 0 = homing mode, >0 = directional
+  maxRange: Types.f32,
   traveled: Types.f32,
-  trailFire: Types.ui8,   // particles per frame (0 = off)
-  trailSmoke: Types.ui8,  // particles per frame (0 = off)
+  faction: Types.ui8,     // owner faction — projectile passes through allies
+  trailFire: Types.ui8,
+  trailSmoke: Types.ui8,
 })
 
 // Artillery projectile (tank shells) — follows parabolic arc

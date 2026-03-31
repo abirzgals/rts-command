@@ -289,7 +289,8 @@ function tryAttack(world: IWorld, attacker: number, target: number, dist: number
       spawnSmoke(fp.x, fp.y, fp.z, smokeLaunchCount)
       playSfx('rocket-launch')
     } else {
-      projEid = spawnProjectile(world, fp.x, fp.z, target, damage, projSpeed, { ...projCfg, trailFire, trailSmoke })
+      const attackerFaction = hasComponent(world, Faction, attacker) ? Faction.id[attacker] : 0xFF
+      projEid = spawnProjectile(world, fp.x, fp.z, target, damage, projSpeed, { ...projCfg, trailFire, trailSmoke }, attackerFaction)
       spawnMuzzleFlash(fp.x, fp.y, fp.z, muzzleCfg)
       playSfx(`${key}-shot`)
     }

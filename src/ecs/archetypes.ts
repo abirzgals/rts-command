@@ -324,6 +324,7 @@ export function spawnProjectile(
   damage: number,
   speed = 25,
   cfg?: { color?: string; size?: number; trailFire?: number; trailSmoke?: number },
+  ownerFaction = 0xFF,
 ): number {
   const eid = addEntity(world)
 
@@ -354,6 +355,7 @@ export function spawnProjectile(
   Projectile.dirZ[eid] = dirZ
   Projectile.maxRange[eid] = maxRange
   Projectile.traveled[eid] = 0
+  Projectile.faction[eid] = ownerFaction
   Projectile.trailFire[eid] = cfg?.trailFire ?? 0
   Projectile.trailSmoke[eid] = cfg?.trailSmoke ?? 0
 

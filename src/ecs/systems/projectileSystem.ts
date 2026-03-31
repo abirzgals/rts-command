@@ -34,13 +34,16 @@ export function projectileSystem(world: IWorld, dt: number) {
 
     const px = Position.x[eid], py = Position.y[eid], pz = Position.z[eid]
 
-    // Check collision with any entity with Health along path
+    // Check collision with ENEMY entities along path (pass through allies)
+    const projFaction = Projectile.faction[eid]
     const nearby: number[] = []
     spatialHash.query(px, pz, 1.5, nearby)
     let hitEid = -1
     for (const other of nearby) {
       if (hasComponent(world, Dead, other)) continue
       if (!hasComponent(world, Health, other)) continue
+      // Skip allies — projectiles pass through own team
+      if (hasComponent(world, Faction, other) && Faction.id[other] === projFaction) continue
       const ox = Position.x[other] - px
       const oy = (Position.y[other] + 1.0) - py
       const oz = Position.z[other] - pz
