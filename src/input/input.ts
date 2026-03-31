@@ -517,7 +517,6 @@ function handleClick(world: IWorld, sx: number, sy: number) {
     if (closestEid >= 0) {
       if (!shiftHeld) clearSelection(world)
       addComponent(world, Selected, closestEid)
-      if (clickedFriendly && !hasComponent(world, IsBuilding, closestEid)) playSfx('voice-select')
     }
     return
   }
@@ -538,7 +537,6 @@ function handleClick(world: IWorld, sx: number, sy: number) {
     } else {
       clearSelection(world)
       addComponent(world, Selected, closestEid)
-      if (!hasComponent(world, IsBuilding, closestEid)) playSfx('voice-select')
     }
     return
   }

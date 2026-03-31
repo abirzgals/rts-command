@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { defineQuery, hasComponent } from 'bitecs'
+import { defineQuery, enterQuery, hasComponent } from 'bitecs'
 import type { IWorld } from 'bitecs'
 import {
   Selected, Position, Selectable, Dead, IsBuilding, Producer,
@@ -13,8 +13,10 @@ import { getQueue, type Command } from '../commandQueue'
 import { getPlayerFaction } from '../../game/factions'
 import { hoverEid, getEntityGroup } from '../../input/input'
 import { camera, renderer } from '../../render/engine'
+import { playSfx } from '../../audio/audioManager'
 
 const selectedQuery = defineQuery([Selected, Position])
+const selectedEnterQuery = enterQuery(selectedQuery)
 
 const _positions: { x: number; y: number; z: number; radius: number }[] = []
 
@@ -75,6 +77,19 @@ function ensureRallyVisuals() {
 }
 
 export function selectionVisualSystem(world: IWorld, _dt: number) {
+  // ── Voice on unit selection ──
+  const newlySelected = selectedEnterQuery(world)
+  if (newlySelected.length > 0) {
+    // Play voice only for player's non-building units
+    for (const eid of newlySelected) {
+      if (hasComponent(world, Faction, eid) && Faction.id[eid] === getPlayerFaction()
+        && !hasComponent(world, IsBuilding, eid)) {
+        playSfx('voice-select')
+        break // one voice per selection event
+      }
+    }
+  }
+
   // ── Hover highlight ──
   ensureHoverRing()
   if (hoverEid >= 0 && hasComponent(world, Position, hoverEid) && !hasComponent(world, Dead, hoverEid)) {
