@@ -604,7 +604,7 @@ function gameLoop(time: number) {
   // GPU render
   profilerBegin('Render')
   prof('Scene', () => renderer.render(scene, activeCamera))
-  prof('FogOverlay', () => renderFogOverlay(renderer, activeCamera))
+  prof('FogOverlay', () => { if (!fpsCamera) renderFogOverlay(renderer, activeCamera) })
   profilerEnd()
 
   // UI
