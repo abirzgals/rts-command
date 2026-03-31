@@ -78,7 +78,7 @@ async function showMapSelector(): Promise<MapSelection> {
   const overlay = document.createElement('div')
   Object.assign(overlay.style, {
     position: 'fixed', inset: '0', zIndex: '1000',
-    background: 'url(/images/menu-bg.png) center/cover no-repeat, #0a0a14',
+    background: 'url(/images/menu-bg.jpg) center/cover no-repeat, #0a0a14',
     display: 'flex',
     alignItems: 'center', justifyContent: 'center',
     fontFamily: "'Segoe UI', Arial, sans-serif",
