@@ -141,9 +141,15 @@ export const Wreckage = defineComponent({
 })
 
 export const Projectile = defineComponent({
-  targetEid: Types.ui32,
+  targetEid: Types.ui32,  // 0 = directional (no homing)
   damage: Types.f32,
   speed: Types.f32,
+  // Directional mode (FPS): fixed direction, max range
+  dirX: Types.f32,
+  dirY: Types.f32,
+  dirZ: Types.f32,
+  maxRange: Types.f32,    // 0 = homing mode, >0 = directional
+  traveled: Types.f32,
   trailFire: Types.ui8,   // particles per frame (0 = off)
   trailSmoke: Types.ui8,  // particles per frame (0 = off)
 })

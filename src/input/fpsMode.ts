@@ -18,6 +18,12 @@ import { spatialHash } from '../globals'
 import { getPlayerFaction } from '../game/factions'
 import { playSfx } from '../audio/audioManager'
 import { removePath } from '../pathfinding/pathStore'
+import { spawnProjectile } from '../ecs/archetypes'
+import { getAnimManager } from '../render/animatedMeshManager'
+import { MeshRef } from '../ecs/components'
+import { editorConfig } from '../render/meshPools'
+import { Projectile } from '../ecs/components'
+import { spawnMuzzleFlash } from '../render/effects'
 
 // ── State ───────────────────────────────────────────────────
 let active = false
@@ -312,6 +318,8 @@ function onMouseMove(e: MouseEvent) {
   pitch = Math.max(PITCH_MIN, Math.min(PITCH_MAX, pitch))
 }
 
+const UT_KEY: Record<number, string> = { 0:'worker',1:'marine',2:'tank',3:'jeep',4:'rocket',5:'trooper' }
+
 function fpsShoot() {
   if (!active || !world) return
 
@@ -320,48 +328,57 @@ function fpsShoot() {
   if (AttackC.timer[eid] > 0) return
 
   const range = AttackC.range[eid]
-  const ux = Position.x[eid], uz = Position.z[eid]
-  const uy = getTerrainHeight(ux, uz) + EYE_HEIGHT
+  const damage = AttackC.damage[eid]
+  const utId = hasComponent(world, UnitTypeC, eid) ? UnitTypeC.id[eid] : 1
+  const unitKey = UT_KEY[utId] || 'marine'
 
   // Look direction
-  const lookDir = new THREE.Vector3(
-    Math.sin(yaw) * Math.cos(pitch),
-    Math.sin(pitch),
-    Math.cos(yaw) * Math.cos(pitch),
-  )
+  const dirX = Math.sin(yaw) * Math.cos(pitch)
+  const dirY = Math.sin(pitch)
+  const dirZ = Math.cos(yaw) * Math.cos(pitch)
 
-  // Find closest enemy in look direction cone
-  const nearby: number[] = []
-  spatialHash.query(ux, uz, range, nearby)
+  // Get fire point from editor config (bone-attached)
+  const key = UT_KEY[utId]
+  const cfg = key ? editorConfig?.[key] : null
+  const projCfg = cfg?.projectile ?? null
+  const muzzleCfg = cfg?.muzzle ?? null
+  const projSpeed = projCfg?.speed ?? 25
 
-  let bestTarget = -1
-  let bestDot = 0.85
+  // Fire point: use bone position if available, else offset from eye
+  const ux = Position.x[eid], uz = Position.z[eid]
+  const uy = getTerrainHeight(ux, uz) + EYE_HEIGHT
+  let fpX = ux + dirX * 0.5
+  let fpY = uy + dirY * 0.5 - 0.3
+  let fpZ = uz + dirZ * 0.5
 
-  for (const other of nearby) {
-    if (other === eid) continue
-    if (!hasComponent(world, Faction, other)) continue
-    if (Faction.id[other] === getPlayerFaction()) continue
-    if (hasComponent(world, Dead, other)) continue
-    if (!hasComponent(world, Health, other)) continue
-
-    const dx = Position.x[other] - ux
-    const dy = (getTerrainHeight(Position.x[other], Position.z[other]) + 1.0) - uy
-    const dz = Position.z[other] - uz
-    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz)
-    if (dist > range || dist < 0.5) continue
-
-    const dot = (dx / dist) * lookDir.x + (dy / dist) * lookDir.y + (dz / dist) * lookDir.z
-    if (dot > bestDot) {
-      bestDot = dot
-      bestTarget = other
+  // Try to get bone-attached fire point
+  if (hasComponent(world, MeshRef, eid)) {
+    const poolId = MeshRef.poolId[eid]
+    const animMgr = getAnimManager(poolId)
+    const fp = cfg?.firePoint
+    if (animMgr && animMgr.has(eid) && fp) {
+      const worldFp = animMgr.getFirePointWorld(eid, fp.x ?? 0, fp.y ?? 1.5, fp.z ?? 0, fp.boneName)
+      if (worldFp) { fpX = worldFp.x; fpY = worldFp.y; fpZ = worldFp.z }
     }
   }
 
-  if (bestTarget >= 0) {
-    // Set AttackTarget — combat system will fire projectile from proper fire point
-    addComponent(world, AttackTarget, eid)
-    AttackTarget.eid[eid] = bestTarget
-  }
+  // Set cooldown
+  AttackC.timer[eid] = AttackC.cooldown[eid]
+
+  // Sound + muzzle flash
+  playSfx(`${unitKey}-shot`)
+  spawnMuzzleFlash(fpX, fpY, fpZ, muzzleCfg)
+
+  // Spawn directional projectile
+  const projEid = spawnProjectile(world, fpX, fpZ, 0, damage, projSpeed, projCfg)
+  // Override to directional mode
+  Position.y[projEid] = fpY
+  Projectile.dirX[projEid] = dirX
+  Projectile.dirY[projEid] = dirY
+  Projectile.dirZ[projEid] = dirZ
+  Projectile.maxRange[projEid] = range
+  Projectile.traveled[projEid] = 0
+  Projectile.targetEid[projEid] = 0xFFFFFFFF // no homing target
 }
 
 function onMouseDown(e: MouseEvent) {
