@@ -69,15 +69,21 @@ export function initSharedButtons() {
       onClick: () => openSettingsUI() },
   ]
 
-  // Navigation links — skip the one for the current page
+  // Navigation links — sequential positioning
+  const navLinks: ButtonDef[] = []
   if (!currentPath.endsWith('/editor.html')) {
-    buttons.push({ id: 'sb-editor', icon: '\u2699', title: 'Editor', href: '/editor.html', right: 64 })
+    navLinks.push({ id: 'sb-editor', icon: '\u2699', title: 'Editor', href: '/editor.html', right: 0 })
   }
   if (!currentPath.endsWith('/sandbox.html')) {
-    buttons.push({ id: 'sb-sandbox', icon: '\u2694', title: 'Sandbox', href: '/sandbox.html', right: 112 })
+    navLinks.push({ id: 'sb-sandbox', icon: '\u2694', title: 'Sandbox', href: '/sandbox.html', right: 0 })
   }
   if (!currentPath.endsWith('/mapeditor.html')) {
-    buttons.push({ id: 'sb-mapeditor', icon: '\u{1F5FA}', title: 'Map Editor', href: '/mapeditor.html', right: 16 + buttons.length * 48 })
+    navLinks.push({ id: 'sb-mapeditor', icon: '\u{1F5FA}', title: 'Map Editor', href: '/mapeditor.html', right: 0 })
+  }
+  // Position nav links sequentially starting from right: 64
+  for (let i = 0; i < navLinks.length; i++) {
+    navLinks[i].right = 64 + i * 48
+    buttons.push(navLinks[i])
   }
   if (currentPath.endsWith('/editor.html') || currentPath.endsWith('/sandbox.html') || currentPath.endsWith('/mapeditor.html')) {
     buttons.push({ id: 'sb-game', icon: '\u{1F3AE}', title: 'Game', href: '/', right: 16 + buttons.length * 48 })

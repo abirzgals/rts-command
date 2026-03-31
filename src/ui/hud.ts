@@ -167,37 +167,27 @@ const UNIT_ICONS: Record<number, string> = {
   0: '👷', 1: '🔫', 2: '🛡️', 3: '🚙', 4: '🚀', 5: '🔫',
 }
 
-let queueContainer: HTMLDivElement | null = null
-
 function updateProductionQueue(world: IWorld, selected: number[]) {
+  const queueEl = document.getElementById('production-queue')
+  if (!queueEl) return
+
   if (selected.length !== 1) {
-    if (queueContainer) { queueContainer.style.display = 'none' }
+    queueEl.style.display = 'none'
     return
   }
   const eid = selected[0]
   if (!hasComponent(world, Producer, eid) || !hasComponent(world, IsBuilding, eid)) {
-    if (queueContainer) { queueContainer.style.display = 'none' }
+    queueEl.style.display = 'none'
     return
   }
 
   const queue = gameState.getQueue(eid)
   if (queue.length === 0 && !Producer.active[eid]) {
-    if (queueContainer) { queueContainer.style.display = 'none' }
+    queueEl.style.display = 'none'
     return
   }
 
-  // Create container if needed
-  if (!queueContainer) {
-    queueContainer = document.createElement('div')
-    Object.assign(queueContainer.style, {
-      position: 'fixed', bottom: '165px', left: '210px',
-      display: 'flex', gap: '3px', flexWrap: 'wrap', zIndex: '50',
-      padding: '4px 8px', background: 'rgba(10,10,20,0.85)',
-      borderRadius: '6px', border: '1px solid #333',
-    })
-    document.body.appendChild(queueContainer)
-  }
-  queueContainer.style.display = 'flex'
+  queueEl.style.display = 'flex'
 
   // Build queue icons — first is currently producing (with progress bar)
   const items: { unitType: number; index: number; active: boolean }[] = []
@@ -205,37 +195,31 @@ function updateProductionQueue(world: IWorld, selected: number[]) {
     items.push({ unitType: Producer.unitType[eid], index: 0, active: true })
   }
   for (let i = 0; i < queue.length; i++) {
-    // Skip index 0 if it matches the active production (already shown)
     if (i === 0 && Producer.active[eid]) continue
     items.push({ unitType: queue[i].unitType, index: i, active: false })
   }
 
-  // Rebuild only if count changed
-  if (queueContainer.children.length !== items.length) {
-    queueContainer.innerHTML = ''
+  // Rebuild only if count changed (label + items)
+  if (queueEl.children.length !== items.length + 1) {
+    queueEl.innerHTML = '<span class="pq-label">Queue:</span>'
     for (const item of items) {
       const el = document.createElement('div')
-      Object.assign(el.style, {
-        width: '32px', height: '32px', borderRadius: '4px',
-        border: '1px solid #555', background: '#1a1a2e',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: '18px', cursor: 'pointer', position: 'relative',
-      })
+      el.className = 'pq-item'
       el.textContent = UNIT_ICONS[item.unitType] || '?'
       el.title = `${UNIT_DEFS[item.unitType]?.name ?? '?'} — click to cancel`
       el.addEventListener('click', (ev) => {
         ev.stopPropagation()
         cancelQueueItem(eid, item.index)
       })
-      queueContainer.appendChild(el)
+      queueEl.appendChild(el)
     }
   }
 
-  // Update progress on first item
-  if (items.length > 0 && items[0].active && queueContainer.firstChild) {
+  // Update progress on first item (skip label at index 0)
+  if (items.length > 0 && items[0].active && queueEl.children.length > 1) {
     const pct = Producer.duration[eid] > 0
       ? Math.floor((Producer.progress[eid] / Producer.duration[eid]) * 100) : 0
-    const el = queueContainer.firstChild as HTMLElement
+    const el = queueEl.children[1] as HTMLElement
     el.style.background = `linear-gradient(to top, rgba(40,120,40,0.6) ${pct}%, #1a1a2e ${pct}%)`
     el.style.borderColor = '#4a8a4a'
   }
@@ -266,7 +250,8 @@ function cancelAllProduction(buildingEid: number) {
     }
   }
   queue.length = 0
-  if (queueContainer) queueContainer.innerHTML = ''
+  const queueEl = document.getElementById('production-queue')
+  if (queueEl) queueEl.innerHTML = ''
 }
 
 function cancelQueueItem(buildingEid: number, index: number) {
@@ -308,7 +293,8 @@ function cancelQueueItem(buildingEid: number, index: number) {
     }
   }
   // Force rebuild
-  if (queueContainer) queueContainer.innerHTML = ''
+  const queueEl = document.getElementById('production-queue')
+  if (queueEl) queueEl.innerHTML = ''
 }
 
 function updateAffordability() {
