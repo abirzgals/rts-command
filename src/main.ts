@@ -78,14 +78,16 @@ async function showMapSelector(): Promise<MapSelection> {
   const overlay = document.createElement('div')
   Object.assign(overlay.style, {
     position: 'fixed', inset: '0', zIndex: '1000',
-    background: 'rgba(5,5,15,0.95)', display: 'flex',
+    background: 'url(/images/menu-bg.png) center/cover no-repeat, #0a0a14',
+    display: 'flex',
     alignItems: 'center', justifyContent: 'center',
     fontFamily: "'Segoe UI', Arial, sans-serif",
   })
 
   const box = document.createElement('div')
   Object.assign(box.style, {
-    background: '#12121e', border: '1px solid #333', borderRadius: '12px',
+    background: 'rgba(10,10,25,0.85)', border: '1px solid rgba(100,150,255,0.2)', borderRadius: '12px',
+    backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
     padding: '32px', minWidth: '360px', maxWidth: '500px', textAlign: 'center',
   })
 
