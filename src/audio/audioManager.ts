@@ -110,6 +110,9 @@ export async function playMenuMusic() {
   if (!soundEnabled) return
   if (musicMode === 'menu') return
   musicMode = 'menu'
+  // If AudioContext not yet available (no user interaction), just set mode
+  // initAudioOnInteraction will start the music when user clicks
+  if (!ctx || ctx.state === 'suspended') return
   await fadeOutCurrent()
   const buf = await loadBuffer(MENU_MUSIC)
   if (!buf || musicMode !== 'menu') return
@@ -234,6 +237,14 @@ export function initAudioOnInteraction() {
   initialized = true
   ensureContext()
   preloadSfx()
+  // Resume music that was requested before interaction
+  if (musicMode === 'menu' && !currentMusic && soundEnabled) {
+    loadBuffer(MENU_MUSIC).then(buf => {
+      if (buf && musicMode === 'menu') {
+        currentMusic = playBuffer(buf, true)
+      }
+    })
+  }
 }
 
 // Auto-init on click/key
@@ -242,7 +253,9 @@ if (typeof window !== 'undefined') {
     initAudioOnInteraction()
     window.removeEventListener('click', handler)
     window.removeEventListener('keydown', handler)
+    window.removeEventListener('touchstart', handler)
   }
   window.addEventListener('click', handler, { once: true })
   window.addEventListener('keydown', handler, { once: true })
+  window.addEventListener('touchstart', handler, { once: true })
 }
