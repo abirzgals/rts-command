@@ -533,16 +533,21 @@ function createWater() {
         float edgeFoam = smoothstep(0.06, 0.0, vShoreDist) * 0.8;
         foam = max(foam, edgeFoam);
 
-        // === Cloud shadows on water (subtle, evolving) ===
-        vec2 wCloudUV1 = vWorld * cloudScale + cloudSpeed * cloudTime;
-        vec2 wCloudUV2 = vWorld * cloudScale * 1.3 - cloudSpeed * 0.7 * cloudTime + vec2(0.37, 0.61);
+        // === Cloud light on water — bright sun glints where clouds break ===
+        vec2 wCloudUV1 = vWorld * cloudScale * 1.5 + cloudSpeed * cloudTime;
+        vec2 wCloudUV2 = vWorld * cloudScale * 2.0 - cloudSpeed * 0.8 * cloudTime + vec2(0.37, 0.61);
         float wc1 = texture2D(cloudMap, wCloudUV1).r;
         float wc2 = texture2D(cloudMap, wCloudUV2).r;
-        float wCloudVal = wc1 * 0.6 + wc2 * 0.4;
-        float waterCloudShadow = mix(1.0 - cloudDarkness, 1.0, wCloudVal);
+        float wCloudVal = wc1 * 0.5 + wc2 * 0.5;
+        // Sharp bright patches where cloud value is high (sun breaking through)
+        float sunGlint = smoothstep(0.4, 0.8, wCloudVal);
+        // Boost brightness in clear areas, darken in clouded areas
+        vec3 glintColor = vec3(0.3, 0.45, 0.55); // bright sky-blue reflection
 
         // === Final color ===
-        vec3 col = (deepColor + caustic * vec3(0.15, 0.22, 0.28)) * waterCloudShadow;
+        vec3 col = deepColor + caustic * vec3(0.15, 0.22, 0.28);
+        col += glintColor * sunGlint * 0.4; // add bright highlights
+        col *= mix(0.85, 1.0, wCloudVal);   // subtle shadow in dark areas
         col = mix(col, foamColor, foam);
 
         // Transparency layers:
