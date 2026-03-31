@@ -37,6 +37,7 @@ import { updateEffects, updateFallingPieces, updateBloodDecals } from './render/
 import { initHPBars, updateHPBars } from './render/hpBars'
 import { initNotifications } from './ui/notifications'
 import { initUnitCamera, updateUnitCamera } from './render/unitCamera'
+import { isFPSMode, updateFPSMode, getFPSEntity } from './input/fpsMode'
 import { profilerBeginFrame, profilerEndFrame, profilerBegin, profilerEnd, updateProfilerDisplay } from './debug/profiler'
 import { isDebugEnabled } from './render/debugOverlay'
 import { playMenuMusic, playIngameMusic, stopMusic, preloadSfx, setSoundEnabled } from './audio/audioManager'
@@ -557,15 +558,20 @@ function gameLoop(time: number) {
   updatePerfBudget(dt)
   profilerBeginFrame()
 
-  // Minimap click
-  const minimapTarget = (window as any).__minimapTarget
-  if (minimapTarget) {
-    rtsCamera.target.x = minimapTarget.x
-    rtsCamera.target.z = minimapTarget.z
-    ;(window as any).__minimapTarget = null
-  }
+  // FPS mode: update FPS camera, skip RTS camera
+  const fpsCamera = isFPSMode() ? updateFPSMode(dt) : null
+  const activeCamera = fpsCamera || camera
 
-  prof('Camera', () => rtsCamera.update(dt))
+  if (!fpsCamera) {
+    // Minimap click
+    const minimapTarget = (window as any).__minimapTarget
+    if (minimapTarget) {
+      rtsCamera.target.x = minimapTarget.x
+      rtsCamera.target.z = minimapTarget.z
+      ;(window as any).__minimapTarget = null
+    }
+    prof('Camera', () => rtsCamera.update(dt))
+  }
 
   // ECS systems
   profilerBegin('ECS')
@@ -597,8 +603,8 @@ function gameLoop(time: number) {
 
   // GPU render
   profilerBegin('Render')
-  prof('Scene', () => renderer.render(scene, camera))
-  prof('FogOverlay', () => renderFogOverlay(renderer, camera))
+  prof('Scene', () => renderer.render(scene, activeCamera))
+  prof('FogOverlay', () => { if (!fpsCamera) renderFogOverlay(renderer, activeCamera) })
   profilerEnd()
 
   // UI

@@ -8,6 +8,7 @@ import type { IWorld } from 'bitecs'
 import { Selected, Position, Rotation, IsBuilding, Dead } from '../ecs/components'
 import { scene, renderer } from './engine'
 import { getTerrainHeight } from '../terrain/heightmap'
+import { enterFPSMode, isFPSMode } from '../input/fpsMode'
 
 const selectedQuery = defineQuery([Selected, Position])
 
@@ -33,6 +34,18 @@ export function initUnitCamera() {
 
   unitCam = new THREE.PerspectiveCamera(70, CAM_WIDTH / CAM_HEIGHT, 0.5, 150)
   renderTarget = new THREE.WebGLRenderTarget(CAM_WIDTH, CAM_HEIGHT)
+
+  // Click on unit camera → enter FPS mode
+  canvas.style.cursor = 'pointer'
+  canvas.addEventListener('click', () => {
+    if (isFPSMode()) return
+    const w = (window as any).__ecsWorld
+    if (!w) return
+    const selected = selectedQuery(w)
+    if (selected.length === 1 && !hasComponent(w, IsBuilding, selected[0]) && !hasComponent(w, Dead, selected[0])) {
+      enterFPSMode(selected[0], w)
+    }
+  })
 }
 
 const _pixelBuf = new Uint8Array(CAM_WIDTH * CAM_HEIGHT * 4)
