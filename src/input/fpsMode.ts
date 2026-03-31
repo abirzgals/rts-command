@@ -47,6 +47,9 @@ let lastHP = -1
 // Movement
 const keys = { w: false, a: false, s: false, d: false }
 
+// Shooting
+let shooting = false
+
 // UI elements
 let crosshairEl: HTMLDivElement | null = null
 let fpsHudEl: HTMLDivElement | null = null
@@ -146,6 +149,7 @@ export function enterFPSMode(eid: number, w: IWorld) {
 
   // Listeners
   document.addEventListener('mousedown', onMouseDown)
+  document.addEventListener('mouseup', onFPSMouseUp)
   document.addEventListener('mousemove', onMouseMove)
   document.addEventListener('keydown', onKeyDown)
   document.addEventListener('keyup', onKeyUp)
@@ -177,8 +181,10 @@ export function exitFPSMode() {
     }
   }
 
+  shooting = false
   // Cleanup listeners
   document.removeEventListener('mousedown', onMouseDown)
+  document.removeEventListener('mouseup', onFPSMouseUp)
   document.removeEventListener('mousemove', onMouseMove)
   document.removeEventListener('keydown', onKeyDown)
   document.removeEventListener('keyup', onKeyUp)
@@ -307,6 +313,11 @@ export function updateFPSMode(dt: number): THREE.Camera | null {
   fpsCam.aspect = window.innerWidth / window.innerHeight
   fpsCam.updateProjectionMatrix()
 
+  // Continuous fire while mouse/touch held — uses unit's cooldown, burst, etc.
+  if (shooting && AttackC.timer[controlledEid] <= 0) {
+    fpsShoot()
+  }
+
   return fpsCam
 }
 
@@ -325,10 +336,25 @@ function fpsShoot() {
 
   const eid = controlledEid
   if (!hasComponent(world, AttackC, eid)) return
-  if (AttackC.timer[eid] > 0) return
 
   const range = AttackC.range[eid]
   const damage = AttackC.damage[eid]
+  const burstSize = AttackC.burstSize[eid] || 1
+
+  // Burst fire: same logic as RTS combat system
+  if (burstSize > 1) {
+    AttackC.burstRemaining[eid]--
+    if (AttackC.burstRemaining[eid] <= 0) {
+      // Burst finished — full reload
+      AttackC.timer[eid] = AttackC.cooldown[eid]
+      AttackC.burstRemaining[eid] = burstSize
+    } else {
+      // Next shot in burst
+      AttackC.timer[eid] = AttackC.burstDelay[eid]
+    }
+  } else {
+    AttackC.timer[eid] = AttackC.cooldown[eid]
+  }
   const utId = hasComponent(world, UnitTypeC, eid) ? UnitTypeC.id[eid] : 1
   const unitKey = UT_KEY[utId] || 'marine'
 
@@ -376,9 +402,6 @@ function fpsShoot() {
   const dirY = toAimY / toAimLen
   const dirZ = toAimZ / toAimLen
 
-  // Set cooldown
-  AttackC.timer[eid] = AttackC.cooldown[eid]
-
   // Sound + muzzle flash
   playSfx(`${unitKey}-shot`)
   spawnMuzzleFlash(fpX, fpY, fpZ, muzzleCfg)
@@ -397,7 +420,12 @@ function fpsShoot() {
 
 function onMouseDown(e: MouseEvent) {
   if (!active || e.button !== 0) return
-  fpsShoot()
+  shooting = true
+}
+
+function onFPSMouseUp(e: MouseEvent) {
+  if (e.button !== 0) return
+  shooting = false
 }
 
 function onKeyDown(e: KeyboardEvent) {
@@ -497,10 +525,12 @@ function createTouchControls() {
   fireBtn.addEventListener('touchstart', (e) => {
     e.preventDefault()
     e.stopPropagation()
-    fpsShoot()
+    shooting = true
     fireBtn.style.background = 'rgba(255,100,50,0.8)'
   })
-  fireBtn.addEventListener('touchend', () => {
+  fireBtn.addEventListener('touchend', (e) => {
+    e.preventDefault()
+    shooting = false
     fireBtn.style.background = 'rgba(220,60,30,0.6)'
   })
   touchControlsEl.appendChild(fireBtn)
