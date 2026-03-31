@@ -1055,6 +1055,8 @@ function forceAttackTarget(world: IWorld, sx: number, sy: number) {
       targetDist = dist
     }
   }
+  playSfx('voice-attack')
+
   if (targetEid >= 0) {
     const tr = hasComponent(world, Selectable, targetEid) ? Selectable.radius[targetEid] : 0.8
     spawnActionIndicator(Position.x[targetEid], Position.y[targetEid], Position.z[targetEid], tr + 0.3, 'attack')
