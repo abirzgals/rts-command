@@ -32,9 +32,10 @@ export function combatSystem(world: IWorld, dt: number) {
   combatFrame++
 
   for (let i = 0; i < entities.length; i++) {
-    // Under pressure: process only half the entities per frame (alternate frames)
-    if (perfBudget.combatSkip && (i + combatFrame) % 2 === 0) continue
     const eid = entities[i]
+    // Under pressure: skip half, but never skip units with attack targets or attack-move
+    if (perfBudget.combatSkip && (i + combatFrame) % 2 === 0
+      && !hasComponent(world, AttackTarget, eid) && !hasComponent(world, AttackMove, eid)) continue
     // Tick cooldown
     if (AttackC.timer[eid] > 0) {
       AttackC.timer[eid] -= dt
@@ -128,9 +129,10 @@ export function combatSystem(world: IWorld, dt: number) {
     // AI workers don't auto-acquire — controlled by AI system only
     if (hasComponent(world, WorkerC, eid) && myFaction === getAIFaction()) continue
 
-    // Auto-acquire: skip if moving, unless unit has AttackMove (one-shot attack-move command)
+    // Auto-acquire: skip if moving, unless unit has AttackMove
     const isMoving = hasComponent(world, MoveTarget, eid) || hasComponent(world, PathFollower, eid)
-    if (isMoving && !hasComponent(world, AttackMove, eid)) continue
+    const isAttackMove = hasComponent(world, AttackMove, eid)
+    if (isMoving && !isAttackMove) continue
 
     spatialHash.query(px, pz, range, _nearby)
     let bestTarget = -1
@@ -143,7 +145,8 @@ export function combatSystem(world: IWorld, dt: number) {
       if (Faction.id[other] === myFaction) continue
       if (hasComponent(world, Dead, other)) continue
       if (!hasComponent(world, Health, other)) continue
-      if (!isVisibleAt(Position.x[other], Position.z[other], myFaction)) continue
+      // Skip fog check for attack-move — if enemy is in range, engage
+      if (!isAttackMove && !isVisibleAt(Position.x[other], Position.z[other], myFaction)) continue
 
       const dx = Position.x[other] - px
       const dz = Position.z[other] - pz
