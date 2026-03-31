@@ -68,7 +68,7 @@ export function enterFPSMode(eid: number, w: IWorld) {
   world = w
 
   // Init camera
-  fpsCam = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.3, 300)
+  fpsCam = new THREE.PerspectiveCamera(85, window.innerWidth / window.innerHeight, 0.3, 300)
   yaw = hasComponent(w, Rotation, eid) ? Rotation.y[eid] : 0
   pitch = 0
 
