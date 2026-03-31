@@ -36,6 +36,8 @@ import { initDebugOverlay, updateDebugOverlay } from './render/debugOverlay'
 import { updateEffects, updateFallingPieces } from './render/effects'
 import { initHPBars, updateHPBars } from './render/hpBars'
 import { initNotifications } from './ui/notifications'
+import { profilerBeginFrame, profilerEndFrame, profilerBegin, profilerEnd, updateProfilerDisplay } from './debug/profiler'
+import { isDebugEnabled } from './render/debugOverlay'
 
 // UI
 import { updateHUD } from './ui/hud'
@@ -503,12 +505,19 @@ function spawnMapObstacles(world: IWorld) {
 // ── Game loop ────────────────────────────────────────────────
 let lastTime = 0
 
+function prof(name: string, fn: () => void) {
+  profilerBegin(name)
+  fn()
+  profilerEnd()
+}
+
 function gameLoop(time: number) {
   requestAnimationFrame(gameLoop)
 
   const dt = Math.min((time - lastTime) / 1000, 0.1)
   lastTime = time
   updatePerfBudget(dt)
+  profilerBeginFrame()
 
   // Minimap click
   const minimapTarget = (window as any).__minimapTarget
@@ -518,33 +527,48 @@ function gameLoop(time: number) {
     ;(window as any).__minimapTarget = null
   }
 
-  rtsCamera.update(dt)
+  prof('Camera', () => rtsCamera.update(dt))
 
   // ECS systems
-  supplySystem(world, dt)
-  commandQueueSystem(world, dt)
-  aiSystem(world, dt)
-  productionSystem(world, dt)
-  resourceSystem(world, dt)
-  combatSystem(world, dt)
-  projectileSystem(world, dt)
-  pathfindingSystem(world, dt)
-  movementSystem(world, dt)
-  deathSystem(world, dt)
-  animationSystem(world, dt)
-  renderSystem(world, dt)
-  updateAllAnimations(dt)
-  updateEffects(dt)
-  updateFallingPieces(dt)
-  updateWater(dt)
-  selectionVisualSystem(world, dt)
-  updateFogOfWar(world)
-  updateDebugOverlay(world)
+  profilerBegin('ECS')
+  prof('Supply', () => supplySystem(world, dt))
+  prof('CommandQueue', () => commandQueueSystem(world, dt))
+  prof('AI', () => aiSystem(world, dt))
+  prof('Production', () => productionSystem(world, dt))
+  prof('Resources', () => resourceSystem(world, dt))
+  prof('Combat', () => combatSystem(world, dt))
+  prof('Projectiles', () => projectileSystem(world, dt))
+  prof('Pathfinding', () => pathfindingSystem(world, dt))
+  prof('Movement', () => movementSystem(world, dt))
+  prof('Death', () => deathSystem(world, dt))
+  prof('Animation', () => animationSystem(world, dt))
+  prof('RenderSys', () => renderSystem(world, dt))
+  profilerEnd()
 
-  renderer.render(scene, camera)
-  renderFogOverlay(renderer, camera)
+  // Visual updates
+  profilerBegin('Visual')
+  prof('AnimMeshes', () => updateAllAnimations(dt))
+  prof('Effects', () => updateEffects(dt))
+  prof('Debris', () => updateFallingPieces(dt))
+  prof('Water', () => updateWater(dt))
+  prof('Selection', () => selectionVisualSystem(world, dt))
+  prof('FogOfWar', () => updateFogOfWar(world))
+  prof('DebugOverlay', () => updateDebugOverlay(world))
+  profilerEnd()
 
-  updateHPBars(world)
-  updateHUD(world, dt, time)
-  updateMinimap(world, time)
+  // GPU render
+  profilerBegin('Render')
+  prof('Scene', () => renderer.render(scene, camera))
+  prof('FogOverlay', () => renderFogOverlay(renderer, camera))
+  profilerEnd()
+
+  // UI
+  profilerBegin('UI')
+  prof('HPBars', () => updateHPBars(world))
+  prof('HUD', () => updateHUD(world, dt, time))
+  prof('Minimap', () => updateMinimap(world, time))
+  profilerEnd()
+
+  profilerEndFrame()
+  updateProfilerDisplay(isDebugEnabled())
 }
