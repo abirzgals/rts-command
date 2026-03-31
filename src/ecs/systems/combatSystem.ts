@@ -9,7 +9,7 @@ import { removePath } from '../../pathfinding/pathStore'
 import { spawnProjectile, spawnArcProjectile, projectileEffects } from '../archetypes'
 import { UnitTypeC } from '../components'
 import { UT_TANK, UT_JEEP, UT_ROCKET } from '../../game/config'
-import { spawnMuzzleFlash, spawnRocketTrail, spawnFireExplosion, spawnSmoke } from '../../render/effects'
+import { spawnMuzzleFlash, spawnRocketTrail, spawnFireExplosion, spawnSmoke, spawnBloodHit } from '../../render/effects'
 import { spatialHash } from '../../globals'
 import { editorConfig } from '../../render/meshPools'
 import { getAnimManager } from '../../render/animatedMeshManager'
@@ -299,6 +299,14 @@ export function applyDamage(world: IWorld, target: number, damage: number, fromX
   const effective = Math.max(1, damage - armor)
 
   Health.current[target] -= effective
+
+  // Blood splat for infantry (not vehicles/buildings)
+  if (!hasComponent(world, IsBuilding, target) && hasComponent(world, UnitTypeC, target)) {
+    const utId = UnitTypeC.id[target]
+    if (utId !== UT_TANK && utId !== UT_JEEP && utId !== UT_ROCKET) {
+      spawnBloodHit(Position.x[target], Position.z[target])
+    }
+  }
 
   // Notify player when their stuff is attacked
   if (hasComponent(world, Faction, target) && Faction.id[target] === getPlayerFaction()) {

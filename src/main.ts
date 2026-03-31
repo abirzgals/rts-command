@@ -33,7 +33,7 @@ import { animationSystem } from './ecs/systems/animationSystem'
 import { commandQueueSystem } from './ecs/systems/commandQueueSystem'
 import { updateAllAnimations } from './render/animatedMeshManager'
 import { initDebugOverlay, updateDebugOverlay } from './render/debugOverlay'
-import { updateEffects, updateFallingPieces } from './render/effects'
+import { updateEffects, updateFallingPieces, updateBloodDecals } from './render/effects'
 import { initHPBars, updateHPBars } from './render/hpBars'
 import { initNotifications } from './ui/notifications'
 import { profilerBeginFrame, profilerEndFrame, profilerBegin, profilerEnd, updateProfilerDisplay } from './debug/profiler'
@@ -586,6 +586,7 @@ function gameLoop(time: number) {
   prof('AnimMeshes', () => updateAllAnimations(dt))
   prof('Effects', () => updateEffects(dt))
   prof('Debris', () => updateFallingPieces(dt))
+  prof('Blood', () => updateBloodDecals(dt))
   prof('Water', () => updateWater(dt))
   prof('Selection', () => selectionVisualSystem(world, dt))
   prof('FogOfWar', () => updateFogOfWar(world))

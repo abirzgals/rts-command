@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { scene } from './engine'
+import { getTerrainHeight } from '../terrain/heightmap'
 
 // ── Smoke trail particles ───────────────────────────────────
 interface SmokeParticle {
@@ -861,6 +862,98 @@ export function updateFallingPieces(dt: number) {
         p.mesh.geometry.dispose()
         fallingPieces.splice(i, 1)
       }
+    }
+  }
+}
+
+// ── Blood decals ────────────────────────────────────────────
+interface BloodDecal {
+  mesh: THREE.Mesh
+  life: number
+  maxLife: number
+  fadeStart: number // life at which fading begins
+}
+
+const bloodDecals: BloodDecal[] = []
+let bloodTexture: THREE.Texture | null = null
+let bloodTextureLoading = false
+const bloodGeo = new THREE.PlaneGeometry(1, 1)
+
+function ensureBloodTexture(): THREE.Texture | null {
+  if (bloodTexture) return bloodTexture
+  if (bloodTextureLoading) return null
+  bloodTextureLoading = true
+  new THREE.TextureLoader().load('/images/blood-decal.png', (tex) => {
+    bloodTexture = tex
+  })
+  return null
+}
+
+export function spawnBloodSplat(x: number, z: number, size: number) {
+  const tex = ensureBloodTexture()
+  if (!tex) return
+
+  const y = getTerrainHeight(x, z) + 0.05
+  const mat = new THREE.MeshBasicMaterial({
+    map: tex,
+    transparent: true,
+    opacity: 0.7 + Math.random() * 0.3,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  })
+  const mesh = new THREE.Mesh(bloodGeo, mat)
+  mesh.rotation.x = -Math.PI / 2
+  mesh.rotation.z = Math.random() * Math.PI * 2 // random rotation
+  mesh.position.set(x + (Math.random() - 0.5) * 0.5, y, z + (Math.random() - 0.5) * 0.5)
+  mesh.scale.setScalar(size)
+  mesh.renderOrder = 1
+  scene.add(mesh)
+
+  bloodDecals.push({ mesh, life: 0, maxLife: 10, fadeStart: 6 })
+}
+
+/** Small blood hit splats — 1-2 tiny decals */
+export function spawnBloodHit(x: number, z: number) {
+  const count = 1 + Math.floor(Math.random() * 2)
+  for (let i = 0; i < count; i++) {
+    spawnBloodSplat(
+      x + (Math.random() - 0.5) * 1.5,
+      z + (Math.random() - 0.5) * 1.5,
+      0.3 + Math.random() * 0.4, // small: 0.3-0.7
+    )
+  }
+}
+
+/** Death blood splash — larger pool */
+export function spawnBloodDeath(x: number, z: number) {
+  // Main pool
+  spawnBloodSplat(x, z, 1.0 + Math.random() * 0.5)
+  // Extra splatters
+  for (let i = 0; i < 3; i++) {
+    spawnBloodSplat(
+      x + (Math.random() - 0.5) * 2,
+      z + (Math.random() - 0.5) * 2,
+      0.4 + Math.random() * 0.5,
+    )
+  }
+}
+
+export function updateBloodDecals(dt: number) {
+  for (let i = bloodDecals.length - 1; i >= 0; i--) {
+    const d = bloodDecals[i]
+    d.life += dt
+
+    if (d.life >= d.maxLife) {
+      scene.remove(d.mesh)
+      ;(d.mesh.material as THREE.Material).dispose()
+      bloodDecals.splice(i, 1)
+      continue
+    }
+
+    // Fade out after fadeStart
+    if (d.life > d.fadeStart) {
+      const t = (d.life - d.fadeStart) / (d.maxLife - d.fadeStart)
+      ;(d.mesh.material as THREE.MeshBasicMaterial).opacity = (1 - t) * 0.8
     }
   }
 }

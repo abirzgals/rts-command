@@ -17,7 +17,7 @@ import { getPlayerFaction } from '../../game/factions'
 import { unblockCells } from '../../pathfinding/navGrid'
 import { BUILDING_DEFS, UT_TANK, UT_JEEP, UT_ROCKET } from '../../game/config'
 import { removePath } from '../../pathfinding/pathStore'
-import { spawnTankDeathExplosion, spawnFallingPieces } from '../../render/effects'
+import { spawnTankDeathExplosion, spawnFallingPieces, spawnBloodDeath } from '../../render/effects'
 import { scene } from '../../render/engine'
 import { playSfx } from '../../audio/audioManager'
 
@@ -72,6 +72,14 @@ export function deathSystem(world: IWorld, dt: number) {
         if (bdef) unblockCells(Position.x[eid], Position.z[eid], bdef.radius)
       }
       if (hasComponent(world, WorkerC, eid)) releaseAllNodes(eid)
+
+      // Blood splash for infantry deaths
+      if (hasComponent(world, UnitTypeC, eid) && !hasComponent(world, IsBuilding, eid)) {
+        const utId2 = UnitTypeC.id[eid]
+        if (utId2 !== UT_TANK && utId2 !== UT_JEEP && utId2 !== UT_ROCKET) {
+          spawnBloodDeath(Position.x[eid], Position.z[eid])
+        }
+      }
 
       // Vehicle death explosion → wreckage (tanks, jeeps, rocket tanks)
       if (hasComponent(world, UnitTypeC, eid)) {
