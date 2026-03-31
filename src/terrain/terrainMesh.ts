@@ -299,20 +299,21 @@ export function createTerrainMesh(): THREE.Mesh {
 
         float shadow = getShadowMask();
 
-        // Cloud shadows — skip for underwater terrain (water handles its own effect)
-        float cloudShadow = 1.0;
+        // Cloud effect — bright sun patches + subtle shadow, skip underwater
+        float cloudEffect = 1.0;
         if (vHeight > waterLine - 0.5) {
           vec2 cloudUV1 = vWorldXZ * cloudScale + cloudSpeed * cloudTime;
           vec2 cloudUV2 = vWorldXZ * cloudScale * 1.3 - cloudSpeed * 0.7 * cloudTime + vec2(0.37, 0.61);
           float c1 = texture2D(cloudMap, cloudUV1).r;
           float c2 = texture2D(cloudMap, cloudUV2).r;
           float cloudVal = c1 * 0.6 + c2 * 0.4;
-          cloudShadow = mix(1.0 - cloudDarkness, 1.0, cloudVal);
+          // Range: clouded=0.85, clear=1.15 (brightens sunny patches, subtle shadow)
+          cloudEffect = 0.85 + cloudVal * 0.3;
         }
 
         // Underwater terrain gets brighter base lighting
-        float baseLit = mix(0.35, 0.55, submerged);
-        vec3 col = albedo * (baseLit + (1.0 - baseLit) * ndl * shadow) * hf * cloudShadow;
+        float baseLit = mix(0.45, 0.6, submerged);
+        vec3 col = albedo * (baseLit + (1.0 - baseLit) * ndl * shadow) * hf * cloudEffect;
         // Fog of war applied via fullscreen overlay — not here
         gl_FragColor = vec4(col, 1.0);
       }
