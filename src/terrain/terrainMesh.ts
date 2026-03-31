@@ -545,21 +545,30 @@ function createWater() {
         float edgeFoam = smoothstep(0.06, 0.0, vShoreDist) * 0.8;
         foam = max(foam, edgeFoam);
 
-        // === Cloud light on water — bright sun glints where clouds break ===
-        vec2 wCloudUV1 = vWorld * cloudScale * 1.5 + cloudSpeed * cloudTime;
-        vec2 wCloudUV2 = vWorld * cloudScale * 2.0 - cloudSpeed * 0.8 * cloudTime + vec2(0.37, 0.61);
-        float wc1 = texture2D(cloudMap, wCloudUV1).r;
-        float wc2 = texture2D(cloudMap, wCloudUV2).r;
-        float wCloudVal = wc1 * 0.5 + wc2 * 0.5;
-        // Sharp bright patches where cloud value is high (sun breaking through)
-        float sunGlint = smoothstep(0.4, 0.8, wCloudVal);
-        // Boost brightness in clear areas, darken in clouded areas
-        vec3 glintColor = vec3(0.3, 0.45, 0.55); // bright sky-blue reflection
+        // === Stylized cloud reflections — voronoi cell edges ===
+        // Two voronoi layers at different scales/speeds for evolving pattern
+        float cv1 = voronoi(vWorld * 0.25 + cloudSpeed * cloudTime * 8.0);
+        float cv2 = voronoi(vWorld * 0.18 - cloudSpeed * cloudTime * 5.0 + vec2(3.7, 6.1));
+
+        // Sharp white edges where cells meet (small voronoi distance = edge)
+        float edge1 = smoothstep(0.15, 0.05, cv1);
+        float edge2 = smoothstep(0.18, 0.06, cv2);
+        float brightEdge = max(edge1 * 0.7, edge2 * 0.5);
+
+        // Dark blue depth lines (slightly thicker, inside cells)
+        float darkLine1 = smoothstep(0.25, 0.18, cv1) * (1.0 - edge1);
+        float darkLine2 = smoothstep(0.28, 0.20, cv2) * (1.0 - edge2);
+        float darkLine = max(darkLine1, darkLine2) * 0.25;
+
+        // Cell interior color variation
+        float cellShade = cv1 * 0.5 + cv2 * 0.5;
+        float cellBright = smoothstep(0.3, 0.7, cellShade) * 0.15;
 
         // === Final color ===
         vec3 col = deepColor + caustic * vec3(0.15, 0.22, 0.28);
-        col += glintColor * sunGlint * 0.4; // add bright highlights
-        col *= mix(0.85, 1.0, wCloudVal);   // subtle shadow in dark areas
+        col += vec3(0.35, 0.5, 0.6) * brightEdge;   // white-blue bright edges
+        col -= vec3(0.04, 0.06, 0.08) * darkLine;     // dark blue depth lines
+        col += vec3(0.08, 0.12, 0.15) * cellBright;   // subtle cell brightness
         col = mix(col, foamColor, foam);
 
         // Transparency layers:
