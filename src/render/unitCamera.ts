@@ -6,9 +6,9 @@ import * as THREE from 'three'
 import { defineQuery, hasComponent } from 'bitecs'
 import type { IWorld } from 'bitecs'
 import { Selected, Position, Rotation, IsBuilding, Dead } from '../ecs/components'
-import { scene, renderer } from './engine'
+import { scene, renderer, camera as rtsCamera } from './engine'
 import { getTerrainHeight } from '../terrain/heightmap'
-import { enterFPSMode, isFPSMode } from '../input/fpsMode'
+import { enterFPSMode, exitFPSMode, isFPSMode, getFPSEntity } from '../input/fpsMode'
 
 const selectedQuery = defineQuery([Selected, Position])
 
@@ -35,10 +35,13 @@ export function initUnitCamera() {
   unitCam = new THREE.PerspectiveCamera(70, CAM_WIDTH / CAM_HEIGHT, 0.5, 150)
   renderTarget = new THREE.WebGLRenderTarget(CAM_WIDTH, CAM_HEIGHT)
 
-  // Click on unit camera → enter FPS mode
-  canvas.style.cursor = 'pointer'
-  canvas.addEventListener('click', () => {
-    if (isFPSMode()) return
+  // Click on unit camera → toggle FPS mode
+  canvas.addEventListener('click', (e) => {
+    e.stopPropagation()
+    if (isFPSMode()) {
+      exitFPSMode()
+      return
+    }
     const w = (window as any).__ecsWorld
     if (!w) return
     const selected = selectedQuery(w)
@@ -53,9 +56,17 @@ const _pixelBuf = new Uint8Array(CAM_WIDTH * CAM_HEIGHT * 4)
 export function updateUnitCamera(world: IWorld) {
   if (!unitCam || !renderTarget || !canvas || !ctx2d || !container) return
 
-  const selected = selectedQuery(world)
+  // In FPS mode: show RTS overhead view in the mini viewport
+  if (isFPSMode()) {
+    const fpsEid = getFPSEntity()
+    if (fpsEid < 0) { container.style.display = 'none'; return }
+    container.style.display = 'block'
+    renderToCanvas(rtsCamera)
+    return
+  }
 
-  // Only show for single non-building unit
+  // Normal mode: show FPS view for selected unit
+  const selected = selectedQuery(world)
   if (selected.length !== 1) {
     container.style.display = 'none'
     return
@@ -73,23 +84,21 @@ export function updateUnitCamera(world: IWorld) {
   const y = getTerrainHeight(x, z) + EYE_HEIGHT
   const rot = hasComponent(world, Rotation, eid) ? Rotation.y[eid] : 0
 
-  // Position camera at unit's eyes, looking in facing direction
   unitCam.position.set(x, y, z)
-  const lookX = x + Math.sin(rot) * 10
-  const lookZ = z + Math.cos(rot) * 10
-  const lookY = y - 0.3 // slight downward look
-  unitCam.lookAt(lookX, lookY, lookZ)
+  unitCam.lookAt(x + Math.sin(rot) * 10, y - 0.3, z + Math.cos(rot) * 10)
 
-  // Render scene from unit's perspective into offscreen target
+  renderToCanvas(unitCam)
+}
+
+function renderToCanvas(cam: THREE.Camera) {
+  if (!renderTarget || !canvas || !ctx2d) return
   const oldTarget = renderer.getRenderTarget()
   renderer.setRenderTarget(renderTarget)
-  renderer.render(scene, unitCam)
+  renderer.render(scene, cam)
   renderer.setRenderTarget(oldTarget)
 
-  // Read pixels and draw to 2D canvas
   renderer.readRenderTargetPixels(renderTarget, 0, 0, CAM_WIDTH, CAM_HEIGHT, _pixelBuf)
   const imgData = ctx2d.createImageData(CAM_WIDTH, CAM_HEIGHT)
-  // Flip Y (WebGL is bottom-up, canvas is top-down)
   for (let row = 0; row < CAM_HEIGHT; row++) {
     const srcRow = (CAM_HEIGHT - 1 - row) * CAM_WIDTH * 4
     const dstRow = row * CAM_WIDTH * 4

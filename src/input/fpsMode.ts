@@ -282,11 +282,12 @@ function onPointerLockChange() {
 // ── UI toggle ───────────────────────────────────────────────
 function toggleUI(show: boolean) {
   const display = show ? '' : 'none'
-  const ids = ['top-bar', 'bottom-panel', 'minimap-container', 'unitcam-container']
+  const ids = ['top-bar', 'bottom-panel', 'minimap-container']
   for (const id of ids) {
     const el = document.getElementById(id)
     if (el) el.style.display = display
   }
+  // Unit camera stays visible in FPS mode (click to exit)
   // Show/hide mobile controls
   if (touchControlsEl) touchControlsEl.style.display = show ? 'none' : 'flex'
 }
