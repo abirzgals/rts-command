@@ -48,7 +48,7 @@ import { updateHUD } from './ui/hud'
 import { initFogOfWar, updateFogOfWar, renderFogOverlay, fogTexture, setFogMode, type FogMode } from './render/fogOfWar'
 import { PRESETS, applyPreset, loadBindings, loadBindingsFromServer, listServerPresets, getPresetName, saveBindings } from './input/keybindings'
 import { openSettingsUI } from './ui/settingsUI'
-import { setTerrainFogMap } from './terrain/terrainMesh'
+import { setTerrainFogMap, setFogDarkenMode } from './terrain/terrainMesh'
 import { updateMinimap } from './ui/minimap'
 import { initSharedButtons } from './ui/sharedButtons'
 import { fetchMapList, fetchMap, loadMapIntoTerrain } from './terrain/mapData'
@@ -660,8 +660,9 @@ function gameLoop(time: number) {
 
   // GPU render
   profilerBegin('Render')
+  setFogDarkenMode(!!fpsCamera)
   prof('Scene', () => { renderer.render(scene, activeCamera); captureGPUStats() })
-  prof('FogOverlay', () => renderFogOverlay(renderer, activeCamera))
+  prof('FogOverlay', () => { if (!fpsCamera) renderFogOverlay(renderer, activeCamera) })
   profilerEnd()
 
   // UI

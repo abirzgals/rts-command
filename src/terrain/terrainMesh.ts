@@ -8,6 +8,7 @@ import { scene } from '../render/engine'
 
 export let terrainMesh: THREE.Mesh
 export let waterMesh: THREE.Mesh
+let defaultFogTex: THREE.DataTexture | null = null
 
 // Track custom texture URLs — survives mesh rebuilds, saved with map
 export const textureOverrides: Record<string, string> = {}
@@ -19,9 +20,26 @@ function getTextureUrl(slot: string): string {
 
 /** Replace a terrain texture at runtime (slot: 'grass'|'dirt'|'rock'|'cliff') */
 export function setTerrainFogMap(tex: THREE.Texture) {
-  if (!terrainMesh) return
-  const mat = terrainMesh.material as THREE.ShaderMaterial
-  if (mat.uniforms.fogMap) mat.uniforms.fogMap.value = tex
+  if (terrainMesh) {
+    const mat = terrainMesh.material as THREE.ShaderMaterial
+    if (mat.uniforms.fogMap) mat.uniforms.fogMap.value = tex
+  }
+  if (waterMesh) {
+    const mat = waterMesh.material as THREE.ShaderMaterial
+    if (mat.uniforms.fogMap) mat.uniforms.fogMap.value = tex
+  }
+}
+
+/** Enable/disable per-shader fog darkening (used in FPS mode instead of overlay) */
+export function setFogDarkenMode(on: boolean) {
+  if (terrainMesh) {
+    const mat = terrainMesh.material as THREE.ShaderMaterial
+    if (mat.uniforms.fogDarken) mat.uniforms.fogDarken.value = on ? 1.0 : 0.0
+  }
+  if (waterMesh) {
+    const mat = waterMesh.material as THREE.ShaderMaterial
+    if (mat.uniforms.fogDarken) mat.uniforms.fogDarken.value = on ? 1.0 : 0.0
+  }
 }
 
 export function replaceTerrainTexture(slot: string, url: string) {
@@ -195,8 +213,10 @@ export function createTerrainMesh(): THREE.Mesh {
   })
 
   // Fog texture will be set later via setTerrainFogMap()
-  const defaultFogTex = new THREE.DataTexture(new Uint8Array([255]), 1, 1, THREE.RedFormat)
-  defaultFogTex.needsUpdate = true
+  if (!defaultFogTex) {
+    defaultFogTex = new THREE.DataTexture(new Uint8Array([255]), 1, 1, THREE.RedFormat)
+    defaultFogTex.needsUpdate = true
+  }
 
   cloudNoiseTex = createCloudNoiseTexture()
 
@@ -209,6 +229,7 @@ export function createTerrainMesh(): THREE.Mesh {
       texCliff: { value: texCliff },
       sunDir:   { value: sunDir },
       fogMap:   { value: defaultFogTex },
+      fogDarken:{ value: 0.0 },
       mapSize:  { value: MAP_SIZE },
       cloudMap:     { value: cloudNoiseTex },
       cloudTime:    cloudTimeUniform,
@@ -249,7 +270,9 @@ export function createTerrainMesh(): THREE.Mesh {
     fragmentShader: /* glsl */ `
       uniform sampler2D texGrass, texDirt, texRock, texCliff;
       uniform sampler2D cloudMap;
+      uniform sampler2D fogMap;
       uniform float cloudTime, cloudScale, cloudDarkness;
+      uniform float fogDarken, mapSize;
       uniform vec2 cloudSpeed;
       uniform vec3 sunDir;
 
@@ -314,7 +337,13 @@ export function createTerrainMesh(): THREE.Mesh {
         // Underwater terrain gets brighter base lighting
         float baseLit = mix(0.45, 0.6, submerged);
         vec3 col = albedo * (baseLit + (1.0 - baseLit) * ndl * shadow) * hf * cloudEffect;
-        // Fog of war applied via fullscreen overlay — not here
+        // Fog of war — in FPS mode, darken here (overlay ray-march breaks at ground level)
+        if (fogDarken > 0.5) {
+          vec2 fogUV = (vWorldXZ + mapSize * 0.5) / mapSize;
+          float fogVal = texture2D(fogMap, clamp(fogUV, 0.0, 1.0)).r;
+          float fogA = fogVal > 0.5 ? 0.0 : fogVal > 0.01 ? 0.30 : 0.65;
+          col *= (1.0 - fogA);
+        }
         gl_FragColor = vec4(col, 1.0);
       }
     `,
@@ -437,6 +466,9 @@ function createWater() {
       foamColor: { value: new THREE.Color(0.85, 0.92, 0.96) },
       waterCloudMap: { value: waterCloudTex },
       cloudTime:    cloudTimeUniform,
+      fogMap:   { value: defaultFogTex },
+      fogDarken:{ value: 0.0 },
+      mapSize:  { value: MAP_SIZE },
     },
     vertexShader: `
       uniform float time;
@@ -474,7 +506,8 @@ function createWater() {
       uniform float time;
       uniform vec3 deepColor, foamColor;
       uniform sampler2D waterCloudMap;
-      uniform float cloudTime;
+      uniform sampler2D fogMap;
+      uniform float cloudTime, fogDarken, mapSize;
       varying float vShoreDist;
       varying float vIsWater;
       varying float vPoolSize;
@@ -575,6 +608,15 @@ function createWater() {
 
         float alpha = depthAlpha * edgeFade + foamOpacity;
         alpha = clamp(alpha, 0.0, 0.95);
+
+        // Fog of war darkening (FPS mode)
+        if (fogDarken > 0.5) {
+          vec2 fogUV = (vWorld + mapSize * 0.5) / mapSize;
+          float fogVal = texture2D(fogMap, clamp(fogUV, 0.0, 1.0)).r;
+          float fogA = fogVal > 0.5 ? 0.0 : fogVal > 0.01 ? 0.30 : 0.65;
+          col *= (1.0 - fogA);
+        }
+
         gl_FragColor = vec4(col, alpha);
       }
     `,
