@@ -39,7 +39,7 @@ import { initNotifications } from './ui/notifications'
 import { initUnitCamera, updateUnitCamera } from './render/unitCamera'
 import { isFPSMode, updateFPSMode, getFPSEntity } from './input/fpsMode'
 import { checkVictory, isGameOver } from './game/victory'
-import { profilerBeginFrame, profilerEndFrame, profilerBegin, profilerEnd, updateProfilerDisplay, setProfilerRenderer, captureGPUStats } from './debug/profiler'
+import { profilerBeginFrame, profilerEndFrame, profilerBegin, profilerEnd, updateProfilerDisplay, setProfilerRenderer, setProfilerScene, captureGPUStats } from './debug/profiler'
 import { isDebugEnabled } from './render/debugOverlay'
 import { playMenuMusic, playIngameMusic, stopMusic, preloadSfx, setSoundEnabled } from './audio/audioManager'
 
@@ -322,6 +322,7 @@ async function init() {
   // 9. Debug overlay + HP bars + shared buttons
   initDebugOverlay()
   setProfilerRenderer(renderer)
+  setProfilerScene(scene)
   initHPBars()
   initSharedButtons()
   initNotifications()

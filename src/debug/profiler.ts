@@ -1,7 +1,8 @@
 // ─── Lightweight frame profiler ─────────────────────────────────
 // Measures time spent in each system per frame, displays as a tree.
 
-import type { WebGLRenderer } from 'three'
+import type { WebGLRenderer, Scene as THREE_Scene } from 'three'
+import * as THREE from 'three'
 import { perfBudget } from '../globals'
 
 interface ProfileEntry {
@@ -16,6 +17,9 @@ export function setProfilerRenderer(r: WebGLRenderer) { rendererRef = r }
 
 // Snapshot GPU stats right after scene render (before fog overlay resets them)
 let gpuSnapshot = { calls: 0, tris: 0, geos: 0, texs: 0, programs: 0 }
+let sceneRef: THREE_Scene | null = null
+export function setProfilerScene(s: THREE_Scene) { sceneRef = s }
+
 export function captureGPUStats() {
   if (!rendererRef) return
   const info = rendererRef.info
@@ -26,6 +30,27 @@ export function captureGPUStats() {
     texs: info.memory.textures,
     programs: info.programs?.length ?? 0,
   }
+}
+
+// Count scene objects by type
+interface SceneCounts {
+  meshes: number; skinnedMeshes: number; lights: number
+  lines: number; points: number; sprites: number; groups: number; total: number
+}
+function countSceneObjects(): SceneCounts {
+  const c: SceneCounts = { meshes: 0, skinnedMeshes: 0, lights: 0, lines: 0, points: 0, sprites: 0, groups: 0, total: 0 }
+  if (!sceneRef) return c
+  sceneRef.traverse((obj) => {
+    c.total++
+    if ((obj as any).isSkinnedMesh) c.skinnedMeshes++
+    else if ((obj as any).isMesh) c.meshes++
+    else if ((obj as any).isLight) c.lights++
+    else if ((obj as any).isLine) c.lines++
+    else if ((obj as any).isPoints) c.points++
+    else if ((obj as any).isSprite) c.sprites++
+    else if ((obj as any).isGroup) c.groups++
+  })
+  return c
 }
 
 const entries: ProfileEntry[] = []
@@ -161,10 +186,12 @@ export function updateProfilerDisplay(visible: boolean) {
   const g = gpuSnapshot
   const shadowInfo = perfBudget.disableUnitShadows ? ' <span style="color:#f80">shadows OFF</span>' : ''
   const gpuLine = `<span style="color:#aaa">GPU: ${g.calls} draws, ${(g.tris/1000).toFixed(0)}K tris, ${g.programs} shaders${shadowInfo}</span>\n`
+  const sc = countSceneObjects()
+  const sceneLine = `<span style="color:#aaa">Scene: ${sc.total} objs, ${sc.meshes} mesh, ${sc.skinnedMeshes} skinned, ${sc.lights} lights, ${sc.lines} lines</span>\n`
 
   profilerDiv.innerHTML =
     `<span style="color:${fpsColor};font-weight:bold">Frame: ${frameAvg.toFixed(1)}ms (${fps} FPS)</span>\n` +
-    gpuLine +
+    gpuLine + sceneLine +
     lines.join('\n')
 }
 
