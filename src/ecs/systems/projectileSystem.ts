@@ -56,10 +56,33 @@ export function projectileSystem(world: IWorld, dt: number) {
     }
 
     if (hitEid >= 0) {
-      applyDamage(world, hitEid, Projectile.damage[eid], px, pz)
+      const dmg = Projectile.damage[eid]
+      const splashR = Projectile.splash[eid]
       const fx = projectileEffects.get(eid)
-      spawnImpact(px, py, pz, fx?.impact)
-      spawnImpactFlash(px, py, pz)
+
+      if (splashR > 0) {
+        // Splash damage + explosion
+        const hasFire = Projectile.trailFire[eid] > 0
+        if (hasFire) spawnFireExplosion(px, py, pz, splashR + 1)
+        else spawnExplosion(px, py, pz, splashR)
+        playSfx('explosion')
+        const splashNearby: number[] = []
+        spatialHash.query(px, pz, splashR, splashNearby)
+        for (const other of splashNearby) {
+          if (hasComponent(world, Dead, other)) continue
+          if (!hasComponent(world, Health, other)) continue
+          if (hasComponent(world, Faction, other) && Faction.id[other] === projFaction) continue
+          const sdx = Position.x[other] - px, sdz = Position.z[other] - pz
+          if (Math.sqrt(sdx * sdx + sdz * sdz) <= splashR) {
+            const falloff = 1 - Math.sqrt(sdx * sdx + sdz * sdz) / (splashR * 1.5)
+            applyDamage(world, other, dmg * Math.max(0.3, falloff), px, pz)
+          }
+        }
+      } else {
+        applyDamage(world, hitEid, dmg, px, pz)
+        spawnImpact(px, py, pz, fx?.impact)
+        spawnImpactFlash(px, py, pz)
+      }
       projectileEffects.delete(eid)
       destroyProjectile(world, eid, 30)
       continue
@@ -68,9 +91,29 @@ export function projectileSystem(world: IWorld, dt: number) {
     // Hit ground (only after traveling a minimum distance to avoid instant ground hits)
     const groundY = getTerrainHeight(px, pz)
     if (Projectile.traveled[eid] > 1.0 && py <= groundY + 0.1) {
-      const fx = projectileEffects.get(eid)
-      spawnImpact(px, groundY, pz, fx?.impact)
-      spawnImpactFlash(px, groundY + 0.1, pz)
+      const splashR = Projectile.splash[eid]
+      if (splashR > 0) {
+        const hasFire = Projectile.trailFire[eid] > 0
+        if (hasFire) spawnFireExplosion(px, groundY, pz, splashR + 1)
+        else spawnExplosion(px, groundY, pz, splashR)
+        playSfx('explosion')
+        const splashNearby: number[] = []
+        spatialHash.query(px, pz, splashR, splashNearby)
+        for (const other of splashNearby) {
+          if (hasComponent(world, Dead, other)) continue
+          if (!hasComponent(world, Health, other)) continue
+          if (hasComponent(world, Faction, other) && Faction.id[other] === projFaction) continue
+          const sdx = Position.x[other] - px, sdz = Position.z[other] - pz
+          if (Math.sqrt(sdx * sdx + sdz * sdz) <= splashR) {
+            const falloff = 1 - Math.sqrt(sdx * sdx + sdz * sdz) / (splashR * 1.5)
+            applyDamage(world, other, Projectile.damage[eid] * Math.max(0.3, falloff), px, pz)
+          }
+        }
+      } else {
+        const fx = projectileEffects.get(eid)
+        spawnImpact(px, groundY, pz, fx?.impact)
+        spawnImpactFlash(px, groundY + 0.1, pz)
+      }
       projectileEffects.delete(eid)
       destroyProjectile(world, eid, 30)
       continue

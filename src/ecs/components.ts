@@ -152,6 +152,7 @@ export const Projectile = defineComponent({
   spawnX: Types.f32,    // tracer trail tail position
   spawnY: Types.f32,
   spawnZ: Types.f32,
+  splash: Types.f32,
   faction: Types.ui8,
   trailFire: Types.ui8,
   trailSmoke: Types.ui8,

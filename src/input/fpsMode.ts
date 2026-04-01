@@ -19,7 +19,7 @@ import { spatialHash } from '../globals'
 import { getPlayerFaction } from '../game/factions'
 import { playSfx } from '../audio/audioManager'
 import { removePath } from '../pathfinding/pathStore'
-import { spawnProjectile } from '../ecs/archetypes'
+import { spawnProjectile, projectileEffects } from '../ecs/archetypes'
 import { getAnimManager } from '../render/animatedMeshManager'
 import { MeshRef } from '../ecs/components'
 import { editorConfig } from '../render/meshPools'
@@ -478,6 +478,13 @@ function fpsShoot() {
   Projectile.maxRange[projEid] = range
   Projectile.traveled[projEid] = 0
   Projectile.targetEid[projEid] = 0xFFFFFFFF
+  Projectile.splash[projEid] = splash
+
+  // Store effect config so projectileSystem spawns explosion/impact on hit
+  const impactCfg = cfg?.impact ?? null
+  const explosionCfg = cfg?.explosion ?? null
+  const smokeCfg = cfg?.smoke ?? null
+  projectileEffects.set(projEid, { impact: impactCfg, explosion: explosionCfg, smoke: smokeCfg })
 }
 
 function onMouseDown(e: MouseEvent) {
