@@ -23,6 +23,7 @@ import { resetPathAttempt } from './pathfindingSystem'
 import { getTerrainHeight, getTerrainTypeAt, T_WATER, worldToGrid, GRID_RES, gridToWorld } from '../../terrain/heightmap'
 import { isWorldWalkable, dynamicCost, slopeData, BUILDING_BLOCK_THRESHOLD, getClearanceAt } from '../../pathfinding/navGrid'
 import { spatialHash } from '../../globals'
+import { profCount } from '../../debug/profiler'
 import { telemetry } from '../../debug/movementTelemetry'
 
 // ── Constants ────────────────────────────────────────────────
@@ -152,6 +153,7 @@ export function movementSystem(world: IWorld, dt: number) {
   }
 
   // ── 1. Unit separation: push overlapping units apart ───────
+  profCount('move.units', allUnits.length)
   for (const eid of allUnits) {
     if (eid === fpsEid) continue
     if (hasComponent(world, IsBuilding, eid)) continue

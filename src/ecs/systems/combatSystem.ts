@@ -23,6 +23,7 @@ import { notifyUnitUnderAttack, notifyBaseUnderAttack } from '../../ui/notificat
 const UT_TO_KEY: Record<number, string> = { 0: 'worker', 1: 'marine', 2: 'tank', 3: 'jeep', 4: 'rocket', 5: 'trooper' }
 
 import { perfBudget } from '../../globals'
+import { profCount } from '../../debug/profiler'
 
 const combatQuery = defineQuery([Position, AttackC, Faction])
 const _nearby: number[] = []
@@ -31,6 +32,7 @@ let combatFrame = 0
 export function combatSystem(world: IWorld, dt: number) {
   const entities = combatQuery(world)
   combatFrame++
+  profCount('combat.units', entities.length)
 
   for (let i = 0; i < entities.length; i++) {
     const eid = entities[i]
@@ -141,6 +143,7 @@ export function combatSystem(world: IWorld, dt: number) {
     if (isMoving && !isAttackMove) continue
 
     spatialHash.query(px, pz, range, _nearby)
+    profCount('combat.queries')
     let bestTarget = -1
     let bestDist = Infinity
     let bestPriority = 99 // lower = higher priority: 0=combat, 1=worker, 2=building

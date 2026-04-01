@@ -62,15 +62,38 @@ let frameElapsed = 0
 const AVG_FRAMES = 30
 const avgMap = new Map<string, number[]>()
 
+// ── Per-frame operation counters ────────────────────────────
+const counters = new Map<string, number>()
+const counterAvg = new Map<string, number[]>()
+
+/** Increment a named counter this frame (call from any system) */
+export function profCount(name: string, n = 1) {
+  counters.set(name, (counters.get(name) ?? 0) + n)
+}
+
+// ── Asset loading tracker ───────────────────────────────────
+let activeLoads = 0
+let frameLoadsStarted = 0
+let frameLoadsFinished = 0
+const loadAvg: number[] = []
+
+/** Call when starting an async asset load */
+export function profLoadStart() { activeLoads++; frameLoadsStarted++ }
+/** Call when an asset load finishes or fails */
+export function profLoadEnd() { activeLoads = Math.max(0, activeLoads - 1); frameLoadsFinished++ }
+
 export function profilerBeginFrame() {
   entries.length = 0
   stack.length = 0
+  counters.clear()
+  frameLoadsStarted = 0
+  frameLoadsFinished = 0
   frameStart = performance.now()
 }
 
 export function profilerEndFrame() {
   frameElapsed = performance.now() - frameStart
-  // Update rolling averages
+  // Update rolling averages for timings
   for (const e of entries) {
     let arr = avgMap.get(e.name)
     if (!arr) { arr = []; avgMap.set(e.name, arr) }
@@ -82,6 +105,16 @@ export function profilerEndFrame() {
   if (!fArr) { fArr = []; avgMap.set('__frame', fArr) }
   fArr.push(frameElapsed)
   if (fArr.length > AVG_FRAMES) fArr.shift()
+  // Update rolling averages for counters
+  for (const [name, val] of counters) {
+    let arr = counterAvg.get(name)
+    if (!arr) { arr = []; counterAvg.set(name, arr) }
+    arr.push(val)
+    if (arr.length > AVG_FRAMES) arr.shift()
+  }
+  // Track active loads
+  loadAvg.push(activeLoads)
+  if (loadAvg.length > AVG_FRAMES) loadAvg.shift()
 }
 
 export function profilerBegin(name: string) {
@@ -189,10 +222,28 @@ export function updateProfilerDisplay(visible: boolean) {
   const sc = countSceneObjects()
   const sceneLine = `<span style="color:#aaa">Scene: ${sc.total} objs, ${sc.meshes} mesh, ${sc.skinnedMeshes} skinned, ${sc.lights} lights, ${sc.lines} lines</span>\n`
 
+  // Counter stats
+  const counterLines: string[] = []
+  const sortedCounters = [...counterAvg.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+  for (const [name, arr] of sortedCounters) {
+    const a = avg(arr)
+    if (a >= 0.5) counterLines.push(`  ${Math.round(a).toString().padStart(5)} ${name}`)
+  }
+  const counterBlock = counterLines.length > 0
+    ? `<span style="color:#8be">\nCounters/frame:</span>\n` + counterLines.join('\n') + '\n'
+    : ''
+
+  // Asset loading
+  const avgLoads = avg(loadAvg)
+  const loadLine = avgLoads > 0.1 || frameLoadsStarted > 0
+    ? `<span style="color:#f80">Loading: ${activeLoads} active, +${frameLoadsStarted} this frame</span>\n`
+    : ''
+
   profilerDiv.innerHTML =
     `<span style="color:${fpsColor};font-weight:bold">Frame: ${frameAvg.toFixed(1)}ms (${fps} FPS)</span>\n` +
-    gpuLine + sceneLine +
-    lines.join('\n')
+    gpuLine + sceneLine + loadLine +
+    lines.join('\n') +
+    counterBlock
 }
 
 function makeBar(ms: number, total: number): string {

@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { scene } from './engine'
 import { getTerrainHeight } from '../terrain/heightmap'
+import { profCount } from '../debug/profiler'
 
 // ── Smoke trail particles ───────────────────────────────────
 interface SmokeParticle {
@@ -366,6 +367,8 @@ export function spawnTankDeathExplosion(x: number, y: number, z: number) {
 
 // ── Update all effects each frame ───────────────────────────
 export function updateEffects(dt: number) {
+  profCount('fx.smoke', smokeParticles.length)
+  profCount('fx.lights', flashLights.length)
   // Smoke particles
   for (let i = smokeParticles.length - 1; i >= 0; i--) {
     const p = smokeParticles[i]
@@ -849,6 +852,8 @@ export function spawnFallingPieces(pieces: THREE.Mesh[], groundY: number) {
 }
 
 export function updateFallingPieces(dt: number) {
+  profCount('fx.wreckage', fallingPieces.length)
+  profCount('fx.blood', bloodDecals.length)
   for (let i = fallingPieces.length - 1; i >= 0; i--) {
     const p = fallingPieces[i]
     p.life += dt

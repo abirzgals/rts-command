@@ -10,6 +10,7 @@ import { projectileMeshes, removeProjectileMesh, projectileEffects } from '../ar
 import { getTerrainHeight } from '../../terrain/heightmap'
 import { spatialHash } from '../../globals'
 import { spawnExplosion, spawnSmoke, spawnMuzzleFlash, spawnRocketTrail, spawnFireExplosion, spawnImpact, spawnImpactFlash } from '../../render/effects'
+import { profCount } from '../../debug/profiler'
 
 const projectileQuery = defineQuery([Projectile, Position])
 const arcQuery = defineQuery([ArcProjectile, Position])
@@ -19,6 +20,7 @@ const HIT_DIST = 0.5
 export function projectileSystem(world: IWorld, dt: number) {
   // ── Standard projectiles (marine bullets) ──
   const projectiles = projectileQuery(world)
+  profCount('projectiles', projectiles.length)
 
   for (const eid of projectiles) {
     const speed = Projectile.speed[eid]

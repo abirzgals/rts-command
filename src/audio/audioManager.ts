@@ -2,6 +2,8 @@
 // Music: menu theme + random ingame tracks with crossfade
 // SFX: positional one-shot sounds for combat
 
+import { profLoadStart, profLoadEnd } from '../debug/profiler'
+
 const MUSIC_VOLUME = 0.25
 const SFX_VOLUME = 0.5
 const CROSSFADE_MS = 2000
@@ -75,6 +77,7 @@ async function loadBuffer(url: string): Promise<AudioBuffer | null> {
   if (bufferCache.has(url)) return bufferCache.get(url)!
   if (loadingSet.has(url)) return null
   loadingSet.add(url)
+  profLoadStart()
   try {
     const ac = ensureContext()
     const resp = await fetch(url)
@@ -87,6 +90,7 @@ async function loadBuffer(url: string): Promise<AudioBuffer | null> {
     return null
   } finally {
     loadingSet.delete(url)
+    profLoadEnd()
   }
 }
 
@@ -245,6 +249,27 @@ export async function preloadSfx() {
       for (const url of files) loadBuffer(url)
     }
   }
+}
+
+/** Preload ALL sfx buffers (debug/test). Returns count loaded. */
+export async function preloadAllSfx(): Promise<number> {
+  ensureContext()
+  await loadManifest()
+  const promises: Promise<AudioBuffer | null>[] = []
+  for (const [, files] of sfxRegistry) {
+    for (const url of files) {
+      if (!bufferCache.has(url)) promises.push(loadBuffer(url))
+    }
+  }
+  const results = await Promise.all(promises)
+  return results.filter(Boolean).length
+}
+
+/** How many sfx are cached vs total */
+export function getSfxCacheStats(): { cached: number; total: number } {
+  let total = 0
+  for (const [, files] of sfxRegistry) total += files.length
+  return { cached: bufferCache.size, total }
 }
 
 // ── Volume / enable control ─────────────────────────────────

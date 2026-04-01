@@ -6,6 +6,7 @@ import { storePath } from '../../pathfinding/pathStore'
 import { clearDynamicCosts, markBuildingObstacle, rebuildClearance } from '../../pathfinding/navGrid'
 import { buildSectorGraph } from '../../pathfinding/sectorGraph'
 import { perfBudget } from '../../globals'
+import { profCount } from '../../debug/profiler'
 
 const needsPathQuery = defineQuery([Position, MoveTarget, MoveSpeed, Not(PathFollower), Not(IsBuilding)])
 const buildingQuery = defineQuery([Position, IsBuilding, Selectable])
@@ -76,6 +77,8 @@ export function pathfindingSystem(world: IWorld, dt: number) {
     PathFollower.waypointIndex[eid] = 0
     PathFollower.pathId[eid] = pathId
   }
+  profCount('paths.computed', computed)
+  profCount('paths.pending', entities.length - computed)
 }
 
 /** Reset pathfinding cooldown for an entity */

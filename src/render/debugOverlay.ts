@@ -98,16 +98,41 @@ export function toggleDebug() {
       <span style="color:#1b4">■</span> passable
       <span style="color:#c21">■</span> blocked (clearance)
       <span style="color:#cc0;opacity:0.5">■</span> steep slope<br>
-      <small>Select unit: shows speed/turn/slope info</small>
+      <small>Select unit: shows speed/turn/slope info</small><br>
+      <button id="debug-preload-btn" style="margin-top:4px;padding:2px 8px;font-size:11px;cursor:pointer">Preload All Assets</button>
+      <span id="debug-preload-status" style="font-size:10px;color:#8be"></span>
     `
     Object.assign(legend.style, {
       position: 'absolute', top: '44px', right: '8px',
       background: 'rgba(0,0,0,0.75)', color: '#ddd',
       padding: '8px 12px', borderRadius: '6px',
       fontSize: '12px', lineHeight: '1.6', zIndex: '30',
-      fontFamily: 'monospace', pointerEvents: 'none',
+      fontFamily: 'monospace', pointerEvents: 'auto',
     })
     document.body.appendChild(legend)
+
+    // Wire up preload button
+    const preloadBtn = document.getElementById('debug-preload-btn')
+    const preloadStatus = document.getElementById('debug-preload-status')
+    if (preloadBtn) {
+      preloadBtn.addEventListener('click', async () => {
+        preloadBtn.textContent = 'Loading...'
+        preloadBtn.setAttribute('disabled', 'true')
+        if (preloadStatus) preloadStatus.textContent = ''
+        try {
+          const { preloadAllSfx, getSfxCacheStats } = await import('../audio/audioManager')
+          const loaded = await preloadAllSfx()
+          const stats = getSfxCacheStats()
+          if (preloadStatus) preloadStatus.textContent = ` ${loaded} new, ${stats.cached}/${stats.total} cached`
+          preloadBtn.textContent = 'Done!'
+        } catch (e) {
+          if (preloadStatus) preloadStatus.textContent = ' Error!'
+          console.error('[Preload]', e)
+          preloadBtn.textContent = 'Preload All Assets'
+        }
+        preloadBtn.removeAttribute('disabled')
+      })
+    }
   }
   legend.style.display = enabled ? 'block' : 'none'
 
