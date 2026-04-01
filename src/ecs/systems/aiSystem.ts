@@ -1042,24 +1042,25 @@ function findBuildSpot(world: IWorld, homeX: number, homeZ: number, buildRadius:
       }
       if (blocked) continue
 
-      // Score: penalize spots that are on the line between CC and minerals
-      let mineralPathPenalty = 0
+      // Hard block: skip if spot is in the corridor between CC and any mineral/gas
+      const CORRIDOR_WIDTH = buildRadius + 3.0 // wide enough for units + building footprint
+      let inCorridor = false
       for (const m of mineralPositions) {
-        // Check if this spot is between CC and mineral (within corridor)
         const mx = m.x - homeX, mz = m.z - homeZ
         const mLen = Math.sqrt(mx * mx + mz * mz) || 1
         const mnx = mx / mLen, mnz = mz / mLen
         // Project spot onto mineral line
         const px = sx - homeX, pz = sz - homeZ
         const proj = px * mnx + pz * mnz
-        if (proj > 0 && proj < mLen) {
-          // Perpendicular distance to the line
+        if (proj > -2 && proj < mLen + 2) {
           const perpDist = Math.abs(px * (-mnz) + pz * mnx)
-          if (perpDist < 4) mineralPathPenalty += (4 - perpDist) * 5
+          if (perpDist < CORRIDOR_WIDTH) { inCorridor = true; break }
         }
       }
+      if (inCorridor) continue
 
-      const score = dist * 0.5 - mineralPathPenalty
+      // Prefer closer spots (negative dist = closer is better)
+      const score = -dist
       if (score > bestScore) {
         bestScore = score
         bestSpot = { x: sx, z: sz }

@@ -1,8 +1,9 @@
 import { defineQuery, hasComponent, removeComponent, addComponent } from 'bitecs'
 import type { IWorld } from 'bitecs'
-import { Producer, Position, Faction, IsBuilding, BuildProgress, Health, UnitTypeC, WorkerC, Dead, MoveTarget, ResourceNode, ResourceDropoff, AttackMove, AttackTarget } from '../components'
+import { Producer, Position, Faction, IsBuilding, BuildProgress, Health, UnitTypeC, WorkerC, Dead, MoveTarget, ResourceNode, ResourceDropoff, AttackMove, AttackTarget, CollisionRadius, Selectable } from '../components'
 import { UNIT_DEFS, BUILDING_DEFS, UT_WORKER } from '../../game/config'
 import { getTerrainHeight } from '../../terrain/heightmap'
+import { isWorldWalkable } from '../../pathfinding/navGrid'
 import { gameState } from '../../game/state'
 import { spawnUnit } from '../archetypes'
 import { spatialHash } from '../../globals'
@@ -36,9 +37,33 @@ export function productionSystem(world: IWorld, dt: number) {
       const rallyZ = Producer.rallyZ[eid]
       const rallyTarget = Producer.rallyTargetEid[eid]
 
-      // Spawn near building, not at rally point
-      const spawnX = Position.x[eid] + 3
-      const spawnZ = Position.z[eid] + 3
+      // Spawn near building — find a clear spot outside the building's footprint
+      const bx = Position.x[eid], bz = Position.z[eid]
+      const bRadius = hasComponent(world, Selectable, eid) ? Selectable.radius[eid] : 2.0
+      const unitDef = UNIT_DEFS[unitType]
+      const unitR = unitDef ? unitDef.radius : 0.4
+      const spawnDist = bRadius + unitR + 0.5
+      let spawnX = bx + spawnDist, spawnZ = bz
+      // Try 8 directions to find an unblocked spot
+      for (let a = 0; a < 8; a++) {
+        const angle = (a / 8) * Math.PI * 2
+        const sx = bx + Math.cos(angle) * spawnDist
+        const sz = bz + Math.sin(angle) * spawnDist
+        if (!isWorldWalkable(sx, sz)) continue
+        // Check no building overlap
+        const _sn: number[] = []
+        spatialHash.query(sx, sz, unitR + 1, _sn)
+        let ok = true
+        for (const other of _sn) {
+          if (!hasComponent(world, IsBuilding, other)) continue
+          if (hasComponent(world, Dead, other)) continue
+          const dx = Position.x[other] - sx, dz = Position.z[other] - sz
+          const d = Math.sqrt(dx * dx + dz * dz)
+          const oR = hasComponent(world, CollisionRadius, other) ? CollisionRadius.value[other] : 1.5
+          if (d < unitR + oR + 0.3) { ok = false; break }
+        }
+        if (ok) { spawnX = sx; spawnZ = sz; break }
+      }
       const newEid = spawnUnit(world, unitType, faction, spawnX, spawnZ)
 
       // Apply rally point as first command
