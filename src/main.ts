@@ -7,7 +7,7 @@ import { spawnUnit, spawnBuilding, spawnResourceNode, spawnObstacle } from './ec
 import {
   FACTION_PLAYER, FACTION_ENEMY, UT_WORKER, UT_MARINE, UT_TANK, UT_JEEP, UT_ROCKET,
   BT_COMMAND_CENTER, BT_SUPPLY_DEPOT, BT_BARRACKS, BT_FACTORY,
-  RES_MINERALS, RES_GAS,
+  RES_MINERALS, RES_GAS, BUILDING_DEFS, UNIT_DEFS,
 } from './game/config'
 
 // Terrain
@@ -364,7 +364,7 @@ async function init() {
   requestAnimationFrame(gameLoop)
 }
 
-import { Producer, Position as EcsPosition, Faction as EcsFaction, IsBuilding, ResourceNode, Dead } from './ecs/components'
+import { Producer, Position as EcsPosition, Faction as EcsFaction, IsBuilding, ResourceNode, Dead, CollisionRadius } from './ecs/components'
 import { spatialHash, updatePerfBudget, setRtsCameraRef } from './globals'
 import { defineQuery as dq2, hasComponent as hc2 } from 'bitecs'
 
@@ -395,29 +395,134 @@ function initRallyPoints(world: IWorld) {
 
 init()
 
-function spawnStartingArmy(world: IWorld, faction: number, cx: number, cz: number) {
-  // Extra buildings for supply (army needs ~30 supply)
-  spawnBuilding(world, BT_SUPPLY_DEPOT, faction, cx + 6, cz + 5, true)
-  spawnBuilding(world, BT_SUPPLY_DEPOT, faction, cx - 6, cz + 5, true)
-  spawnBuilding(world, BT_BARRACKS, faction, cx + 8, cz - 5, true)
-  spawnBuilding(world, BT_FACTORY, faction, cx - 8, cz - 5, true)
-
-  // 10 marines
-  for (let i = 0; i < 10; i++) {
-    const a = (i / 10) * Math.PI * 2
-    spawnUnit(world, UT_MARINE, faction, cx + Math.cos(a) * 8, cz + Math.sin(a) * 8)
+/** Find a safe spot for a building near (cx,cz), avoiding resources and other buildings */
+function findSafeBuildSpot(world: IWorld, cx: number, cz: number, hintX: number, hintZ: number, buildRadius: number): { x: number; z: number } {
+  // Collect resource positions near CC for corridor avoidance
+  const resources: { x: number; z: number }[] = []
+  const _n: number[] = []
+  spatialHash.query(cx, cz, 25, _n)
+  for (const eid of _n) {
+    if (!hc2(world, ResourceNode, eid) || hc2(world, Dead, eid)) continue
+    resources.push({ x: EcsPosition.x[eid], z: EcsPosition.z[eid] })
   }
-  // 2 jeeps
-  spawnUnit(world, UT_JEEP, faction, cx + 12, cz + 3)
-  spawnUnit(world, UT_JEEP, faction, cx + 12, cz - 3)
-  // 1 tank
-  spawnUnit(world, UT_TANK, faction, cx + 15, cz)
-  // 1 rocket
-  spawnUnit(world, UT_ROCKET, faction, cx + 18, cz)
-  // Extra workers
+
+  const spacing = buildRadius + 2.0
+  const CORRIDOR = buildRadius + 3.0
+
+  // Try hint direction first, then expanding search
+  const hintAngle = Math.atan2(hintZ - cz, hintX - cx)
+  const hintDist = Math.sqrt((hintX - cx) ** 2 + (hintZ - cz) ** 2)
+
+  for (let attempt = 0; attempt < 48; attempt++) {
+    // First try hint, then spiral outward
+    let angle: number, dist: number
+    if (attempt === 0) {
+      angle = hintAngle; dist = hintDist
+    } else {
+      const ring = Math.floor((attempt - 1) / 12) + 2
+      const a = ((attempt - 1) % 12)
+      angle = (a / 12) * Math.PI * 2 + ring * 0.5
+      dist = ring * 3
+    }
+
+    const sx = cx + Math.cos(angle) * dist
+    const sz = cz + Math.sin(angle) * dist
+
+    if (!isWorldWalkable(sx, sz)) continue
+
+    // Check no building/resource overlap
+    _n.length = 0
+    spatialHash.query(sx, sz, spacing + 2, _n)
+    let blocked = false
+    for (const eid of _n) {
+      if (!hc2(world, IsBuilding, eid) && !hc2(world, ResourceNode, eid)) continue
+      if (hc2(world, Dead, eid)) continue
+      const dx = EcsPosition.x[eid] - sx, dz = EcsPosition.z[eid] - sz
+      const d = Math.sqrt(dx * dx + dz * dz)
+      const oR = hc2(world, CollisionRadius, eid) ? CollisionRadius.value[eid] : 1.5
+      if (d < spacing + oR) { blocked = true; break }
+    }
+    if (blocked) continue
+
+    // Check not in mineral corridor
+    let inCorridor = false
+    for (const m of resources) {
+      const mx = m.x - cx, mz = m.z - cz
+      const mLen = Math.sqrt(mx * mx + mz * mz) || 1
+      const mnx = mx / mLen, mnz = mz / mLen
+      const px = sx - cx, pz = sz - cz
+      const proj = px * mnx + pz * mnz
+      if (proj > -2 && proj < mLen + 2) {
+        const perpDist = Math.abs(px * (-mnz) + pz * mnx)
+        if (perpDist < CORRIDOR) { inCorridor = true; break }
+      }
+    }
+    if (inCorridor) continue
+
+    return { x: sx, z: sz }
+  }
+  // Fallback: hint position (shouldn't happen often)
+  return { x: hintX, z: hintZ }
+}
+
+/** Find a clear spot for a unit near (cx,cz), avoiding buildings */
+function findSafeUnitSpot(world: IWorld, cx: number, cz: number, unitRadius: number): { x: number; z: number } {
+  for (let ring = 1; ring <= 4; ring++) {
+    const dist = ring * 2.5
+    for (let a = 0; a < 8; a++) {
+      const angle = (a / 8) * Math.PI * 2 + ring * 0.3
+      const sx = cx + Math.cos(angle) * dist
+      const sz = cz + Math.sin(angle) * dist
+      if (!isWorldWalkable(sx, sz)) continue
+      const _n: number[] = []
+      spatialHash.query(sx, sz, unitRadius + 2, _n)
+      let ok = true
+      for (const eid of _n) {
+        if (!hc2(world, IsBuilding, eid) || hc2(world, Dead, eid)) continue
+        const dx = EcsPosition.x[eid] - sx, dz = EcsPosition.z[eid] - sz
+        const d = Math.sqrt(dx * dx + dz * dz)
+        const oR = hc2(world, CollisionRadius, eid) ? CollisionRadius.value[eid] : 1.5
+        if (d < unitRadius + oR + 0.3) { ok = false; break }
+      }
+      if (ok) return { x: sx, z: sz }
+    }
+  }
+  return { x: cx, z: cz }
+}
+
+function spawnStartingArmy(world: IWorld, faction: number, cx: number, cz: number) {
+  // Extra buildings for supply — placed safely
+  const spots = [
+    findSafeBuildSpot(world, cx, cz, cx + 6, cz + 5, BUILDING_DEFS[BT_SUPPLY_DEPOT].radius),
+    findSafeBuildSpot(world, cx, cz, cx - 6, cz + 5, BUILDING_DEFS[BT_SUPPLY_DEPOT].radius),
+    findSafeBuildSpot(world, cx, cz, cx + 8, cz - 5, BUILDING_DEFS[BT_BARRACKS].radius),
+    findSafeBuildSpot(world, cx, cz, cx - 8, cz - 5, BUILDING_DEFS[BT_FACTORY].radius),
+  ]
+  spawnBuilding(world, BT_SUPPLY_DEPOT, faction, spots[0].x, spots[0].z, true)
+  spawnBuilding(world, BT_SUPPLY_DEPOT, faction, spots[1].x, spots[1].z, true)
+  spawnBuilding(world, BT_BARRACKS, faction, spots[2].x, spots[2].z, true)
+  spawnBuilding(world, BT_FACTORY, faction, spots[3].x, spots[3].z, true)
+
+  // Units — placed safely around base
+  const marineR = UNIT_DEFS[UT_MARINE]?.radius ?? 0.4
+  for (let i = 0; i < 10; i++) {
+    const s = findSafeUnitSpot(world, cx + Math.cos((i / 10) * Math.PI * 2) * 8, cz + Math.sin((i / 10) * Math.PI * 2) * 8, marineR)
+    spawnUnit(world, UT_MARINE, faction, s.x, s.z)
+  }
+  const jeepR = UNIT_DEFS[UT_JEEP]?.radius ?? 0.8
+  for (const [dx, dz] of [[12, 3], [12, -3]]) {
+    const s = findSafeUnitSpot(world, cx + dx, cz + dz, jeepR)
+    spawnUnit(world, UT_JEEP, faction, s.x, s.z)
+  }
+  const tankS = findSafeUnitSpot(world, cx + 15, cz, UNIT_DEFS[UT_TANK]?.radius ?? 1.2)
+  spawnUnit(world, UT_TANK, faction, tankS.x, tankS.z)
+  const rocketS = findSafeUnitSpot(world, cx + 18, cz, UNIT_DEFS[UT_ROCKET]?.radius ?? 1.0)
+  spawnUnit(world, UT_ROCKET, faction, rocketS.x, rocketS.z)
+
   for (let i = 0; i < 4; i++) {
     const a = (i / 4) * Math.PI * 2 + 0.5
-    spawnUnit(world, UT_WORKER, faction, cx + Math.cos(a) * 5, cz + Math.sin(a) * 5)
+    const s = findSafeUnitSpot(world, cx + Math.cos(a) * 5, cz + Math.sin(a) * 5, 0.4)
+    spawnUnit(world, UT_WORKER, faction, s.x, s.z)
   }
 }
 
@@ -443,9 +548,12 @@ function setupMap(world: IWorld, startingArmy = false) {
   } else {
     // ── Random map: full starting base ──
     spawnBuilding(world, BT_COMMAND_CENTER, FACTION_PLAYER, px, pz, true)
-    spawnBuilding(world, BT_SUPPLY_DEPOT, FACTION_PLAYER, px - 6, pz + 5, true)
-    spawnBuilding(world, BT_BARRACKS, FACTION_PLAYER, px + 8, pz - 5, true)
-    spawnBuilding(world, BT_FACTORY, FACTION_PLAYER, px - 7, pz - 6, true)
+    const pSD = findSafeBuildSpot(world, px, pz, px - 6, pz + 5, BUILDING_DEFS[BT_SUPPLY_DEPOT].radius)
+    spawnBuilding(world, BT_SUPPLY_DEPOT, FACTION_PLAYER, pSD.x, pSD.z, true)
+    const pBR = findSafeBuildSpot(world, px, pz, px + 8, pz - 5, BUILDING_DEFS[BT_BARRACKS].radius)
+    spawnBuilding(world, BT_BARRACKS, FACTION_PLAYER, pBR.x, pBR.z, true)
+    const pFA = findSafeBuildSpot(world, px, pz, px - 7, pz - 6, BUILDING_DEFS[BT_FACTORY].radius)
+    spawnBuilding(world, BT_FACTORY, FACTION_PLAYER, pFA.x, pFA.z, true)
 
     for (let i = 0; i < 5; i++) {
       const angle = (i / 5) * Math.PI * 2 + 0.3
@@ -469,8 +577,10 @@ function setupMap(world: IWorld, startingArmy = false) {
     spawnResourceNode(world, RES_GAS, px - 8, pz + 12, 2000)
 
     spawnBuilding(world, BT_COMMAND_CENTER, FACTION_ENEMY, ex, ez, true)
-    spawnBuilding(world, BT_SUPPLY_DEPOT, FACTION_ENEMY, ex + 6, ez - 5, true)
-    spawnBuilding(world, BT_BARRACKS, FACTION_ENEMY, ex - 8, ez + 5, true)
+    const eSD = findSafeBuildSpot(world, ex, ez, ex + 6, ez - 5, BUILDING_DEFS[BT_SUPPLY_DEPOT].radius)
+    spawnBuilding(world, BT_SUPPLY_DEPOT, FACTION_ENEMY, eSD.x, eSD.z, true)
+    const eBR = findSafeBuildSpot(world, ex, ez, ex - 8, ez + 5, BUILDING_DEFS[BT_BARRACKS].radius)
+    spawnBuilding(world, BT_BARRACKS, FACTION_ENEMY, eBR.x, eBR.z, true)
 
     for (let i = 0; i < 5; i++) {
       const angle = (i / 5) * Math.PI * 2 + 0.3
