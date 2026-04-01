@@ -237,17 +237,17 @@ async function showMapSelector(): Promise<MapSelection> {
   return new Promise(resolve => {
     quickBtn.addEventListener('click', () => {
       const fog = getSelectedFog()
+      const army = getStartingArmy()
       overlay.remove()
       if (lastMap) {
         localStorage.setItem('rts-last-map', lastMap)
-        resolve({ map: { name: lastMap }, fog, startingArmy: getStartingArmy() })
+        resolve({ map: { name: lastMap }, fog, startingArmy: army })
       } else if (maps.length > 0) {
-        // Pick a random map from the list
         const pick = maps[Math.floor(Math.random() * maps.length)]
         localStorage.setItem('rts-last-map', pick.name)
-        resolve({ map: { name: pick.name }, fog, startingArmy: getStartingArmy() })
+        resolve({ map: { name: pick.name }, fog, startingArmy: army })
       } else {
-        resolve({ map: 'random', fog, startingArmy: getStartingArmy() })
+        resolve({ map: 'random', fog, startingArmy: army })
       }
     })
 
@@ -262,9 +262,10 @@ async function showMapSelector(): Promise<MapSelection> {
       el.addEventListener('click', () => {
         const name = (el as HTMLElement).dataset.name!
         const fog = getSelectedFog()
+        const army = getStartingArmy()
         localStorage.setItem('rts-last-map', name)
         overlay.remove()
-        resolve({ map: { name }, fog, startingArmy: getStartingArmy() })
+        resolve({ map: { name }, fog, startingArmy: army })
       })
     }
   })
