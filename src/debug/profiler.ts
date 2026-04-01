@@ -2,6 +2,7 @@
 // Measures time spent in each system per frame, displays as a tree.
 
 import type { WebGLRenderer } from 'three'
+import { perfBudget } from '../globals'
 
 interface ProfileEntry {
   name: string
@@ -158,7 +159,8 @@ export function updateProfilerDisplay(visible: boolean) {
 
   // GPU stats from snapshot
   const g = gpuSnapshot
-  const gpuLine = `<span style="color:#aaa">GPU: ${g.calls} draws, ${(g.tris/1000).toFixed(0)}K tris, ${g.geos} geos, ${g.texs} tex, ${g.programs} shaders</span>\n`
+  const shadowInfo = perfBudget.disableUnitShadows ? ' <span style="color:#f80">shadows OFF</span>' : ''
+  const gpuLine = `<span style="color:#aaa">GPU: ${g.calls} draws, ${(g.tris/1000).toFixed(0)}K tris, ${g.programs} shaders${shadowInfo}</span>\n`
 
   profilerDiv.innerHTML =
     `<span style="color:${fpsColor};font-weight:bold">Frame: ${frameAvg.toFixed(1)}ms (${fps} FPS)</span>\n` +

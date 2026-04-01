@@ -13,6 +13,7 @@ interface SmokeParticle {
 }
 
 const smokeParticles: SmokeParticle[] = []
+const MAX_SMOKE = 150 // cap active smoke particles
 const smokeGeo = new THREE.SphereGeometry(0.15, 4, 4)
 const smokeMat = new THREE.MeshBasicMaterial({
   color: 0x888888,
@@ -23,7 +24,8 @@ const smokeMat = new THREE.MeshBasicMaterial({
 
 export function spawnSmoke(x: number, y: number, z: number, count = 1) {
   for (let i = 0; i < count; i++) {
-    const mesh = new THREE.Mesh(smokeGeo, smokeMat.clone())
+    if (smokeParticles.length >= MAX_SMOKE) return // cap
+    const mesh = new THREE.Mesh(smokeGeo, smokeMat) // share material
     mesh.position.set(
       x + (Math.random() - 0.5) * 0.3,
       y + (Math.random() - 0.5) * 0.3,
@@ -113,19 +115,19 @@ const muzzleFlashes: MuzzleFlash[] = []
 
 const flashGeo = new THREE.SphereGeometry(0.12, 6, 6)
 
+const muzzleMatCache = new Map<number, THREE.MeshBasicMaterial>()
+
 export function spawnMuzzleFlash(x: number, y: number, z: number, cfg?: { color?: string; intensity?: number; range?: number; duration?: number }) {
-  const color = cfg?.color ? parseInt(cfg.color.replace('#', ''), 16) : 0xffaa44
+  const colorVal = cfg?.color ? parseInt(cfg.color.replace('#', ''), 16) : 0xffaa44
   const duration = cfg?.duration ?? 0.1
 
-  // Point light
-  const light = new THREE.PointLight(color, cfg?.intensity ?? 8, cfg?.range ?? 12)
-  light.position.set(x, y, z)
-  scene.add(light)
-  muzzleFlashes.push({ light, life: duration })
-
-  // Visible flash sphere
-  const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, depthWrite: false })
-  const mesh = new THREE.Mesh(flashGeo, mat)
+  // Visible flash sphere only (no PointLight — too expensive in combat)
+  if (!muzzleMatCache.has(colorVal)) {
+    muzzleMatCache.set(colorVal, new THREE.MeshBasicMaterial({
+      color: colorVal, transparent: true, opacity: 0.9, depthWrite: false,
+    }))
+  }
+  const mesh = new THREE.Mesh(flashGeo, muzzleMatCache.get(colorVal)!)
   mesh.position.set(x, y, z)
   mesh.scale.setScalar(0.5)
   scene.add(mesh)

@@ -297,6 +297,8 @@ export function spawnResourceNode(
 
 // Track individual projectile meshes — updated by projectileSystem, cleaned on death
 export const projectileMeshes = new Map<number, THREE.Mesh>()
+const projGeoCache = new Map<string, THREE.SphereGeometry>()
+const projMatCache = new Map<string, THREE.MeshBasicMaterial>()
 
 // Store per-projectile effect configs (impact, explosion) — read on hit
 export interface ProjectileEffectCfg {
@@ -361,12 +363,17 @@ export function spawnProjectile(
   Projectile.trailFire[eid] = cfg?.trailFire ?? 0
   Projectile.trailSmoke[eid] = cfg?.trailSmoke ?? 0
 
-  // Create individual mesh with config size/color
+  // Create mesh with cached geometry/material per size+color
   const sz = cfg?.size ?? 0.12
-  const color = cfg?.color ? parseInt(cfg.color.replace('#', ''), 16) : 0xffee44
-  const geo = new THREE.SphereGeometry(sz, 6, 6)
-  const mat = new THREE.MeshBasicMaterial({ color })
-  const mesh = new THREE.Mesh(geo, mat)
+  const colorVal = cfg?.color ? parseInt(cfg.color.replace('#', ''), 16) : 0xffee44
+  const cacheKey = `${sz.toFixed(2)}_${colorVal}`
+  if (!projGeoCache.has(cacheKey)) {
+    projGeoCache.set(cacheKey, new THREE.SphereGeometry(sz, 6, 6))
+  }
+  if (!projMatCache.has(cacheKey)) {
+    projMatCache.set(cacheKey, new THREE.MeshBasicMaterial({ color: colorVal }))
+  }
+  const mesh = new THREE.Mesh(projGeoCache.get(cacheKey)!, projMatCache.get(cacheKey)!)
   mesh.position.set(fromX, spawnY, fromZ)
   getScene().add(mesh)
   projectileMeshes.set(eid, mesh)
