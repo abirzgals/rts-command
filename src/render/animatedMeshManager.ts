@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js'
 import { scene } from './engine'
 import { getTerrainHeight } from '../terrain/heightmap'
+import { perfBudget } from '../globals'
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js'
 
 const loader = new GLTFLoader()
@@ -34,6 +35,7 @@ interface AnimatedUnit {
 export class AnimatedMeshManager {
   private gltf: GLTF | null = null
   private units = new Map<number, AnimatedUnit>()
+  private materialCache = new Map<string, THREE.MeshStandardMaterial>()
   private scale: number
   private url: string
   private rotationOffset: number
@@ -59,17 +61,20 @@ export class AnimatedMeshManager {
     clone.position.set(x, y, z)
     clone.rotation.y = rotY + this.rotationOffset
 
-    // Apply faction color — subtle emissive glow only, keep original textures
+    // Apply faction color — share materials between same-faction units of same type
+    const colorKey = color ? `${color.r.toFixed(2)}_${color.g.toFixed(2)}_${color.b.toFixed(2)}` : 'none'
     clone.traverse((child) => {
       if ((child as THREE.Mesh).isMesh) {
         const mesh = child as THREE.Mesh
         const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
         for (let i = 0; i < mats.length; i++) {
           const orig = mats[i] as THREE.MeshStandardMaterial
-          const mat = orig.clone()
-          if (color) {
-            // Don't touch base color — only add subtle emissive tint
-            mat.emissive.copy(color).multiplyScalar(0.12)
+          const cacheKey = `${orig.uuid}_${colorKey}`
+          let mat = this.materialCache.get(cacheKey)
+          if (!mat) {
+            mat = orig.clone()
+            if (color) mat.emissive.copy(color).multiplyScalar(0.12)
+            this.materialCache.set(cacheKey, mat)
           }
           mats[i] = mat
         }
@@ -289,8 +294,18 @@ export class AnimatedMeshManager {
     const HULL_DAMPING = 6         // hull pitch damping
     const HULL_MAX_PITCH = 0.06    // max hull pitch (radians, ~3.5°)
 
+    const shadowsOff = perfBudget.disableUnitShadows
     for (const [, unit] of this.units) {
       unit.mixer.update(dt)
+      // Dynamic shadow toggle based on FPS
+      if (unit.mesh.castShadow === shadowsOff) {
+        unit.mesh.traverse((c) => {
+          if ((c as THREE.Mesh).isMesh) {
+            (c as THREE.Mesh).castShadow = !shadowsOff
+          }
+        })
+        unit.mesh.castShadow = !shadowsOff
+      }
 
       // Update recoil spring physics
       if (unit.recoil?.active && unit.barrelBone) {
@@ -406,7 +421,7 @@ export class AnimatedMeshManager {
       piece.position.copy(worldPos)
       piece.quaternion.copy(worldQuat)
       piece.scale.copy(worldScale)
-      piece.castShadow = true
+      piece.castShadow = false
       scene.add(piece)
       pieces.push(piece)
     }

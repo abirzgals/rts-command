@@ -4,7 +4,7 @@ import { SpatialHash } from './utils/spatial'
 export const spatialHash = new SpatialHash(10)
 
 /** Performance budget — throttle heavy systems when FPS drops */
-export let perfBudget = { maxPaths: 4, combatSkip: false }
+export let perfBudget = { maxPaths: 4, combatSkip: false, disableUnitShadows: false }
 let fpsHistory: number[] = []
 export function updatePerfBudget(dt: number) {
   const fps = dt > 0 ? 1 / dt : 60
@@ -14,12 +14,15 @@ export function updatePerfBudget(dt: number) {
   if (avgFps < 20) {
     perfBudget.maxPaths = 1
     perfBudget.combatSkip = true
+    perfBudget.disableUnitShadows = true
   } else if (avgFps < 30) {
     perfBudget.maxPaths = 2
     perfBudget.combatSkip = false
+    perfBudget.disableUnitShadows = true
   } else {
     perfBudget.maxPaths = 4
     perfBudget.combatSkip = false
+    perfBudget.disableUnitShadows = false
   }
 }
 
