@@ -5,7 +5,7 @@ import { createMeshPools } from './render/meshPools'
 import { initInput } from './input/input'
 import { spawnUnit, spawnBuilding, spawnResourceNode, spawnObstacle } from './ecs/archetypes'
 import {
-  FACTION_PLAYER, FACTION_ENEMY, UT_WORKER, UT_MARINE, UT_TANK,
+  FACTION_PLAYER, FACTION_ENEMY, UT_WORKER, UT_MARINE, UT_TANK, UT_JEEP, UT_ROCKET,
   BT_COMMAND_CENTER, BT_SUPPLY_DEPOT, BT_BARRACKS, BT_FACTORY,
   RES_MINERALS, RES_GAS,
 } from './game/config'
@@ -68,6 +68,7 @@ let rtsCamera: RTSCamera
 interface MapSelection {
   map: 'random' | { name: string }
   fog: FogMode
+  startingArmy: boolean
 }
 
 async function showMapSelector(): Promise<MapSelection> {
@@ -121,6 +122,9 @@ async function showMapSelector(): Promise<MapSelection> {
         <button id="menu-settings-btn" style="width:100%;padding:5px;border:1px solid #555;border-radius:4px;background:#252535;color:#aaf;cursor:pointer;font-size:12px">Customize Keys...</button>
         <label style="color:#ccc;font-size:12px;display:block;margin-top:8px;cursor:pointer">
           <input type="checkbox" id="menu-sound" checked style="margin-right:4px">Sound &amp; Music
+        </label>
+        <label style="color:#ccc;font-size:12px;display:block;margin-top:4px;cursor:pointer">
+          <input type="checkbox" id="menu-army" style="margin-right:4px">Starting Army
         </label>
       </div>
     </div>
@@ -221,6 +225,10 @@ async function showMapSelector(): Promise<MapSelection> {
     return (checked?.value as FogMode) || 'normal'
   }
 
+  function getStartingArmy(): boolean {
+    return (document.getElementById('menu-army') as HTMLInputElement)?.checked ?? false
+  }
+
   // Quick start button — last played map or random
   const lastMap = localStorage.getItem('rts-last-map')
   const quickBtn = document.getElementById('btn-quick-start')!
@@ -232,14 +240,14 @@ async function showMapSelector(): Promise<MapSelection> {
       overlay.remove()
       if (lastMap) {
         localStorage.setItem('rts-last-map', lastMap)
-        resolve({ map: { name: lastMap }, fog })
+        resolve({ map: { name: lastMap }, fog, startingArmy: getStartingArmy() })
       } else if (maps.length > 0) {
         // Pick a random map from the list
         const pick = maps[Math.floor(Math.random() * maps.length)]
         localStorage.setItem('rts-last-map', pick.name)
-        resolve({ map: { name: pick.name }, fog })
+        resolve({ map: { name: pick.name }, fog, startingArmy: getStartingArmy() })
       } else {
-        resolve({ map: 'random', fog })
+        resolve({ map: 'random', fog, startingArmy: getStartingArmy() })
       }
     })
 
@@ -256,7 +264,7 @@ async function showMapSelector(): Promise<MapSelection> {
         const fog = getSelectedFog()
         localStorage.setItem('rts-last-map', name)
         overlay.remove()
-        resolve({ map: { name }, fog })
+        resolve({ map: { name }, fog, startingArmy: getStartingArmy() })
       })
     }
   })
@@ -329,7 +337,7 @@ async function init() {
   initUnitCamera()
 
   // 9. Spawn initial entities (bases, resources, obstacles)
-  setupMap(world)
+  setupMap(world, selection.startingArmy)
 
   // 10. If loaded map had objects, spawn them
   for (const obj of mapObjects) {
@@ -382,12 +390,27 @@ function initRallyPoints(world: IWorld) {
 
 init()
 
-function setupMap(world: IWorld) {
+function spawnStartingArmy(world: IWorld, faction: number, cx: number, cz: number) {
+  // 10 marines
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * Math.PI * 2
+    spawnUnit(world, UT_MARINE, faction, cx + Math.cos(a) * 8, cz + Math.sin(a) * 8)
+  }
+  // 2 jeeps
+  spawnUnit(world, UT_JEEP, faction, cx + 12, cz + 3)
+  spawnUnit(world, UT_JEEP, faction, cx + 12, cz - 3)
+  // 1 tank
+  spawnUnit(world, UT_TANK, faction, cx + 15, cz)
+  // 1 rocket
+  spawnUnit(world, UT_ROCKET, faction, cx + 18, cz)
+}
+
+function setupMap(world: IWorld, startingArmy = false) {
   const px = mapSpawnPoints.player.x, pz = mapSpawnPoints.player.z
   const ex = mapSpawnPoints.enemy.x, ez = mapSpawnPoints.enemy.z
 
   if (isLoadedMap) {
-    // ── Loaded map: minimal start — CC + 1 worker + 1 marine per side ──
+    // ── Loaded map: CC + 1 worker + 1 marine per side ──
     spawnBuilding(world, BT_COMMAND_CENTER, FACTION_PLAYER, px, pz, true)
     spawnUnit(world, UT_WORKER, FACTION_PLAYER, px + 4, pz + 3)
     spawnUnit(world, UT_MARINE, FACTION_PLAYER, px - 4, pz + 3)
@@ -395,6 +418,11 @@ function setupMap(world: IWorld) {
     spawnBuilding(world, BT_COMMAND_CENTER, FACTION_ENEMY, ex, ez, true)
     spawnUnit(world, UT_WORKER, FACTION_ENEMY, ex + 4, ez + 3)
     spawnUnit(world, UT_MARINE, FACTION_ENEMY, ex - 4, ez + 3)
+
+    if (startingArmy) {
+      spawnStartingArmy(world, FACTION_PLAYER, px, pz)
+      spawnStartingArmy(world, FACTION_ENEMY, ex, ez)
+    }
   } else {
     // ── Random map: full starting base ──
     spawnBuilding(world, BT_COMMAND_CENTER, FACTION_PLAYER, px, pz, true)
@@ -439,6 +467,11 @@ function setupMap(world: IWorld) {
     }
     spawnResourceNode(world, RES_GAS, ex - 12, ez + 8, 2000)
     spawnResourceNode(world, RES_GAS, ex + 8, ez - 12, 2000)
+
+    if (startingArmy) {
+      spawnStartingArmy(world, FACTION_PLAYER, px, pz)
+      spawnStartingArmy(world, FACTION_ENEMY, ex, ez)
+    }
 
     // Middle contested resources
     for (let i = 0; i < 6; i++) {
