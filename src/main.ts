@@ -546,7 +546,24 @@ function setupMap(world: IWorld, startingArmy = false) {
       spawnStartingArmy(world, FACTION_ENEMY, ex, ez)
     }
   } else {
-    // ── Random map: full starting base ──
+    // ── Random map: resources FIRST so findSafeBuildSpot can see them ──
+    for (let i = 0; i < 8; i++) {
+      const angle = (i / 8) * Math.PI * 0.6 + Math.PI * 0.7
+      const dist = 10 + (i % 2) * 2.5
+      spawnResourceNode(world, RES_MINERALS, px + Math.cos(angle) * dist, pz + Math.sin(angle) * dist, 1500)
+    }
+    spawnResourceNode(world, RES_GAS, px + 12, pz - 8, 2000)
+    spawnResourceNode(world, RES_GAS, px - 8, pz + 12, 2000)
+
+    for (let i = 0; i < 8; i++) {
+      const angle = (i / 8) * Math.PI * 0.6 + Math.PI * 1.7
+      const dist = 10 + (i % 2) * 2.5
+      spawnResourceNode(world, RES_MINERALS, ex + Math.cos(angle) * dist, ez + Math.sin(angle) * dist, 1500)
+    }
+    spawnResourceNode(world, RES_GAS, ex - 12, ez + 8, 2000)
+    spawnResourceNode(world, RES_GAS, ex + 8, ez - 12, 2000)
+
+    // Player base
     spawnBuilding(world, BT_COMMAND_CENTER, FACTION_PLAYER, px, pz, true)
     const pSD = findSafeBuildSpot(world, px, pz, px - 6, pz + 5, BUILDING_DEFS[BT_SUPPLY_DEPOT].radius)
     spawnBuilding(world, BT_SUPPLY_DEPOT, FACTION_PLAYER, pSD.x, pSD.z, true)
@@ -568,14 +585,7 @@ function setupMap(world: IWorld, startingArmy = false) {
       spawnUnit(world, UT_TANK, FACTION_PLAYER, px + 18 + Math.cos(angle) * 3, pz + Math.sin(angle) * 3)
     }
 
-    for (let i = 0; i < 8; i++) {
-      const angle = (i / 8) * Math.PI * 0.6 + Math.PI * 0.7
-      const dist = 10 + (i % 2) * 2.5
-      spawnResourceNode(world, RES_MINERALS, px + Math.cos(angle) * dist, pz + Math.sin(angle) * dist, 1500)
-    }
-    spawnResourceNode(world, RES_GAS, px + 12, pz - 8, 2000)
-    spawnResourceNode(world, RES_GAS, px - 8, pz + 12, 2000)
-
+    // Enemy base
     spawnBuilding(world, BT_COMMAND_CENTER, FACTION_ENEMY, ex, ez, true)
     const eSD = findSafeBuildSpot(world, ex, ez, ex + 6, ez - 5, BUILDING_DEFS[BT_SUPPLY_DEPOT].radius)
     spawnBuilding(world, BT_SUPPLY_DEPOT, FACTION_ENEMY, eSD.x, eSD.z, true)
@@ -586,14 +596,6 @@ function setupMap(world: IWorld, startingArmy = false) {
       const angle = (i / 5) * Math.PI * 2 + 0.3
       spawnUnit(world, UT_WORKER, FACTION_ENEMY, ex + Math.cos(angle) * 5, ez + Math.sin(angle) * 5)
     }
-
-    for (let i = 0; i < 8; i++) {
-      const angle = (i / 8) * Math.PI * 0.6 + Math.PI * 1.7
-      const dist = 10 + (i % 2) * 2.5
-      spawnResourceNode(world, RES_MINERALS, ex + Math.cos(angle) * dist, ez + Math.sin(angle) * dist, 1500)
-    }
-    spawnResourceNode(world, RES_GAS, ex - 12, ez + 8, 2000)
-    spawnResourceNode(world, RES_GAS, ex + 8, ez - 12, 2000)
 
     if (startingArmy) {
       spawnStartingArmy(world, FACTION_PLAYER, px, pz)

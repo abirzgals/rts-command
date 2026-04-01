@@ -83,24 +83,25 @@ export function projectileSystem(world: IWorld, dt: number) {
       continue
     }
 
-    // Update tracer line: front = current position, tail = behind (max 2m, clamped to spawn)
-    const projLine = projectileMeshes.get(eid)
-    if (projLine && (projLine as any).isLine) {
-      const geo = (projLine as THREE.Line).geometry as THREE.BufferGeometry
-      const posAttr = geo.attributes.position as THREE.BufferAttribute
-      const TRACER_LEN = 2.0
-      const traveled = Projectile.traveled[eid]
-      const tailDist = Math.min(traveled, TRACER_LEN)
-      // Front point = current projectile world position
-      posAttr.setXYZ(0, px, py, pz)
-      // Tail point = behind the bullet along its direction
-      const tailX = px - nx * tailDist
-      const tailY = py - ny * tailDist
-      const tailZ = pz - nz * tailDist
-      posAttr.setXYZ(1, tailX, tailY, tailZ)
-      posAttr.needsUpdate = true
-      // Force bounding sphere recalculation
-      geo.computeBoundingSphere()
+    // Update projectile visual
+    const projObj = projectileMeshes.get(eid)
+    if (projObj) {
+      if ((projObj as any).isLine) {
+        // Tracer line: front = current position, tail = behind
+        const geo = (projObj as THREE.Line).geometry as THREE.BufferGeometry
+        const posAttr = geo.attributes.position as THREE.BufferAttribute
+        const TRACER_LEN = 2.0
+        const traveled = Projectile.traveled[eid]
+        const tailDist = Math.min(traveled, TRACER_LEN)
+        posAttr.setXYZ(0, px, py, pz)
+        posAttr.setXYZ(1, px - nx * tailDist, py - ny * tailDist, pz - nz * tailDist)
+        posAttr.needsUpdate = true
+        geo.computeBoundingSphere()
+      } else if ((projObj as any).isMesh) {
+        // Shell sphere or rocket cylinder: move + orient along direction
+        projObj.position.set(px, py, pz)
+        projObj.lookAt(px + nx, py + ny, pz + nz)
+      }
     }
 
     // Trail effects from config

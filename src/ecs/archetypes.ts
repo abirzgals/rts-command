@@ -298,6 +298,8 @@ export function spawnResourceNode(
 // Track individual projectile meshes — updated by projectileSystem, cleaned on death
 export const projectileMeshes = new Map<number, THREE.Object3D>()
 const projMatCache = new Map<string, THREE.Material>()
+const shellGeo = new THREE.SphereGeometry(1, 8, 6) // shared, scaled per-shell
+const rocketGeo = new THREE.CylinderGeometry(0.5, 0.8, 3, 6) // elongated, scaled
 
 // Store per-projectile effect configs (impact, explosion) — read on hit
 export interface ProjectileEffectCfg {
@@ -324,7 +326,7 @@ export function spawnProjectile(
   targetEid: number,
   damage: number,
   speed = 25,
-  cfg?: { color?: string; size?: number; trailFire?: number; trailSmoke?: number },
+  cfg?: { color?: string; size?: number; trailFire?: number; trailSmoke?: number; type?: string },
   ownerFaction = 0xFF,
   fromY?: number,
 ): number {
@@ -365,27 +367,54 @@ export function spawnProjectile(
   Projectile.trailFire[eid] = cfg?.trailFire ?? 0
   Projectile.trailSmoke[eid] = cfg?.trailSmoke ?? 0
 
-  // Create tracer line (2-point line from spawn → current position)
+  const projType = cfg?.type ?? 'bullet'
   const colorVal = cfg?.color ? parseInt(cfg.color.replace('#', ''), 16) : 0xffee44
-  if (!projMatCache.has(colorVal.toString())) {
-    projMatCache.set(colorVal.toString(), new THREE.LineBasicMaterial({
-      color: colorVal, transparent: true, opacity: 0.8, linewidth: 1,
-    }) as any)
-  }
-  const tracerGeo = new THREE.BufferGeometry()
-  const positions = new Float32Array(6)
-  // Initialize both points at spawn position (avoid flash at origin)
-  positions[0] = fromX; positions[1] = spawnY; positions[2] = fromZ
-  positions[3] = fromX; positions[4] = spawnY; positions[5] = fromZ
-  tracerGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-  const tracer = new THREE.Line(tracerGeo, projMatCache.get(colorVal.toString())!)
-  tracer.frustumCulled = false
-  tracer.renderOrder = 10
-  getScene().add(tracer)
-  projectileMeshes.set(eid, tracer as any)
 
-  // No MeshRef — projectile tracers are fully managed by projectileSystem
-  // renderSystem must not touch them
+  if (projType === 'shell') {
+    // 3D sphere for tank shells
+    const shellSize = cfg?.size ?? 0.2
+    const matKey = `shell_${colorVal}`
+    if (!projMatCache.has(matKey)) {
+      projMatCache.set(matKey, new THREE.MeshBasicMaterial({ color: colorVal }))
+    }
+    const sphere = new THREE.Mesh(shellGeo, projMatCache.get(matKey)!)
+    sphere.scale.setScalar(shellSize)
+    sphere.position.set(fromX, spawnY, fromZ)
+    sphere.frustumCulled = false
+    getScene().add(sphere)
+    projectileMeshes.set(eid, sphere)
+  } else if (projType === 'rocket') {
+    // Elongated capsule for rockets
+    const rocketSize = cfg?.size ?? 0.15
+    const matKey = `rocket_${colorVal}`
+    if (!projMatCache.has(matKey)) {
+      projMatCache.set(matKey, new THREE.MeshBasicMaterial({ color: colorVal }))
+    }
+    const rocket = new THREE.Mesh(rocketGeo, projMatCache.get(matKey)!)
+    rocket.scale.set(rocketSize, rocketSize, rocketSize * 3)
+    rocket.position.set(fromX, spawnY, fromZ)
+    rocket.frustumCulled = false
+    getScene().add(rocket)
+    projectileMeshes.set(eid, rocket)
+  } else {
+    // Tracer line for bullets
+    const matKey = `line_${colorVal}`
+    if (!projMatCache.has(matKey)) {
+      projMatCache.set(matKey, new THREE.LineBasicMaterial({
+        color: colorVal, transparent: true, opacity: 0.8, linewidth: 1,
+      }) as any)
+    }
+    const tracerGeo = new THREE.BufferGeometry()
+    const positions = new Float32Array(6)
+    positions[0] = fromX; positions[1] = spawnY; positions[2] = fromZ
+    positions[3] = fromX; positions[4] = spawnY; positions[5] = fromZ
+    tracerGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    const tracer = new THREE.Line(tracerGeo, projMatCache.get(matKey)!)
+    tracer.frustumCulled = false
+    tracer.renderOrder = 10
+    getScene().add(tracer)
+    projectileMeshes.set(eid, tracer as any)
+  }
 
   return eid
 }

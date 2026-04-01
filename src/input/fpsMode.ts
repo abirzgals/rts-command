@@ -24,7 +24,7 @@ import { getAnimManager } from '../render/animatedMeshManager'
 import { MeshRef } from '../ecs/components'
 import { editorConfig } from '../render/meshPools'
 import { Projectile } from '../ecs/components'
-import { spawnMuzzleFlash } from '../render/effects'
+import { spawnMuzzleFlash, spawnSmoke } from '../render/effects'
 
 // ── State ───────────────────────────────────────────────────
 let active = false
@@ -452,13 +452,26 @@ function fpsShoot() {
   const dirY = toAimY / toAimLen
   const dirZ = toAimZ / toAimLen
 
+  // Determine projectile type — same logic as combatSystem
+  const splash = AttackC.splash[eid]
+  const projType = projCfg?.type ?? (splash > 0 ? 'shell' : 'bullet')
+  const finalSpeed = projCfg?.speed ?? (projType === 'shell' ? 15 : projType === 'rocket' ? 8 : 25)
+  const trailFire = projCfg?.trailFire ?? (projType === 'rocket' ? 3 : 0)
+  const trailSmoke = projCfg?.trailSmoke ?? (projType === 'rocket' ? 2 : 0)
+
   // Sound + muzzle flash
-  playSfx(`${unitKey}-shot`)
+  if (projType === 'rocket') {
+    playSfx('rocket-launch')
+    spawnSmoke(fpX, fpY, fpZ, 5)
+  } else {
+    playSfx(`${unitKey}-shot`)
+  }
   spawnMuzzleFlash(fpX, fpY, fpZ, muzzleCfg)
 
-  // Spawn directional projectile from hand toward crosshair aim point
+  // Spawn projectile with correct type
   const myFaction = hasComponent(world, Faction, eid) ? Faction.id[eid] : 0
-  const projEid = spawnProjectile(world, fpX, fpZ, 0, damage, projSpeed, projCfg, myFaction, fpY)
+  const projEid = spawnProjectile(world, fpX, fpZ, 0xFFFFFFFF, damage, finalSpeed,
+    { ...projCfg, type: projType, trailFire, trailSmoke }, myFaction, fpY)
   Projectile.dirX[projEid] = dirX
   Projectile.dirY[projEid] = dirY
   Projectile.dirZ[projEid] = dirZ
