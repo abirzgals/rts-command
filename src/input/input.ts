@@ -1412,23 +1412,18 @@ function onTouchMove(e: TouchEvent, _world: IWorld) {
     const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2
     const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2
 
-    // Pan camera from midpoint movement — scale with camera distance for consistent feel
-    const panDx = midX - twoFingerPrevX
-    const panDy = midY - twoFingerPrevY
-    const cam = rtsCameraRef
-    if (cam) {
-      const panScale = cam.distance * 0.003
-      const cosY = Math.cos(cam.yaw)
-      const sinY = Math.sin(cam.yaw)
-      setTouchPan(
-        -(panDx * cosY + panDy * sinY) * panScale,
-        -(-panDx * sinY + panDy * cosY) * panScale,
-      )
-    } else {
-      setTouchPan(-panDx * 0.2, -panDy * 0.2)
+    // Pan camera — raycast previous and current midpoint to world for exact 1:1 finger tracking
+    const prevHit = raycastGround(twoFingerPrevX, twoFingerPrevY)
+    if (prevHit) {
+      const px = prevHit.x, pz = prevHit.z // save before next raycast overwrites shared array
+      const currHit = raycastGround(midX, midY)
+      if (currHit) {
+        setTouchPan(px - currHit.x, pz - currHit.z)
+      }
     }
     twoFingerPrevX = midX
     twoFingerPrevY = midY
+    const cam = rtsCameraRef
 
     // Pinch zoom — ratio-based (multiplicative) for consistent speed at all zoom levels
     const dx = e.touches[0].clientX - e.touches[1].clientX
