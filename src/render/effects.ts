@@ -679,7 +679,6 @@ function updateFireParticles(dt: number) {
 // ═══════════════════════════════════════════════════════════════
 
 interface ResourceFX {
-  light: THREE.PointLight
   particles: THREE.Points
   positions: Float32Array
   velocities: Float32Array // vy per particle
@@ -700,15 +699,6 @@ const GAS_PARTICLE_COUNT = 15
 /** Create ambient effects for a resource node */
 export function createResourceEffect(x: number, y: number, z: number, type: number) {
   const isMinerals = type === 0
-
-  // Point light: cyan glow for minerals, green for gas
-  const light = new THREE.PointLight(
-    isMinerals ? 0x44ccff : 0x44ff66,
-    isMinerals ? 3 : 2,
-    isMinerals ? 8 : 6,
-  )
-  light.position.set(x, y + 1.0, z)
-  scene.add(light)
 
   // Sparkle/steam particles
   const count = isMinerals ? MINERAL_PARTICLE_COUNT : GAS_PARTICLE_COUNT
@@ -740,7 +730,7 @@ export function createResourceEffect(x: number, y: number, z: number, type: numb
   scene.add(particles)
 
   resourceEffects.push({
-    light, particles, positions, velocities, lives, maxLife,
+    particles, positions, velocities, lives, maxLife,
     count, type, baseX: x, baseY: y, baseZ: z,
   })
 }
@@ -774,10 +764,6 @@ function updateResourceEffects(dt: number) {
   for (const fx of resourceEffects) {
     const isMinerals = fx.type === 0
 
-    // Animate light intensity (pulsing glow)
-    const pulse = Math.sin(performance.now() * 0.002 + fx.baseX) * 0.3 + 0.7
-    fx.light.intensity = (isMinerals ? 3 : 2) * pulse
-
     // Update particles
     const pos = fx.positions
     for (let i = 0; i < fx.count; i++) {
@@ -810,8 +796,9 @@ function updateResourceEffects(dt: number) {
     // Update geometry
     ;(fx.particles.geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true
 
-    // Fade material based on average particle life
+    // Pulse particle opacity
     const mat = fx.particles.material as THREE.PointsMaterial
+    const pulse = Math.sin(performance.now() * 0.002 + fx.baseX) * 0.3 + 0.7
     mat.opacity = isMinerals ? 0.7 + pulse * 0.3 : 0.4 + pulse * 0.2
   }
 }
@@ -910,9 +897,11 @@ interface BloodDecal {
 }
 
 const bloodDecals: BloodDecal[] = []
+const MAX_BLOOD = 40
 let bloodTexture: THREE.Texture | null = null
 let bloodTextureLoading = false
 const bloodGeo = new THREE.PlaneGeometry(1, 1)
+let bloodMat: THREE.MeshBasicMaterial | null = null
 
 function ensureBloodTexture(): THREE.Texture | null {
   if (bloodTexture) return bloodTexture
@@ -920,31 +909,38 @@ function ensureBloodTexture(): THREE.Texture | null {
   bloodTextureLoading = true
   new THREE.TextureLoader().load('/images/blood-decal.png', (tex) => {
     bloodTexture = tex
+    bloodMat = new THREE.MeshBasicMaterial({
+      map: tex,
+      transparent: true,
+      opacity: 0.8,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    })
   })
   return null
 }
 
 export function spawnBloodSplat(x: number, z: number, size: number) {
-  const tex = ensureBloodTexture()
-  if (!tex) return
+  ensureBloodTexture()
+  if (!bloodMat) return
+
+  // Remove oldest if at cap
+  while (bloodDecals.length >= MAX_BLOOD) {
+    const old = bloodDecals.shift()!
+    scene.remove(old.mesh)
+    old.mesh.geometry = undefined as any // shared geo, don't dispose
+  }
 
   const y = getTerrainHeight(x, z) + 0.05
-  const mat = new THREE.MeshBasicMaterial({
-    map: tex,
-    transparent: true,
-    opacity: 0.7 + Math.random() * 0.3,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-  })
-  const mesh = new THREE.Mesh(bloodGeo, mat)
+  const mesh = new THREE.Mesh(bloodGeo, bloodMat) // shared material
   mesh.rotation.x = -Math.PI / 2
-  mesh.rotation.z = Math.random() * Math.PI * 2 // random rotation
+  mesh.rotation.z = Math.random() * Math.PI * 2
   mesh.position.set(x + (Math.random() - 0.5) * 0.5, y, z + (Math.random() - 0.5) * 0.5)
   mesh.scale.setScalar(size)
   mesh.renderOrder = 1
   scene.add(mesh)
 
-  bloodDecals.push({ mesh, life: 0, maxLife: 10, fadeStart: 6 })
+  bloodDecals.push({ mesh, life: 0, maxLife: 8, fadeStart: 4 })
 }
 
 /** Small blood hit splats — 1-2 tiny decals */
@@ -980,15 +976,14 @@ export function updateBloodDecals(dt: number) {
 
     if (d.life >= d.maxLife) {
       scene.remove(d.mesh)
-      ;(d.mesh.material as THREE.Material).dispose()
       bloodDecals.splice(i, 1)
       continue
     }
 
-    // Fade out after fadeStart
+    // Fade out by scaling down (shared material can't change opacity per-instance)
     if (d.life > d.fadeStart) {
       const t = (d.life - d.fadeStart) / (d.maxLife - d.fadeStart)
-      ;(d.mesh.material as THREE.MeshBasicMaterial).opacity = (1 - t) * 0.8
+      d.mesh.scale.setScalar(d.mesh.scale.x * (1 - t * 0.02)) // gentle shrink
     }
   }
 }
