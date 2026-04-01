@@ -9,7 +9,7 @@ import { getPool } from '../../render/meshPools'
 import { projectileMeshes, removeProjectileMesh, projectileEffects } from '../archetypes'
 import { getTerrainHeight } from '../../terrain/heightmap'
 import { spatialHash } from '../../globals'
-import { spawnExplosion, spawnSmoke, spawnMuzzleFlash, spawnRocketTrail, spawnFireExplosion, spawnImpact } from '../../render/effects'
+import { spawnExplosion, spawnSmoke, spawnMuzzleFlash, spawnRocketTrail, spawnFireExplosion, spawnImpact, spawnImpactFlash } from '../../render/effects'
 
 const projectileQuery = defineQuery([Projectile, Position])
 const arcQuery = defineQuery([ArcProjectile, Position])
@@ -57,6 +57,7 @@ export function projectileSystem(world: IWorld, dt: number) {
       applyDamage(world, hitEid, Projectile.damage[eid], px, pz)
       const fx = projectileEffects.get(eid)
       spawnImpact(px, py, pz, fx?.impact)
+      spawnImpactFlash(px, py, pz)
       projectileEffects.delete(eid)
       destroyProjectile(world, eid, 30)
       continue
@@ -67,6 +68,7 @@ export function projectileSystem(world: IWorld, dt: number) {
     if (Projectile.traveled[eid] > 1.0 && py <= groundY + 0.1) {
       const fx = projectileEffects.get(eid)
       spawnImpact(px, groundY, pz, fx?.impact)
+      spawnImpactFlash(px, groundY + 0.1, pz)
       projectileEffects.delete(eid)
       destroyProjectile(world, eid, 30)
       continue

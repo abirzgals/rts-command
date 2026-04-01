@@ -105,32 +105,52 @@ export function spawnImpact(x: number, y: number, z: number, cfg?: { color?: str
   }
 }
 
-// ── Muzzle flash ────────────────────────────────────────────
-interface MuzzleFlash {
+// ── Muzzle/impact flash lights ──────────────────────────────
+interface FlashLight {
   light: THREE.PointLight
-  life: number
+  maxLife: number
+  life: number       // counts up from 0
+  baseIntensity: number
 }
 
-const muzzleFlashes: MuzzleFlash[] = []
+const flashLights: FlashLight[] = []
+const MAX_FLASH_LIGHTS = 6
 
 const flashGeo = new THREE.SphereGeometry(0.12, 6, 6)
+
+function addFlashLight(x: number, y: number, z: number, color: number, intensity: number, range: number, duration: number) {
+  // If at cap, replace the oldest (shortest remaining life)
+  if (flashLights.length >= MAX_FLASH_LIGHTS) {
+    let oldestIdx = 0, oldestRemaining = Infinity
+    for (let i = 0; i < flashLights.length; i++) {
+      const remaining = flashLights[i].maxLife - flashLights[i].life
+      if (remaining < oldestRemaining) { oldestRemaining = remaining; oldestIdx = i }
+    }
+    scene.remove(flashLights[oldestIdx].light)
+    flashLights[oldestIdx].light.dispose()
+    flashLights.splice(oldestIdx, 1)
+  }
+  const light = new THREE.PointLight(color, intensity, range)
+  light.castShadow = false
+  light.position.set(x, y, z)
+  scene.add(light)
+  flashLights.push({ light, maxLife: duration, life: 0, baseIntensity: intensity })
+}
+
+/** Spawn a small impact flash at hit point */
+export function spawnImpactFlash(x: number, y: number, z: number) {
+  addFlashLight(x, y, z, 0xffaa44, 4, 5, 0.15)
+}
 
 const muzzleMatCache = new Map<number, THREE.MeshBasicMaterial>()
 
 export function spawnMuzzleFlash(x: number, y: number, z: number, cfg?: { color?: string; intensity?: number; range?: number; duration?: number }) {
   const colorVal = cfg?.color ? parseInt(cfg.color.replace('#', ''), 16) : 0xffaa44
-  const duration = cfg?.duration ?? 0.1
 
-  // Cheap PointLight — no shadow casting, throttled to max 6 active
-  if (muzzleFlashes.length < 6) {
-    const light = new THREE.PointLight(colorVal, cfg?.intensity ?? 6, cfg?.range ?? 8)
-    light.castShadow = false
-    light.position.set(x, y, z)
-    scene.add(light)
-    muzzleFlashes.push({ light, life: duration })
-  }
+  // Flash light — 300ms with exponential decay
+  addFlashLight(x, y, z, colorVal, cfg?.intensity ?? 6, cfg?.range ?? 8, 0.3)
 
-  // Visible flash sphere with cached material
+  // Visible flash sphere
   if (!muzzleMatCache.has(colorVal)) {
     muzzleMatCache.set(colorVal, new THREE.MeshBasicMaterial({
       color: colorVal, transparent: true, opacity: 0.9, depthWrite: false,
@@ -140,7 +160,7 @@ export function spawnMuzzleFlash(x: number, y: number, z: number, cfg?: { color?
   mesh.position.set(x, y, z)
   mesh.scale.setScalar(0.5)
   scene.add(mesh)
-  explosions.push({ mesh, life: 0, maxLife: duration })
+  explosions.push({ mesh, life: 0, maxLife: 0.15 })
 }
 
 // ── Action target indicator (animated dashed circle) ────────
@@ -294,14 +314,8 @@ export function spawnTankDeathExplosion(x: number, y: number, z: number) {
   scene.add(fire2)
   explosions.push({ mesh: fire2, life: 0, maxLife: 0.8 })
 
-  // Bright flash light (capped)
-  if (muzzleFlashes.length < 6) {
-    const flashLight = new THREE.PointLight(0xff6600, 20, 25)
-    flashLight.castShadow = false
-    flashLight.position.set(x, y + 2, z)
-    scene.add(flashLight)
-    muzzleFlashes.push({ light: flashLight, life: 0.4 })
-  }
+  // Bright flash light
+  addFlashLight(x, y + 2, z, 0xff6600, 20, 25, 0.5)
 
   // Spawn debris pieces — bigger, more dramatic
   const DEBRIS_COUNT = 14
@@ -398,14 +412,19 @@ export function updateEffects(dt: number) {
     mat.opacity = 0.9 * (1 - t)
   }
 
-  // Muzzle flashes
-  for (let i = muzzleFlashes.length - 1; i >= 0; i--) {
-    const f = muzzleFlashes[i]
-    f.life -= dt
-    if (f.life <= 0) {
+  // Flash lights — exponential decay (bright start, gradual fade)
+  for (let i = flashLights.length - 1; i >= 0; i--) {
+    const f = flashLights[i]
+    f.life += dt
+    if (f.life >= f.maxLife) {
       scene.remove(f.light)
       f.light.dispose()
-      muzzleFlashes.splice(i, 1)
+      flashLights.splice(i, 1)
+    } else {
+      // Exponential decay: starts at full intensity, fades slowly then drops fast
+      const t = f.life / f.maxLife // 0→1
+      const decay = Math.pow(1 - t, 3) // cubic falloff: slow start, fast end
+      f.light.intensity = f.baseIntensity * decay
     }
   }
 
@@ -578,14 +597,8 @@ export function spawnFireExplosion(x: number, y: number, z: number, radius = 3.0
   // Big central explosion
   spawnExplosion(x, y, z, radius)
 
-  // Fire flash light (capped)
-  if (muzzleFlashes.length < 6) {
-    const light = new THREE.PointLight(0xff4400, 15, 20)
-    light.castShadow = false
-    light.position.set(x, y + 1.5, z)
-    scene.add(light)
-    muzzleFlashes.push({ light, life: 0.3 })
-  }
+  // Fire flash light
+  addFlashLight(x, y + 1.5, z, 0xff4400, 15, 20, 0.4)
 
   // Long-living fire particles that linger on the ground
   const FIRE_COUNT = 15
