@@ -17,7 +17,7 @@ import { getPool } from '../render/meshPools'
 import { toggleDebug, isDebugEnabled } from '../render/debugOverlay'
 import { spawnMoveMarker, spawnActionIndicator } from '../render/effects'
 import { spawnBuilding } from '../ecs/archetypes'
-import { spatialHash } from '../globals'
+import { spatialHash, rtsCameraRef } from '../globals'
 import { getTerrainHeight } from '../terrain/heightmap'
 import { isWorldWalkable } from '../pathfinding/navGrid'
 import { findPathHierarchical } from '../pathfinding/astar'
@@ -1412,25 +1412,32 @@ function onTouchMove(e: TouchEvent, _world: IWorld) {
     const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2
     const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2
 
-    // Pan camera from midpoint movement
+    // Pan camera from midpoint movement — scale with camera distance for consistent feel
     const panDx = midX - twoFingerPrevX
     const panDy = midY - twoFingerPrevY
-    setTouchPan(-panDx * 0.2, -panDy * 0.2)
+    const cam = rtsCameraRef
+    if (cam) {
+      const panScale = cam.distance * 0.003
+      const cosY = Math.cos(cam.yaw)
+      const sinY = Math.sin(cam.yaw)
+      setTouchPan(
+        -(panDx * cosY + panDy * sinY) * panScale,
+        -(-panDx * sinY + panDy * cosY) * panScale,
+      )
+    } else {
+      setTouchPan(-panDx * 0.2, -panDy * 0.2)
+    }
     twoFingerPrevX = midX
     twoFingerPrevY = midY
 
-    // Pinch zoom
+    // Pinch zoom — ratio-based (multiplicative) for consistent speed at all zoom levels
     const dx = e.touches[0].clientX - e.touches[1].clientX
     const dy = e.touches[0].clientY - e.touches[1].clientY
     const dist = Math.sqrt(dx * dx + dy * dy)
 
-    if (lastPinchDist > 0) {
-      const delta = lastPinchDist - dist
-      const canvas = document.getElementById('game-canvas')!
-      canvas.dispatchEvent(new WheelEvent('wheel', {
-        deltaY: delta * 1.5,
-        bubbles: true,
-      }))
+    if (lastPinchDist > 0 && cam) {
+      const ratio = dist / lastPinchDist // >1 spreading = zoom in, <1 pinching = zoom out
+      cam.pinchZoom(ratio, midX, midY)
     }
     lastPinchDist = dist
   }

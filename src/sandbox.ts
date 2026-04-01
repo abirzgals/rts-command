@@ -60,7 +60,7 @@ import {
 } from './ecs/components'
 
 // ── Globals ─────────────────────────────────────────────────────────────────
-import { spatialHash } from './globals'
+import { spatialHash, setRtsCameraRef } from './globals'
 import { gameState } from './game/state'
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -123,6 +123,7 @@ async function init() {
 
   // 7. Camera — start centered at map origin
   rtsCamera = new RTSCamera()
+  setRtsCameraRef(rtsCamera)
   rtsCamera.target.set(0, getTerrainHeight(0, 0), 0)
   rtsCamera.setHeightFunction(getTerrainHeight)
 

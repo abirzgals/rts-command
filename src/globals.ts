@@ -31,3 +31,11 @@ export let touchPanDeltaX = 0
 export let touchPanDeltaZ = 0
 export function setTouchPan(dx: number, dz: number) { touchPanDeltaX = dx; touchPanDeltaZ = dz }
 export function consumeTouchPan() { touchPanDeltaX = 0; touchPanDeltaZ = 0 }
+
+/** RTSCamera reference — allows touch input to directly call camera methods */
+export let rtsCameraRef: {
+  distance: number
+  yaw: number
+  pinchZoom(ratio: number, screenMidX: number, screenMidY: number): void
+} | null = null
+export function setRtsCameraRef(cam: typeof rtsCameraRef) { rtsCameraRef = cam }

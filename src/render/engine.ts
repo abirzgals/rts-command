@@ -206,9 +206,9 @@ export class RTSCamera {
       }
     })
     window.addEventListener('wheel', (e) => {
-      // Zoom toward/away from cursor position
+      // Zoom toward/away from cursor position (multiplicative for consistent feel at all distances)
       const oldDist = this.distance
-      this.distance += e.deltaY * 0.06
+      this.distance *= Math.exp(e.deltaY * 0.001)
       this.distance = Math.max(this.minDistance, Math.min(this.maxDistance, this.distance))
       const zoomFactor = 1 - this.distance / oldDist // >0 when zooming in
 
@@ -228,6 +228,28 @@ export class RTSCamera {
         }
       }
     }, { passive: true })
+  }
+
+  /** Pinch-to-zoom: multiplicative distance change with world-point anchoring */
+  pinchZoom(ratio: number, screenMidX: number, screenMidY: number) {
+    const oldDist = this.distance
+    this.distance = Math.max(this.minDistance, Math.min(this.maxDistance, this.distance / ratio))
+    const zoomFactor = 1 - this.distance / oldDist
+
+    if (Math.abs(zoomFactor) > 0.001 && groundPlane) {
+      const rect = renderer.domElement.getBoundingClientRect()
+      _pointer.x = ((screenMidX - rect.left) / rect.width) * 2 - 1
+      _pointer.y = -((screenMidY - rect.top) / rect.height) * 2 + 1
+      raycaster.setFromCamera(_pointer, camera)
+      _groundIntersects.length = 0
+      raycaster.intersectObject(groundPlane, false, _groundIntersects)
+      if (_groundIntersects.length > 0) {
+        const hit = _groundIntersects[0].point
+        // Strong anchoring — world point stays near finger midpoint
+        this.target.x += (hit.x - this.target.x) * zoomFactor
+        this.target.z += (hit.z - this.target.z) * zoomFactor
+      }
+    }
   }
 
   setHeightFunction(fn: (x: number, z: number) => number) {

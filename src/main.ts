@@ -322,6 +322,7 @@ async function init() {
   // 7. Camera — start at player base
   rtsCamera = new RTSCamera()
   ;(window as any).__rtsCamera = rtsCamera
+  setRtsCameraRef(rtsCamera)
   const camX = mapSpawnPoints.player.x
   const camZ = mapSpawnPoints.player.z
   rtsCamera.target.set(camX, getTerrainHeight(camX, camZ), camZ)
@@ -364,7 +365,7 @@ async function init() {
 }
 
 import { Producer, Position as EcsPosition, Faction as EcsFaction, IsBuilding, ResourceNode, Dead } from './ecs/components'
-import { spatialHash, updatePerfBudget } from './globals'
+import { spatialHash, updatePerfBudget, setRtsCameraRef } from './globals'
 import { defineQuery as dq2, hasComponent as hc2 } from 'bitecs'
 
 function initRallyPoints(world: IWorld) {
