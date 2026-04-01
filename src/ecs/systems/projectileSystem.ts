@@ -83,18 +83,20 @@ export function projectileSystem(world: IWorld, dt: number) {
     const projLine = projectileMeshes.get(eid)
     if (projLine && (projLine as any).isLine) {
       const geo = (projLine as THREE.Line).geometry as THREE.BufferGeometry
-      const pos = geo.attributes.position as THREE.BufferAttribute
+      const posAttr = geo.attributes.position as THREE.BufferAttribute
       const TRACER_LEN = 2.0
       const traveled = Projectile.traveled[eid]
       const tailDist = Math.min(traveled, TRACER_LEN)
-      // Front point
-      pos.setXYZ(0, px, py, pz)
-      // Tail point — behind the bullet, but not past spawn
-      pos.setXYZ(1, px - nx * tailDist, py - ny * tailDist, pz - nz * tailDist)
-      pos.needsUpdate = true
-    } else if (projLine) {
-      // Fallback for old mesh projectiles
-      projLine.position.set(px, py, pz)
+      // Front point = current projectile world position
+      posAttr.setXYZ(0, px, py, pz)
+      // Tail point = behind the bullet along its direction
+      const tailX = px - nx * tailDist
+      const tailY = py - ny * tailDist
+      const tailZ = pz - nz * tailDist
+      posAttr.setXYZ(1, tailX, tailY, tailZ)
+      posAttr.needsUpdate = true
+      // Force bounding sphere recalculation
+      geo.computeBoundingSphere()
     }
 
     // Trail effects from config

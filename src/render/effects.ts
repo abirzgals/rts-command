@@ -294,11 +294,14 @@ export function spawnTankDeathExplosion(x: number, y: number, z: number) {
   scene.add(fire2)
   explosions.push({ mesh: fire2, life: 0, maxLife: 0.8 })
 
-  // Bright flash light
-  const flashLight = new THREE.PointLight(0xff6600, 20, 25)
-  flashLight.position.set(x, y + 2, z)
-  scene.add(flashLight)
-  muzzleFlashes.push({ light: flashLight, life: 0.4 })
+  // Bright flash light (capped)
+  if (muzzleFlashes.length < 6) {
+    const flashLight = new THREE.PointLight(0xff6600, 20, 25)
+    flashLight.castShadow = false
+    flashLight.position.set(x, y + 2, z)
+    scene.add(flashLight)
+    muzzleFlashes.push({ light: flashLight, life: 0.4 })
+  }
 
   // Spawn debris pieces — bigger, more dramatic
   const DEBRIS_COUNT = 14
@@ -575,11 +578,14 @@ export function spawnFireExplosion(x: number, y: number, z: number, radius = 3.0
   // Big central explosion
   spawnExplosion(x, y, z, radius)
 
-  // Fire flash light
-  const light = new THREE.PointLight(0xff4400, 15, 20)
-  light.position.set(x, y + 1.5, z)
-  scene.add(light)
-  muzzleFlashes.push({ light, life: 0.3 })
+  // Fire flash light (capped)
+  if (muzzleFlashes.length < 6) {
+    const light = new THREE.PointLight(0xff4400, 15, 20)
+    light.castShadow = false
+    light.position.set(x, y + 1.5, z)
+    scene.add(light)
+    muzzleFlashes.push({ light, life: 0.3 })
+  }
 
   // Long-living fire particles that linger on the ground
   const FIRE_COUNT = 15

@@ -373,19 +373,13 @@ export function spawnProjectile(
     }) as any)
   }
   const tracerGeo = new THREE.BufferGeometry()
-  const positions = new Float32Array(6) // 2 points × 3 coords
-  positions[0] = fromX; positions[1] = spawnY; positions[2] = fromZ
-  positions[3] = fromX; positions[4] = spawnY; positions[5] = fromZ
+  const positions = new Float32Array(6) // 2 points × 3 coords — start at origin, updated each frame
   tracerGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
   const tracer = new THREE.Line(tracerGeo, projMatCache.get(colorVal.toString())!)
   tracer.frustumCulled = false
+  tracer.renderOrder = 10
   getScene().add(tracer)
   projectileMeshes.set(eid, tracer as any)
-
-  // Store spawn point for trail tail
-  Projectile.dirX[eid] = dirX
-  Projectile.dirY[eid] = dirY
-  Projectile.dirZ[eid] = dirZ
 
   addComponent(world, MeshRef, eid)
   MeshRef.poolId[eid] = 255 // special: individual mesh, not instanced pool
