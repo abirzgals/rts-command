@@ -391,6 +391,12 @@ function initRallyPoints(world: IWorld) {
 init()
 
 function spawnStartingArmy(world: IWorld, faction: number, cx: number, cz: number) {
+  // Extra buildings for supply (army needs ~30 supply)
+  spawnBuilding(world, BT_SUPPLY_DEPOT, faction, cx + 6, cz + 5, true)
+  spawnBuilding(world, BT_SUPPLY_DEPOT, faction, cx - 6, cz + 5, true)
+  spawnBuilding(world, BT_BARRACKS, faction, cx + 8, cz - 5, true)
+  spawnBuilding(world, BT_FACTORY, faction, cx - 8, cz - 5, true)
+
   // 10 marines
   for (let i = 0; i < 10; i++) {
     const a = (i / 10) * Math.PI * 2
@@ -403,6 +409,11 @@ function spawnStartingArmy(world: IWorld, faction: number, cx: number, cz: numbe
   spawnUnit(world, UT_TANK, faction, cx + 15, cz)
   // 1 rocket
   spawnUnit(world, UT_ROCKET, faction, cx + 18, cz)
+  // Extra workers
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2 + 0.5
+    spawnUnit(world, UT_WORKER, faction, cx + Math.cos(a) * 5, cz + Math.sin(a) * 5)
+  }
 }
 
 function setupMap(world: IWorld, startingArmy = false) {
