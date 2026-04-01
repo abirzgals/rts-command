@@ -3,7 +3,7 @@ import type { IWorld } from 'bitecs'
 import {
   Position, Faction, IsBuilding, Producer, WorkerC, AttackC,
   MoveTarget, AttackTarget, AttackMove, Health, Dead, UnitTypeC,
-  PathFollower, StuckState, Velocity, MoveSpeed,
+  PathFollower, StuckState, Velocity, MoveSpeed, ResourceNode, CollisionRadius,
 } from '../components'
 import {
   UT_WORKER, UT_MARINE, UT_TANK, UT_JEEP, UT_TROOPER, UT_ROCKET,
@@ -920,10 +920,11 @@ function tickEconomy(
   if (res.supplyMax - res.supplyCurrent < 5 && census.commandCenter !== null) {
     const def = BUILDING_DEFS[BT_SUPPLY_DEPOT]
     if (gameState.canAfford(aiFaction, def.cost)) {
-      const angle = aiRng() * Math.PI * 2
-      spawnBuilding(world, BT_SUPPLY_DEPOT, aiFaction,
-        homeX + Math.cos(angle) * 6, homeZ + Math.sin(angle) * 6, true)
-      gameState.spend(aiFaction, def.cost)
+      const spot = findBuildSpot(world, homeX, homeZ, def.radius ?? 3)
+      if (spot) {
+        spawnBuilding(world, BT_SUPPLY_DEPOT, aiFaction, spot.x, spot.z, true)
+        gameState.spend(aiFaction, def.cost)
+      }
     }
   }
 
@@ -931,9 +932,12 @@ function tickEconomy(
   if (!hasBarracks && census.commandCenter !== null) {
     const def = BUILDING_DEFS[BT_BARRACKS]
     if (gameState.canAfford(aiFaction, def.cost)) {
-      spawnBuilding(world, BT_BARRACKS, aiFaction, homeX + 8, homeZ + 4, true)
-      gameState.spend(aiFaction, def.cost)
-      decisions.push('+Barracks')
+      const spot = findBuildSpot(world, homeX, homeZ, def.radius ?? 1.5)
+      if (spot) {
+        spawnBuilding(world, BT_BARRACKS, aiFaction, spot.x, spot.z, true)
+        gameState.spend(aiFaction, def.cost)
+        decisions.push('+Barracks')
+      }
     }
   }
 
@@ -941,9 +945,12 @@ function tickEconomy(
   if (!hasFactory && hasBarracks && census.marineCount >= 3 && census.commandCenter !== null) {
     const def = BUILDING_DEFS[BT_FACTORY]
     if (gameState.canAfford(aiFaction, def.cost)) {
-      spawnBuilding(world, BT_FACTORY, aiFaction, homeX - 8, homeZ + 4, true)
-      gameState.spend(aiFaction, def.cost)
-      decisions.push('+Factory')
+      const spot = findBuildSpot(world, homeX, homeZ, def.radius ?? 1.8)
+      if (spot) {
+        spawnBuilding(world, BT_FACTORY, aiFaction, spot.x, spot.z, true)
+        gameState.spend(aiFaction, def.cost)
+        decisions.push('+Factory')
+      }
     }
   }
 
@@ -990,6 +997,76 @@ function tickEconomy(
       }
     }
   }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Smart building placement — avoid blocking worker paths
+// ═══════════════════════════════════════════════════════════════
+
+function findBuildSpot(world: IWorld, homeX: number, homeZ: number, buildRadius: number): { x: number; z: number } | null {
+  // Find mineral positions near home to avoid blocking paths
+  const mineralPositions: { x: number; z: number }[] = []
+  const _near: number[] = []
+  spatialHash.query(homeX, homeZ, 25, _near)
+  for (const eid of _near) {
+    if (!hasComponent(world, ResourceNode, eid)) continue
+    if (hasComponent(world, Dead, eid)) continue
+    mineralPositions.push({ x: Position.x[eid], z: Position.z[eid] })
+  }
+
+  // Try spots in expanding rings around home, skip mineral paths
+  const spacing = buildRadius + 2.0 // extra clearance
+  let bestSpot: { x: number; z: number } | null = null
+  let bestScore = -Infinity
+
+  for (let ring = 2; ring <= 6; ring++) {
+    const dist = ring * 3
+    for (let a = 0; a < 12; a++) {
+      const angle = (a / 12) * Math.PI * 2 + ring * 0.5 // offset each ring
+      const sx = homeX + Math.cos(angle) * dist
+      const sz = homeZ + Math.sin(angle) * dist
+
+      // Must be walkable
+      if (!isWorldWalkable(sx, sz)) continue
+
+      // Check clearance: no overlap with existing buildings/resources
+      let blocked = false
+      spatialHash.query(sx, sz, spacing + 2, _near)
+      for (const eid of _near) {
+        if (!hasComponent(world, IsBuilding, eid) && !hasComponent(world, ResourceNode, eid)) continue
+        if (hasComponent(world, Dead, eid)) continue
+        const dx = Position.x[eid] - sx, dz = Position.z[eid] - sz
+        const d = Math.sqrt(dx * dx + dz * dz)
+        const otherR = hasComponent(world, CollisionRadius, eid) ? CollisionRadius.value[eid] : 1.5
+        if (d < spacing + otherR) { blocked = true; break }
+      }
+      if (blocked) continue
+
+      // Score: penalize spots that are on the line between CC and minerals
+      let mineralPathPenalty = 0
+      for (const m of mineralPositions) {
+        // Check if this spot is between CC and mineral (within corridor)
+        const mx = m.x - homeX, mz = m.z - homeZ
+        const mLen = Math.sqrt(mx * mx + mz * mz) || 1
+        const mnx = mx / mLen, mnz = mz / mLen
+        // Project spot onto mineral line
+        const px = sx - homeX, pz = sz - homeZ
+        const proj = px * mnx + pz * mnz
+        if (proj > 0 && proj < mLen) {
+          // Perpendicular distance to the line
+          const perpDist = Math.abs(px * (-mnz) + pz * mnx)
+          if (perpDist < 4) mineralPathPenalty += (4 - perpDist) * 5
+        }
+      }
+
+      const score = dist * 0.5 - mineralPathPenalty
+      if (score > bestScore) {
+        bestScore = score
+        bestSpot = { x: sx, z: sz }
+      }
+    }
+  }
+  return bestSpot
 }
 
 // ═══════════════════════════════════════════════════════════════

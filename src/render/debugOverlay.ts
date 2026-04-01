@@ -211,8 +211,21 @@ export function initDebugOverlay() {
   scene.add(colliderLines)
 }
 
+let navGridRefreshTimer = 0
+
 export function updateDebugOverlay(world: IWorld) {
   if (!enabled) return
+
+  // Periodically rebuild nav grid overlay to reflect destroyed buildings
+  navGridRefreshTimer += 0.016 // ~1 frame at 60fps
+  if (navGridRefreshTimer > 3.0) {
+    navGridRefreshTimer = 0
+    if (navGridMesh) {
+      scene.remove(navGridMesh); navGridMesh.geometry.dispose()
+      ;(navGridMesh.material as THREE.Material).dispose(); navGridMesh = null
+    }
+    buildNavGridOverlay()
+  }
 
   let pathIdx = 0 // counts vertices (each line segment = 2 vertices)
   let labelIdx = 0
