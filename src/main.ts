@@ -226,7 +226,10 @@ async function showMapSelector(): Promise<MapSelection> {
   }
 
   function getStartingArmy(): boolean {
-    return (document.getElementById('menu-army') as HTMLInputElement)?.checked ?? false
+    const el = document.getElementById('menu-army') as HTMLInputElement
+    const val = el?.checked ?? false
+    console.log(`[MENU] getStartingArmy: element=${!!el}, checked=${val}`)
+    return val
   }
 
   // Quick start button — last played map or random
@@ -418,6 +421,7 @@ function spawnStartingArmy(world: IWorld, faction: number, cx: number, cz: numbe
 }
 
 function setupMap(world: IWorld, startingArmy = false) {
+  console.log(`[SETUP] setupMap called: isLoadedMap=${isLoadedMap}, startingArmy=${startingArmy}`)
   const px = mapSpawnPoints.player.x, pz = mapSpawnPoints.player.z
   const ex = mapSpawnPoints.enemy.x, ez = mapSpawnPoints.enemy.z
 

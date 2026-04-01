@@ -170,26 +170,44 @@ function generateScoutWaypoints(homeX: number, homeZ: number): { x: number; z: n
   const [hgx, hgz] = worldToGrid(homeX, homeZ)
   const homeSector = sectorId(hgx, hgz)
 
-  const pts: { x: number; z: number }[] = []
-  // Build a grid of points — only walkable AND reachable from home via pathfinding
+  // Collect ALL reachable walkable points
+  const all: { x: number; z: number; score: number }[] = []
   for (let x = -MAP_HALF + SCOUT_GRID_STEP / 2; x < MAP_HALF; x += SCOUT_GRID_STEP) {
     for (let z = -MAP_HALF + SCOUT_GRID_STEP / 2; z < MAP_HALF; z += SCOUT_GRID_STEP) {
       if (!isWorldWalkable(x, z)) continue
-      // Check sector-level reachability (fast — only 169 sectors)
       const [gx, gz] = worldToGrid(x, z)
       const wpSector = sectorId(gx, gz)
       if (wpSector !== homeSector && !findSectorPath(homeSector, wpSector)) continue
-      pts.push({ x, z })
+
+      // Score: higher = more likely to be enemy base
+      const distFromHome = Math.sqrt((x - homeX) ** 2 + (z - homeZ) ** 2)
+      // Bases are typically in corners/edges, far from our base
+      // Check how much walkable area surrounds this point (bases need open space)
+      let walkableNeighbors = 0
+      for (let dx = -2; dx <= 2; dx++) {
+        for (let dz = -2; dz <= 2; dz++) {
+          if (isWorldWalkable(x + dx * 3, z + dz * 3)) walkableNeighbors++
+        }
+      }
+      // Score: far from home + open area = likely base spot
+      const openness = walkableNeighbors / 25 // 0-1
+      const score = distFromHome * openness
+      all.push({ x, z, score })
     }
   }
 
-  // Sort: nearest first, then expand outward (explore nearby before far)
-  pts.sort((a, b) => {
+  // Sort by score: best candidates first (far + open), then fill with rest
+  all.sort((a, b) => b.score - a.score)
+
+  // Take top candidates as priority, then rest in distance order
+  const priority = all.slice(0, Math.min(8, all.length))
+  const rest = all.slice(8).sort((a, b) => {
+    // Alternate between far and near for coverage
     const dA = (a.x - homeX) ** 2 + (a.z - homeZ) ** 2
     const dB = (b.x - homeX) ** 2 + (b.z - homeZ) ** 2
-    return dA - dB // nearest first
+    return dB - dA // farthest first for rest
   })
-  return pts
+  return [...priority, ...rest].map(p => ({ x: p.x, z: p.z }))
 }
 
 // ═══════════════════════════════════════════════════════════════

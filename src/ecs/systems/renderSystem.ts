@@ -59,12 +59,8 @@ export function renderSystem(world: IWorld, dt: number) {
       continue
     }
 
-    // Individual projectile mesh (poolId=255)
-    if (projectileMeshes.has(eid)) {
-      const mesh = projectileMeshes.get(eid)!
-      mesh.position.set(x, y, z)
-      continue
-    }
+    // Projectile tracers — positioned via geometry in projectileSystem, skip here
+    if (projectileMeshes.has(eid)) continue
 
     // Fallback to instanced mesh pool
     const pool = getPool(poolId)
