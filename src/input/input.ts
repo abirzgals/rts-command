@@ -490,6 +490,28 @@ function handleClick(world: IWorld, sx: number, sy: number) {
     }
   }
 
+  // Fallback: no direct hit and nothing selected → find nearest unit within 50 screen pixels
+  if (closestEid < 0 && !hasSelection) {
+    const SCREEN_RADIUS = 50
+    const fallbackNearby: number[] = []
+    spatialHash.query(hit.x, hit.z, 15, fallbackNearby)
+    let bestScreenDist = SCREEN_RADIUS
+    for (const eid of fallbackNearby) {
+      if (!hasComponent(world, Selectable, eid)) continue
+      if (hasComponent(world, Dead, eid)) continue
+      _vec3.set(Position.x[eid], Position.y[eid] + 0.5, Position.z[eid])
+      _vec3.project(camera)
+      if (_vec3.z < 0 || _vec3.z > 1) continue // behind camera or too far
+      const ex = ((_vec3.x + 1) / 2) * window.innerWidth
+      const ey = ((-_vec3.y + 1) / 2) * window.innerHeight
+      const screenDist = Math.hypot(ex - sx, ey - sy)
+      if (screenDist < bestScreenDist) {
+        bestScreenDist = screenDist
+        closestEid = eid
+      }
+    }
+  }
+
   // Classify what we clicked
   const clickedFriendly = closestEid >= 0 && hasComponent(world, Faction, closestEid) &&
     Faction.id[closestEid] === getPlayerFaction()
