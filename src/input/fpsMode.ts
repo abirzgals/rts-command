@@ -12,6 +12,7 @@ import {
   IsBuilding, UnitTypeC, CollisionRadius,
 } from '../ecs/components'
 import { scene, renderer, camera } from '../render/engine'
+import { UT_TANK, UT_JEEP, UT_ROCKET } from '../game/config'
 import { getTerrainHeight, getTerrainTypeAt, T_WATER } from '../terrain/heightmap'
 import { isWorldWalkable } from '../pathfinding/navGrid'
 import { spatialHash } from '../globals'
@@ -38,6 +39,11 @@ const PITCH_MIN = -Math.PI / 3
 const PITCH_MAX = Math.PI / 4
 const MOUSE_SENS = 0.002
 const EYE_HEIGHT = 1.8
+const VEHICLE_IDS = new Set([UT_TANK, UT_JEEP, UT_ROCKET])
+// Third-person offset for vehicles: behind and above
+const VEHICLE_CAM_BACK = 3.0
+const VEHICLE_CAM_UP = 2.0
+let isVehicle = false
 
 // Damage effects
 let shakeIntensity = 0
@@ -66,6 +72,7 @@ export function enterFPSMode(eid: number, w: IWorld) {
   active = true
   controlledEid = eid
   world = w
+  isVehicle = hasComponent(w, UnitTypeC, eid) && VEHICLE_IDS.has(UnitTypeC.id[eid])
 
   // Init camera
   fpsCam = new THREE.PerspectiveCamera(85, window.innerWidth / window.innerHeight, 0.3, 300)
@@ -293,15 +300,10 @@ export function updateFPSMode(dt: number): THREE.Camera | null {
   damageFlashAlpha *= Math.pow(0.02, dt)
   if (vignetteEl) vignetteEl.style.opacity = String(Math.min(0.8, damageFlashAlpha))
 
-  // Position camera at unit's eyes
+  // Position camera: first-person for infantry, third-person for vehicles
   const ux = Position.x[controlledEid]
   const uz = Position.z[controlledEid]
-  const uy = getTerrainHeight(ux, uz) + EYE_HEIGHT
-
-  // Apply camera shake
-  const shakeX = (Math.random() - 0.5) * shakeIntensity
-  const shakeY = (Math.random() - 0.5) * shakeIntensity
-  fpsCam.position.set(ux + shakeX, uy + shakeY, uz)
+  const groundY = getTerrainHeight(ux, uz)
 
   // Look direction from yaw + pitch
   const lookDir = new THREE.Vector3(
@@ -309,7 +311,28 @@ export function updateFPSMode(dt: number): THREE.Camera | null {
     Math.sin(pitch),
     Math.cos(yaw) * Math.cos(pitch),
   )
-  fpsCam.lookAt(ux + shakeX + lookDir.x, uy + shakeY + lookDir.y, uz + lookDir.z)
+
+  // Apply camera shake
+  const shakeX = (Math.random() - 0.5) * shakeIntensity
+  const shakeY = (Math.random() - 0.5) * shakeIntensity
+
+  let camX: number, camY: number, camZ: number
+  if (isVehicle) {
+    // Third-person: camera behind and above the vehicle
+    const uy = groundY + VEHICLE_CAM_UP
+    camX = ux - lookDir.x * VEHICLE_CAM_BACK + shakeX
+    camY = uy + VEHICLE_CAM_BACK * 0.4 + shakeY // extra height from distance
+    camZ = uz - lookDir.z * VEHICLE_CAM_BACK
+  } else {
+    // First-person: camera inside unit's head
+    const uy = groundY + EYE_HEIGHT
+    camX = ux + shakeX
+    camY = uy + shakeY
+    camZ = uz
+  }
+
+  fpsCam.position.set(camX, camY, camZ)
+  fpsCam.lookAt(camX + lookDir.x, camY + lookDir.y, camZ + lookDir.z)
   fpsCam.aspect = window.innerWidth / window.innerHeight
   fpsCam.updateProjectionMatrix()
 
@@ -324,9 +347,9 @@ export function updateFPSMode(dt: number): THREE.Camera | null {
       if (eid === controlledEid) continue
       if (hasComponent(world, Dead, eid)) continue
       if (!hasComponent(world, Faction, eid) || Faction.id[eid] === myFaction) continue
-      // Vector from eye to enemy center
+      // Vector from camera to enemy center
       const ex = Position.x[eid], ey = Position.y[eid] + 0.8, ez = Position.z[eid]
-      const dx = ex - ux, dy = ey - uy, dz = ez - uz
+      const dx = ex - camX, dy = ey - camY, dz = ez - camZ
       if (dx * dx + dy * dy + dz * dz > range * range) continue
       // Must be in front of camera
       if (dx * lookDir.x + dy * lookDir.y + dz * lookDir.z < 0) continue
