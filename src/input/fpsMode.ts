@@ -313,8 +313,35 @@ export function updateFPSMode(dt: number): THREE.Camera | null {
   fpsCam.aspect = window.innerWidth / window.innerHeight
   fpsCam.updateProjectionMatrix()
 
-  // Continuous fire while mouse/touch held — uses unit's cooldown, burst, etc.
-  if (shooting && AttackC.timer[controlledEid] <= 0) {
+  // Auto-fire: if crosshair is on an enemy within range, shoot automatically
+  let autoFire = false
+  if (hasComponent(world, AttackC, controlledEid)) {
+    const range = AttackC.range[controlledEid]
+    const myFaction = hasComponent(world, Faction, controlledEid) ? Faction.id[controlledEid] : -1
+    const nearby: number[] = []
+    spatialHash.query(ux, uz, range, nearby)
+    for (const eid of nearby) {
+      if (eid === controlledEid) continue
+      if (hasComponent(world, Dead, eid)) continue
+      if (!hasComponent(world, Faction, eid) || Faction.id[eid] === myFaction) continue
+      // Vector from eye to enemy center
+      const ex = Position.x[eid], ey = Position.y[eid] + 0.8, ez = Position.z[eid]
+      const dx = ex - ux, dy = ey - uy, dz = ez - uz
+      if (dx * dx + dy * dy + dz * dz > range * range) continue
+      // Must be in front of camera
+      if (dx * lookDir.x + dy * lookDir.y + dz * lookDir.z < 0) continue
+      // Perpendicular distance from enemy to look ray (cross product magnitude)
+      const cx = dy * lookDir.z - dz * lookDir.y
+      const cy = dz * lookDir.x - dx * lookDir.z
+      const cz = dx * lookDir.y - dy * lookDir.x
+      const perpDist = Math.sqrt(cx * cx + cy * cy + cz * cz)
+      const cr = hasComponent(world, CollisionRadius, eid) ? CollisionRadius.value[eid] : 0.5
+      if (perpDist < cr + 0.3) { autoFire = true; break }
+    }
+  }
+
+  // Continuous fire while mouse/touch held OR auto-fire on crosshair target
+  if ((shooting || autoFire) && AttackC.timer[controlledEid] <= 0) {
     fpsShoot()
   }
 
