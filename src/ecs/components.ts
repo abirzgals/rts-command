@@ -149,7 +149,10 @@ export const Projectile = defineComponent({
   dirZ: Types.f32,
   maxRange: Types.f32,
   traveled: Types.f32,
-  faction: Types.ui8,     // owner faction — projectile passes through allies
+  spawnX: Types.f32,    // tracer trail tail position
+  spawnY: Types.f32,
+  spawnZ: Types.f32,
+  faction: Types.ui8,
   trailFire: Types.ui8,
   trailSmoke: Types.ui8,
 })

@@ -1,3 +1,4 @@
+import * as THREE from 'three'
 import { defineQuery, hasComponent, addComponent, removeEntity } from 'bitecs'
 import type { IWorld } from 'bitecs'
 import { Position, Projectile, ArcProjectile, Dead, Health, MeshRef, Faction, Rotation, CollisionRadius } from '../components'
@@ -78,11 +79,22 @@ export function projectileSystem(world: IWorld, dt: number) {
       continue
     }
 
-    // Orient projectile mesh along movement direction
-    const projMesh = projectileMeshes.get(eid)
-    if (projMesh) {
-      projMesh.position.set(px, py, pz)
-      projMesh.lookAt(px + nx, py + ny, pz + nz)
+    // Update tracer line: front = current position, tail = behind (max 2m, clamped to spawn)
+    const projLine = projectileMeshes.get(eid)
+    if (projLine && (projLine as any).isLine) {
+      const geo = (projLine as THREE.Line).geometry as THREE.BufferGeometry
+      const pos = geo.attributes.position as THREE.BufferAttribute
+      const TRACER_LEN = 2.0
+      const traveled = Projectile.traveled[eid]
+      const tailDist = Math.min(traveled, TRACER_LEN)
+      // Front point
+      pos.setXYZ(0, px, py, pz)
+      // Tail point — behind the bullet, but not past spawn
+      pos.setXYZ(1, px - nx * tailDist, py - ny * tailDist, pz - nz * tailDist)
+      pos.needsUpdate = true
+    } else if (projLine) {
+      // Fallback for old mesh projectiles
+      projLine.position.set(px, py, pz)
     }
 
     // Trail effects from config

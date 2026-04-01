@@ -296,9 +296,8 @@ export function spawnResourceNode(
 }
 
 // Track individual projectile meshes — updated by projectileSystem, cleaned on death
-export const projectileMeshes = new Map<number, THREE.Mesh>()
-const projGeoCache = new Map<string, THREE.SphereGeometry>()
-const projMatCache = new Map<string, THREE.MeshBasicMaterial>()
+export const projectileMeshes = new Map<number, THREE.Object3D>()
+const projMatCache = new Map<string, THREE.Material>()
 
 // Store per-projectile effect configs (impact, explosion) — read on hit
 export interface ProjectileEffectCfg {
@@ -309,11 +308,11 @@ export interface ProjectileEffectCfg {
 export const projectileEffects = new Map<number, ProjectileEffectCfg>()
 
 export function removeProjectileMesh(eid: number) {
-  const mesh = projectileMeshes.get(eid)
-  if (mesh) {
-    getScene().remove(mesh)
-    mesh.geometry.dispose()
-    ;(mesh.material as THREE.Material).dispose()
+  const obj = projectileMeshes.get(eid)
+  if (obj) {
+    getScene().remove(obj)
+    // Dispose geometry (each tracer has unique BufferGeometry), but NOT shared materials
+    if ((obj as any).geometry) (obj as any).geometry.dispose()
     projectileMeshes.delete(eid)
   }
 }
@@ -359,24 +358,34 @@ export function spawnProjectile(
   Projectile.dirZ[eid] = dirZ
   Projectile.maxRange[eid] = maxRange
   Projectile.traveled[eid] = 0
+  Projectile.spawnX[eid] = fromX
+  Projectile.spawnY[eid] = spawnY
+  Projectile.spawnZ[eid] = fromZ
   Projectile.faction[eid] = ownerFaction
   Projectile.trailFire[eid] = cfg?.trailFire ?? 0
   Projectile.trailSmoke[eid] = cfg?.trailSmoke ?? 0
 
-  // Create mesh with cached geometry/material per size+color
-  const sz = cfg?.size ?? 0.12
+  // Create tracer line (2-point line from spawn → current position)
   const colorVal = cfg?.color ? parseInt(cfg.color.replace('#', ''), 16) : 0xffee44
-  const cacheKey = `${sz.toFixed(2)}_${colorVal}`
-  if (!projGeoCache.has(cacheKey)) {
-    projGeoCache.set(cacheKey, new THREE.SphereGeometry(sz, 6, 6))
+  if (!projMatCache.has(colorVal.toString())) {
+    projMatCache.set(colorVal.toString(), new THREE.LineBasicMaterial({
+      color: colorVal, transparent: true, opacity: 0.8, linewidth: 1,
+    }) as any)
   }
-  if (!projMatCache.has(cacheKey)) {
-    projMatCache.set(cacheKey, new THREE.MeshBasicMaterial({ color: colorVal }))
-  }
-  const mesh = new THREE.Mesh(projGeoCache.get(cacheKey)!, projMatCache.get(cacheKey)!)
-  mesh.position.set(fromX, spawnY, fromZ)
-  getScene().add(mesh)
-  projectileMeshes.set(eid, mesh)
+  const tracerGeo = new THREE.BufferGeometry()
+  const positions = new Float32Array(6) // 2 points × 3 coords
+  positions[0] = fromX; positions[1] = spawnY; positions[2] = fromZ
+  positions[3] = fromX; positions[4] = spawnY; positions[5] = fromZ
+  tracerGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  const tracer = new THREE.Line(tracerGeo, projMatCache.get(colorVal.toString())!)
+  tracer.frustumCulled = false
+  getScene().add(tracer)
+  projectileMeshes.set(eid, tracer as any)
+
+  // Store spawn point for trail tail
+  Projectile.dirX[eid] = dirX
+  Projectile.dirY[eid] = dirY
+  Projectile.dirZ[eid] = dirZ
 
   addComponent(world, MeshRef, eid)
   MeshRef.poolId[eid] = 255 // special: individual mesh, not instanced pool
