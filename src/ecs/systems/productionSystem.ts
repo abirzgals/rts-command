@@ -37,16 +37,20 @@ export function productionSystem(world: IWorld, dt: number) {
       const rallyZ = Producer.rallyZ[eid]
       const rallyTarget = Producer.rallyTargetEid[eid]
 
-      // Spawn near building — find a clear spot outside the building's footprint
+      // Spawn on the side facing the rally point
       const bx = Position.x[eid], bz = Position.z[eid]
       const bRadius = hasComponent(world, Selectable, eid) ? Selectable.radius[eid] : 2.0
       const unitDef = UNIT_DEFS[unitType]
       const unitR = unitDef ? unitDef.radius : 0.4
       const spawnDist = bRadius + unitR + 0.5
-      let spawnX = bx + spawnDist, spawnZ = bz
-      // Try 8 directions to find an unblocked spot
+      // Direction from building to rally point
+      const rallyAngle = Math.atan2(rallyZ - bz, rallyX - bx)
+      let spawnX = bx + Math.cos(rallyAngle) * spawnDist
+      let spawnZ = bz + Math.sin(rallyAngle) * spawnDist
+      // Try 8 directions starting from rally direction, then neighbors
       for (let a = 0; a < 8; a++) {
-        const angle = (a / 8) * Math.PI * 2
+        const offset = a === 0 ? 0 : (a % 2 === 1 ? Math.ceil(a / 2) : -Math.ceil(a / 2))
+        const angle = rallyAngle + (offset / 8) * Math.PI * 2
         const sx = bx + Math.cos(angle) * spawnDist
         const sz = bz + Math.sin(angle) * spawnDist
         if (!isWorldWalkable(sx, sz)) continue
