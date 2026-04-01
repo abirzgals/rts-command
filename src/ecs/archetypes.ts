@@ -373,7 +373,10 @@ export function spawnProjectile(
     }) as any)
   }
   const tracerGeo = new THREE.BufferGeometry()
-  const positions = new Float32Array(6) // 2 points × 3 coords — start at origin, updated each frame
+  const positions = new Float32Array(6)
+  // Initialize both points at spawn position (avoid flash at origin)
+  positions[0] = fromX; positions[1] = spawnY; positions[2] = fromZ
+  positions[3] = fromX; positions[4] = spawnY; positions[5] = fromZ
   tracerGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
   const tracer = new THREE.Line(tracerGeo, projMatCache.get(colorVal.toString())!)
   tracer.frustumCulled = false
@@ -381,8 +384,8 @@ export function spawnProjectile(
   getScene().add(tracer)
   projectileMeshes.set(eid, tracer as any)
 
-  addComponent(world, MeshRef, eid)
-  MeshRef.poolId[eid] = 255 // special: individual mesh, not instanced pool
+  // No MeshRef — projectile tracers are fully managed by projectileSystem
+  // renderSystem must not touch them
 
   return eid
 }

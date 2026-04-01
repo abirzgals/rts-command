@@ -5,7 +5,6 @@ import { Position, Rotation, MeshRef, Dead, AttackTarget, Health, WorkerC, MoveT
 import { getPath } from '../../pathfinding/pathStore'
 import { getPool, getAllPools } from '../../render/meshPools'
 import { getAnimManager } from '../../render/animatedMeshManager'
-import { projectileMeshes } from '../archetypes'
 import { isVisibleAt } from '../../render/fogOfWar'
 import { getPlayerFaction } from '../../game/factions'
 // Carry visual: small crystal for workers carrying resources
@@ -58,9 +57,6 @@ export function renderSystem(world: IWorld, dt: number) {
 
       continue
     }
-
-    // Projectile tracers — positioned via geometry in projectileSystem, skip here
-    if (projectileMeshes.has(eid)) continue
 
     // Fallback to instanced mesh pool
     const pool = getPool(poolId)
