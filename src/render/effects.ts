@@ -121,7 +121,14 @@ export function spawnMuzzleFlash(x: number, y: number, z: number, cfg?: { color?
   const colorVal = cfg?.color ? parseInt(cfg.color.replace('#', ''), 16) : 0xffaa44
   const duration = cfg?.duration ?? 0.1
 
-  // Visible flash sphere only (no PointLight — too expensive in combat)
+  // Cheap PointLight — no shadow casting, just illuminates nearby vertices
+  const light = new THREE.PointLight(colorVal, cfg?.intensity ?? 6, cfg?.range ?? 8)
+  light.castShadow = false
+  light.position.set(x, y, z)
+  scene.add(light)
+  muzzleFlashes.push({ light, life: duration })
+
+  // Visible flash sphere with cached material
   if (!muzzleMatCache.has(colorVal)) {
     muzzleMatCache.set(colorVal, new THREE.MeshBasicMaterial({
       color: colorVal, transparent: true, opacity: 0.9, depthWrite: false,
