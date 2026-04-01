@@ -121,12 +121,14 @@ export function spawnMuzzleFlash(x: number, y: number, z: number, cfg?: { color?
   const colorVal = cfg?.color ? parseInt(cfg.color.replace('#', ''), 16) : 0xffaa44
   const duration = cfg?.duration ?? 0.1
 
-  // Cheap PointLight — no shadow casting, just illuminates nearby vertices
-  const light = new THREE.PointLight(colorVal, cfg?.intensity ?? 6, cfg?.range ?? 8)
-  light.castShadow = false
-  light.position.set(x, y, z)
-  scene.add(light)
-  muzzleFlashes.push({ light, life: duration })
+  // Cheap PointLight — no shadow casting, throttled to max 6 active
+  if (muzzleFlashes.length < 6) {
+    const light = new THREE.PointLight(colorVal, cfg?.intensity ?? 6, cfg?.range ?? 8)
+    light.castShadow = false
+    light.position.set(x, y, z)
+    scene.add(light)
+    muzzleFlashes.push({ light, life: duration })
+  }
 
   // Visible flash sphere with cached material
   if (!muzzleMatCache.has(colorVal)) {
