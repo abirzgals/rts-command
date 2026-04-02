@@ -5,6 +5,7 @@ import { Position, Health, Dead, IsBuilding, Faction } from '../ecs/components'
 import { camera, renderer } from './engine'
 import { isVisibleAt } from './fogOfWar'
 import { getPlayerFaction } from '../game/factions'
+import { getVizPos, isInterpolating } from '../ecs/systems/renderSystem'
 
 const hpQuery = defineQuery([Position, Health])
 
@@ -103,7 +104,8 @@ export function updateHPBars(world: IWorld) {
     const isBuilding = hasComponent(world, IsBuilding, eid)
     const yOffset = isBuilding ? 5.0 : 3.5 // above the unit/building
 
-    _vec3.set(Position.x[eid], Position.y[eid] + yOffset, Position.z[eid])
+    const vp = isInterpolating() ? getVizPos(eid) : { x: Position.x[eid], y: Position.y[eid], z: Position.z[eid] }
+    _vec3.set(vp.x, vp.y + yOffset, vp.z)
     _vec3.project(camera)
 
     // Check if behind camera

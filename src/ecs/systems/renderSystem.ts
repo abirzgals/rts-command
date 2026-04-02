@@ -57,6 +57,16 @@ export function initInterpolation(world: IWorld) {
 
 export function setLerpAlpha(alpha: number) { lerpAlpha = alpha }
 
+// Interpolated position cache — updated each frame by renderSystem, readable by hpBars etc.
+const vizX = new Float32Array(SZ)
+const vizY = new Float32Array(SZ)
+const vizZ = new Float32Array(SZ)
+/** Get the interpolated visual position for an entity (valid after renderSystem runs) */
+export function getVizPos(eid: number): { x: number; y: number; z: number } {
+  return { x: vizX[eid], y: vizY[eid], z: vizZ[eid] }
+}
+export function isInterpolating(): boolean { return interpActive && lerpAlpha < 0.999 }
+
 function lerp(a: number, b: number, t: number): number { return a + (b - a) * t }
 
 function lerpAngle(a: number, b: number, t: number): number {
@@ -98,6 +108,8 @@ export function renderSystem(world: IWorld, dt: number) {
       x = Position.x[eid]; y = Position.y[eid]; z = Position.z[eid]
       rotY = hasComponent(world, Rotation, eid) ? Rotation.y[eid] : 0
     }
+    // Cache for other systems (hpBars, etc.)
+    vizX[eid] = x; vizY[eid] = y; vizZ[eid] = z
 
     // Try animated manager first
     const animMgr = getAnimManager(poolId)
