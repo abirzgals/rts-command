@@ -972,7 +972,7 @@ function prof(name: string, fn: () => void) {
   profilerEnd()
 }
 
-const MP_TURN_DURATION = 0.1 // 100ms per turn = 10 turns/sec
+const MP_TURN_DURATION = 0.05 // 50ms per turn = 20 turns/sec
 let mpTurnAccum = 0
 let mpTurnSubmitted = false
 
@@ -1027,18 +1027,20 @@ function gameLoop(time: number) {
       submitTurn()
       mpTurnSubmitted = true
     }
-    if (isTurnReady()) {
+    // Process all ready turns (may have queued up)
+    while (isTurnReady()) {
       const cmds = consumeTurnCommands()
       if (cmds) {
-        snapshotPositions(world) // save positions BEFORE tick for interpolation
+        snapshotPositions(world) // shift bufB→bufA, current→bufB
         applyNetworkCommands(world, cmds[0])
         applyNetworkCommands(world, cmds[1])
         runSimulation(MP_TURN_DURATION)
-        mpTurnAccum -= MP_TURN_DURATION
+        mpTurnAccum = Math.max(0, mpTurnAccum - MP_TURN_DURATION)
         mpTurnSubmitted = false
-      }
+      } else break
     }
-    // Interpolation alpha: how far between last tick and next tick
+    // Alpha: interpolation between bufA (tick N-1) and bufB (tick N)
+    // Clamped 0-1 — never jumps backwards
     setLerpAlpha(Math.min(1, mpTurnAccum / MP_TURN_DURATION))
   } else {
     // Single-player: run every frame, no interpolation needed

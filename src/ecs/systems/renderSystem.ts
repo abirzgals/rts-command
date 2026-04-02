@@ -8,26 +8,33 @@ import { getAnimManager } from '../../render/animatedMeshManager'
 import { isVisibleAt } from '../../render/fogOfWar'
 import { getPlayerFaction } from '../../game/factions'
 
-// ── Multiplayer interpolation ────────────────────────────────
-// Stores previous tick positions for smooth visual interpolation
-const prevX = new Float32Array(8000)
-const prevY = new Float32Array(8000)
-const prevZ = new Float32Array(8000)
-const prevRot = new Float32Array(8000)
-let lerpAlpha = 1.0 // 0 = prev tick, 1 = current tick
+// ── Multiplayer interpolation (one-tick-behind) ─────────────
+// Double-buffer: interpolate between tick N-1 and tick N.
+// Visual is always one tick behind simulation, but perfectly smooth.
+const SZ = 8000
+const bufAX = new Float32Array(SZ) // tick N-1 positions
+const bufAY = new Float32Array(SZ)
+const bufAZ = new Float32Array(SZ)
+const bufARot = new Float32Array(SZ)
+const bufBX = new Float32Array(SZ) // tick N positions
+const bufBY = new Float32Array(SZ)
+const bufBZ = new Float32Array(SZ)
+const bufBRot = new Float32Array(SZ)
+let lerpAlpha = 1.0
 
-/** Call BEFORE simulation tick to snapshot current positions */
+/** Call BEFORE each simulation tick: shift bufB → bufA, snapshot current → bufB */
 export function snapshotPositions(world: IWorld) {
   const entities = renderQuery(world)
   for (const eid of entities) {
-    prevX[eid] = Position.x[eid]
-    prevY[eid] = Position.y[eid]
-    prevZ[eid] = Position.z[eid]
-    prevRot[eid] = hasComponent(world, Rotation, eid) ? Rotation.y[eid] : 0
+    // Shift B → A
+    bufAX[eid] = bufBX[eid]; bufAY[eid] = bufBY[eid]; bufAZ[eid] = bufBZ[eid]; bufARot[eid] = bufBRot[eid]
+    // Current → B
+    bufBX[eid] = Position.x[eid]; bufBY[eid] = Position.y[eid]; bufBZ[eid] = Position.z[eid]
+    bufBRot[eid] = hasComponent(world, Rotation, eid) ? Rotation.y[eid] : 0
   }
 }
 
-/** Set interpolation alpha (0-1) for rendering between ticks */
+/** Set interpolation alpha (0-1): 0 = tick N-1, 1 = tick N */
 export function setLerpAlpha(alpha: number) { lerpAlpha = alpha }
 
 function lerp(a: number, b: number, t: number): number { return a + (b - a) * t }
@@ -53,12 +60,11 @@ export function renderSystem(world: IWorld, dt: number) {
     if (hasComponent(world, Dead, eid)) continue
 
     const poolId = MeshRef.poolId[eid]
-    const rawRotY = hasComponent(world, Rotation, eid) ? Rotation.y[eid] : 0
-    // Interpolate between previous and current tick for smooth MP rendering
-    const x = lerpAlpha < 0.999 ? lerp(prevX[eid], Position.x[eid], lerpAlpha) : Position.x[eid]
-    const y = lerpAlpha < 0.999 ? lerp(prevY[eid], Position.y[eid], lerpAlpha) : Position.y[eid]
-    const z = lerpAlpha < 0.999 ? lerp(prevZ[eid], Position.z[eid], lerpAlpha) : Position.z[eid]
-    const rotY = lerpAlpha < 0.999 ? lerpAngle(prevRot[eid], rawRotY, lerpAlpha) : rawRotY
+    // Interpolate between tick N-1 (bufA) and tick N (bufB) for smooth MP rendering
+    const x = lerpAlpha < 0.999 ? lerp(bufAX[eid], bufBX[eid], lerpAlpha) : Position.x[eid]
+    const y = lerpAlpha < 0.999 ? lerp(bufAY[eid], bufBY[eid], lerpAlpha) : Position.y[eid]
+    const z = lerpAlpha < 0.999 ? lerp(bufAZ[eid], bufBZ[eid], lerpAlpha) : Position.z[eid]
+    const rotY = lerpAlpha < 0.999 ? lerpAngle(bufARot[eid], bufBRot[eid], lerpAlpha) : (hasComponent(world, Rotation, eid) ? Rotation.y[eid] : 0)
 
     // Try animated manager first
     const animMgr = getAnimManager(poolId)
