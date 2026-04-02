@@ -99,11 +99,10 @@ export function renderSystem(world: IWorld, dt: number) {
     // Interpolate between from (tick N-1) and to (tick N) with smoothstep
     let x: number, y: number, z: number, rotY: number
     if (interpActive && lerpAlpha < 0.999) {
-      const t = smoothT(lerpAlpha)
-      x = lerp(fromX[eid], toX[eid], t)
-      y = lerp(fromY[eid], toY[eid], t)
-      z = lerp(fromZ[eid], toZ[eid], t)
-      rotY = lerpAngle(fromRot[eid], toRot[eid], t)
+      x = lerp(fromX[eid], toX[eid], lerpAlpha)
+      y = lerp(fromY[eid], toY[eid], lerpAlpha)
+      z = lerp(fromZ[eid], toZ[eid], lerpAlpha)
+      rotY = lerpAngle(fromRot[eid], toRot[eid], lerpAlpha)
     } else {
       x = Position.x[eid]; y = Position.y[eid]; z = Position.z[eid]
       rotY = hasComponent(world, Rotation, eid) ? Rotation.y[eid] : 0
