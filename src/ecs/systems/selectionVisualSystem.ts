@@ -8,6 +8,7 @@ import {
 import { updateSelectionRings } from '../../render/meshPools'
 import { getTerrainHeight } from '../../terrain/heightmap'
 import { scene } from '../../render/engine'
+import { getVizPos, isInterpolating } from './renderSystem'
 import { getPath } from '../../pathfinding/pathStore'
 import { getQueue, type Command } from '../commandQueue'
 import { getPlayerFaction } from '../../game/factions'
@@ -121,11 +122,12 @@ export function selectionVisualSystem(world: IWorld, _dt: number) {
     if (hasComponent(world, Dead, eid)) continue
 
     const radius = hasComponent(world, Selectable, eid) ? Selectable.radius[eid] : 0.5
-    const x = Position.x[eid]
-    const z = Position.z[eid]
+    const vp = isInterpolating() ? getVizPos(eid) : null
+    const x = vp ? vp.x : Position.x[eid]
+    const z = vp ? vp.z : Position.z[eid]
     _positions.push({
       x,
-      y: getTerrainHeight(x, z),
+      y: vp ? vp.y : getTerrainHeight(x, z),
       z,
       radius,
     })
