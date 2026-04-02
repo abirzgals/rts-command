@@ -38,7 +38,7 @@ import { initHPBars, updateHPBars } from './render/hpBars'
 import { initNotifications } from './ui/notifications'
 import { initUnitCamera, updateUnitCamera } from './render/unitCamera'
 import { isFPSMode, updateFPSMode, getFPSEntity } from './input/fpsMode'
-import { checkVictory, isGameOver } from './game/victory'
+import { checkVictory, isGameOver, setGameMeta } from './game/victory'
 import { profilerBeginFrame, profilerEndFrame, profilerBegin, profilerEnd, updateProfilerDisplay, setProfilerRenderer, setProfilerScene, captureGPUStats } from './debug/profiler'
 import { isDebugEnabled } from './render/debugOverlay'
 import { playMenuMusic, playIngameMusic, stopMusic, preloadSfx, setSoundEnabled } from './audio/audioManager'
@@ -69,7 +69,7 @@ interface MapSelection {
   map: 'random' | { name: string }
   fog: FogMode
   startingArmy: boolean
-  multiplayer?: { faction: number; seed: number; vsAI?: boolean }
+  multiplayer?: { faction: number; seed: number; vsAI?: boolean; players?: Record<string, string> }
 }
 
 async function showMapSelector(): Promise<MapSelection> {
@@ -98,7 +98,12 @@ async function showMapSelector(): Promise<MapSelection> {
 
   box.innerHTML = `
     <h1 style="color:#8af;font-size:24px;margin-bottom:4px">RTS Command</h1>
-    <p style="color:#666;font-size:13px;margin-bottom:16px">Select a map to start</p>
+    <p style="color:#666;font-size:13px;margin-bottom:12px">Select a map to start</p>
+    <div style="margin-bottom:12px">
+      <input id="menu-nickname" type="text" placeholder="Nickname" maxlength="20"
+        style="width:100%;padding:8px 12px;border:1px solid #444;border-radius:6px;
+        background:#1a1a2a;color:#eee;font-size:14px;text-align:center;box-sizing:border-box">
+    </div>
     <div id="map-selector-list" style="margin-bottom:12px;max-height:200px;overflow-y:auto">
       <div style="color:#666">Loading maps...</div>
     </div>
@@ -143,9 +148,30 @@ async function showMapSelector(): Promise<MapSelection> {
         background:#3a2a1a;color:#fc8;cursor:pointer;font-size:14px
       ">vs AI Online</button>
     </div>
+    <button id="btn-leaderboard" style="
+      margin-top:6px;padding:8px 16px;border:1px solid #444;border-radius:6px;
+      background:transparent;color:#aaa;cursor:pointer;font-size:12px;width:100%
+    ">Leaderboard</button>
   `
   overlay.appendChild(box)
   document.body.appendChild(overlay)
+
+  // Nickname persistence
+  const nickInput = document.getElementById('menu-nickname') as HTMLInputElement
+  const savedNick = localStorage.getItem('rts-nickname')
+  if (savedNick) nickInput.value = savedNick
+  else nickInput.value = 'Player' + Math.floor(Math.random() * 9000 + 1000)
+  nickInput.addEventListener('input', () => {
+    localStorage.setItem('rts-nickname', nickInput.value.trim())
+  })
+  function getNickname(): string {
+    const v = nickInput.value.trim()
+    if (v) { localStorage.setItem('rts-nickname', v); return v }
+    const rnd = 'Player' + Math.floor(Math.random() * 9000 + 1000)
+    nickInput.value = rnd
+    localStorage.setItem('rts-nickname', rnd)
+    return rnd
+  }
 
   // Fetch maps
   let maps: { name: string; modified: string }[] = []
@@ -299,12 +325,13 @@ async function showMapSelector(): Promise<MapSelection> {
       }
 
       // Pick a map
+      const nick = getNickname()
       const mapName = maps.length > 0 ? maps[Math.floor(Math.random() * maps.length)].name : 'random'
       if (mode === 'ai') {
-        wsPlayVsAI('Player', mapName)
+        wsPlayVsAI(nick, mapName)
         btn.textContent = 'Starting vs AI...'
       } else {
-        wsQuickPlay('Player', mapName)
+        wsQuickPlay(nick, mapName)
         btn.textContent = 'Waiting for opponent...'
       }
 
@@ -318,7 +345,7 @@ async function showMapSelector(): Promise<MapSelection> {
           map: data.mapName === 'random' ? 'random' : { name: data.mapName },
           fog: 'normal',
           startingArmy: false,
-          multiplayer: { faction: mpFaction, seed: data.seed, vsAI: !!data.vsAI },
+          multiplayer: { faction: mpFaction, seed: data.seed, vsAI: !!data.vsAI, players: data.players },
         })
       })
     }
@@ -328,6 +355,89 @@ async function showMapSelector(): Promise<MapSelection> {
     })
     document.getElementById('btn-vs-ai')!.addEventListener('click', () => {
       startMultiplayer(document.getElementById('btn-vs-ai')! as HTMLButtonElement, 'ai')
+    })
+
+    // Leaderboard overlay
+    document.getElementById('btn-leaderboard')!.addEventListener('click', async () => {
+      const lb = document.createElement('div')
+      Object.assign(lb.style, {
+        position: 'fixed', inset: '0', zIndex: '3000',
+        background: 'rgba(0,0,0,0.9)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontFamily: 'monospace', color: '#ccc',
+      })
+      lb.innerHTML = '<div style="color:#888">Loading...</div>'
+      document.body.appendChild(lb)
+
+      try {
+        const [lbRes, gamesRes] = await Promise.all([
+          fetch('/api/stats/leaderboard').then(r => r.json()),
+          fetch('/api/stats/games').then(r => r.json()),
+        ])
+        const players = lbRes.data || []
+        const games = gamesRes.data || []
+
+        let html = `<div style="background:#111;border:1px solid #444;border-radius:10px;padding:24px;max-width:600px;width:90%;max-height:80vh;overflow-y:auto">
+          <h2 style="color:#8af;margin:0 0 12px;text-align:center">Leaderboard</h2>`
+
+        if (players.length === 0) {
+          html += '<div style="color:#666;text-align:center;padding:16px">No games played yet</div>'
+        } else {
+          html += `<table style="width:100%;border-collapse:collapse;font-size:12px">
+            <tr style="color:#888;border-bottom:1px solid #333">
+              <td style="padding:4px 6px">#</td>
+              <td style="padding:4px 6px">Player</td>
+              <td style="padding:4px 6px;text-align:center">W</td>
+              <td style="padding:4px 6px;text-align:center">L</td>
+              <td style="padding:4px 6px;text-align:center">Kills</td>
+              <td style="padding:4px 6px;text-align:center">Res</td>
+            </tr>`
+          players.forEach((p: any, i: number) => {
+            const color = i === 0 ? '#fc0' : i === 1 ? '#ccc' : i === 2 ? '#c84' : '#888'
+            html += `<tr style="border-bottom:1px solid #222">
+              <td style="padding:4px 6px;color:${color}">${i + 1}</td>
+              <td style="padding:4px 6px;color:${color}">${p.name}</td>
+              <td style="padding:4px 6px;text-align:center;color:#4c4">${p.wins}</td>
+              <td style="padding:4px 6px;text-align:center;color:#c44">${p.losses}</td>
+              <td style="padding:4px 6px;text-align:center">${p.kills}</td>
+              <td style="padding:4px 6px;text-align:center">${p.resources_gathered}</td>
+            </tr>`
+          })
+          html += '</table>'
+        }
+
+        if (games.length > 0) {
+          html += '<h3 style="color:#8af;margin:16px 0 8px">Recent Games</h3>'
+          html += `<table style="width:100%;border-collapse:collapse;font-size:11px">
+            <tr style="color:#888;border-bottom:1px solid #333">
+              <td style="padding:3px 4px">Map</td>
+              <td style="padding:3px 4px">Winner</td>
+              <td style="padding:3px 4px">P1</td>
+              <td style="padding:3px 4px">P2</td>
+              <td style="padding:3px 4px;text-align:right">Time</td>
+            </tr>`
+          games.forEach((g: any) => {
+            const dur = g.duration_sec > 0 ? `${Math.floor(g.duration_sec / 60)}m${Math.floor(g.duration_sec % 60)}s` : '-'
+            html += `<tr style="border-bottom:1px solid #222">
+              <td style="padding:3px 4px;color:#aaa">${g.map_name}</td>
+              <td style="padding:3px 4px;color:#4c4">${g.winner_name || '-'}</td>
+              <td style="padding:3px 4px">${g.player1_name}</td>
+              <td style="padding:3px 4px">${g.player2_name}</td>
+              <td style="padding:3px 4px;text-align:right;color:#888">${dur}</td>
+            </tr>`
+          })
+          html += '</table>'
+        }
+
+        html += `<button id="lb-close" style="margin-top:16px;padding:8px 24px;width:100%;
+          border:1px solid #555;border-radius:6px;background:#222;color:#ccc;cursor:pointer">Close</button></div>`
+        lb.innerHTML = html
+        document.getElementById('lb-close')!.addEventListener('click', () => lb.remove())
+        lb.addEventListener('click', (e) => { if (e.target === lb) lb.remove() })
+      } catch {
+        lb.innerHTML = '<div style="color:#f44;padding:24px">Failed to load stats</div>'
+        setTimeout(() => lb.remove(), 2000)
+      }
     })
   })
 }
@@ -481,6 +591,20 @@ async function init() {
 
   // Set rally points on CCs to nearest minerals
   initRallyPoints(world)
+
+  // Set game metadata for stats tracking
+  {
+    const nick = localStorage.getItem('rts-nickname') || 'Player'
+    const mapName = typeof selection.map === 'string' ? selection.map : selection.map.name
+    const mode = isMP ? (selection.multiplayer?.vsAI ? 'vs-ai' : 'pvp') : 'solo'
+    const mp = selection.multiplayer
+    const names: Record<number, string> = {
+      0: mp?.players?.player1 || nick,
+      1: mp?.players?.player2 || 'AI',
+    }
+    if (!isMP) { names[0] = nick; names[1] = 'AI' }
+    setGameMeta(mapName, mode, names)
+  }
 
   // Start ingame music + preload SFX
   playIngameMusic()

@@ -9,6 +9,7 @@ import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { WebSocketServer } from 'ws'
+import Database from 'better-sqlite3'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
@@ -17,6 +18,77 @@ const PORT = process.env.PORT || 3001
 // Data directory for configs/maps
 const DATA_DIR = path.join(__dirname, 'data')
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true })
+
+// ─── SQLite Database ─────────────────────────────────────────────────
+const db = new Database(path.join(DATA_DIR, 'stats.db'))
+db.pragma('journal_mode = WAL')
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS players (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE NOT NULL,
+    games_played INTEGER DEFAULT 0,
+    wins INTEGER DEFAULT 0,
+    losses INTEGER DEFAULT 0,
+    kills INTEGER DEFAULT 0,
+    deaths INTEGER DEFAULT 0,
+    buildings_destroyed INTEGER DEFAULT 0,
+    resources_gathered INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    last_seen TEXT DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS games (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    map_name TEXT,
+    mode TEXT,
+    duration_sec REAL DEFAULT 0,
+    winner_name TEXT,
+    player1_name TEXT,
+    player1_faction INTEGER,
+    player1_kills INTEGER DEFAULT 0,
+    player1_deaths INTEGER DEFAULT 0,
+    player1_buildings_destroyed INTEGER DEFAULT 0,
+    player1_resources INTEGER DEFAULT 0,
+    player2_name TEXT,
+    player2_faction INTEGER,
+    player2_kills INTEGER DEFAULT 0,
+    player2_deaths INTEGER DEFAULT 0,
+    player2_buildings_destroyed INTEGER DEFAULT 0,
+    player2_resources INTEGER DEFAULT 0,
+    played_at TEXT DEFAULT (datetime('now'))
+  );
+`)
+
+const stmtUpsertPlayer = db.prepare(`
+  INSERT INTO players (name) VALUES (?)
+  ON CONFLICT(name) DO UPDATE SET last_seen = datetime('now')
+`)
+const stmtGetPlayer = db.prepare(`SELECT * FROM players WHERE name = ?`)
+const stmtUpdatePlayerWin = db.prepare(`
+  UPDATE players SET wins = wins + 1, games_played = games_played + 1,
+    kills = kills + ?2, deaths = deaths + ?3, buildings_destroyed = buildings_destroyed + ?4,
+    resources_gathered = resources_gathered + ?5, last_seen = datetime('now')
+  WHERE name = ?1
+`)
+const stmtUpdatePlayerLoss = db.prepare(`
+  UPDATE players SET losses = losses + 1, games_played = games_played + 1,
+    kills = kills + ?2, deaths = deaths + ?3, buildings_destroyed = buildings_destroyed + ?4,
+    resources_gathered = resources_gathered + ?5, last_seen = datetime('now')
+  WHERE name = ?1
+`)
+const stmtInsertGame = db.prepare(`
+  INSERT INTO games (map_name, mode, duration_sec, winner_name,
+    player1_name, player1_faction, player1_kills, player1_deaths, player1_buildings_destroyed, player1_resources,
+    player2_name, player2_faction, player2_kills, player2_deaths, player2_buildings_destroyed, player2_resources)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`)
+const stmtLeaderboard = db.prepare(`
+  SELECT name, games_played, wins, losses, kills, deaths, buildings_destroyed, resources_gathered
+  FROM players ORDER BY wins DESC, kills DESC LIMIT 50
+`)
+const stmtRecentGames = db.prepare(`
+  SELECT * FROM games ORDER BY played_at DESC LIMIT 20
+`)
 
 app.use(cors())
 app.use(express.json({ limit: '10mb' }))
@@ -138,6 +210,60 @@ app.delete('/api/keybindings/:name', (req, res) => {
   res.json({ ok: true })
 })
 
+// ─── Stats API ───────────────────────────────────────────────────────
+
+// POST /api/stats/register — register/touch player (called on game start)
+app.post('/api/stats/register', (req, res) => {
+  const name = req.body.name?.trim()
+  if (!name) return res.status(400).json({ error: 'Name required' })
+  stmtUpsertPlayer.run(name)
+  const player = stmtGetPlayer.get(name)
+  res.json({ data: player })
+})
+
+// GET /api/stats/player/:name — get player stats
+app.get('/api/stats/player/:name', (req, res) => {
+  const player = stmtGetPlayer.get(req.params.name)
+  if (!player) return res.status(404).json({ error: 'Player not found' })
+  res.json({ data: player })
+})
+
+// GET /api/stats/leaderboard — top 50 players
+app.get('/api/stats/leaderboard', (_req, res) => {
+  res.json({ data: stmtLeaderboard.all() })
+})
+
+// GET /api/stats/games — recent games
+app.get('/api/stats/games', (_req, res) => {
+  res.json({ data: stmtRecentGames.all() })
+})
+
+// POST /api/stats/game — record a finished game (called by client on victory/defeat)
+app.post('/api/stats/game', (req, res) => {
+  const g = req.body
+  if (!g.player1_name || !g.player2_name) return res.status(400).json({ error: 'Players required' })
+
+  stmtInsertGame.run(
+    g.map_name || 'unknown', g.mode || 'pvp', g.duration_sec || 0, g.winner_name || '',
+    g.player1_name, g.player1_faction ?? 0, g.player1_kills ?? 0, g.player1_deaths ?? 0, g.player1_buildings_destroyed ?? 0, g.player1_resources ?? 0,
+    g.player2_name, g.player2_faction ?? 1, g.player2_kills ?? 0, g.player2_deaths ?? 0, g.player2_buildings_destroyed ?? 0, g.player2_resources ?? 0,
+  )
+
+  // Update player stats
+  const isP1Winner = g.winner_name === g.player1_name
+  const isP2Winner = g.winner_name === g.player2_name
+
+  if (isP1Winner) {
+    stmtUpdatePlayerWin.run(g.player1_name, g.player1_kills ?? 0, g.player1_deaths ?? 0, g.player1_buildings_destroyed ?? 0, g.player1_resources ?? 0)
+    stmtUpdatePlayerLoss.run(g.player2_name, g.player2_kills ?? 0, g.player2_deaths ?? 0, g.player2_buildings_destroyed ?? 0, g.player2_resources ?? 0)
+  } else if (isP2Winner) {
+    stmtUpdatePlayerWin.run(g.player2_name, g.player2_kills ?? 0, g.player2_deaths ?? 0, g.player2_buildings_destroyed ?? 0, g.player2_resources ?? 0)
+    stmtUpdatePlayerLoss.run(g.player1_name, g.player1_kills ?? 0, g.player1_deaths ?? 0, g.player1_buildings_destroyed ?? 0, g.player1_resources ?? 0)
+  }
+
+  res.json({ ok: true })
+})
+
 // ─── SPA fallback (Express 5 syntax) ──────────────────────────────────
 app.get('/{*path}', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'))
@@ -180,6 +306,15 @@ function getRoom(ws) {
   return null
 }
 
+function getRoomPlayers(room) {
+  const result = {}
+  for (const [, info] of room.players) {
+    result[`player${info.faction + 1}`] = info.name
+  }
+  if (room.hasBot) result.player2 = 'AI'
+  return result
+}
+
 wss.on('connection', (ws) => {
   ws.on('message', (raw) => {
     let msg
@@ -195,8 +330,9 @@ wss.on('connection', (ws) => {
       // Bot placeholder — faction 1, no real ws
       room.botFaction = 1
       rooms.set(id, room)
+      stmtUpsertPlayer.run(name)
       send(ws, 'room_created', { roomId: id, faction: 0 })
-      send(ws, 'game_start', { mapName, seed: room.seed, vsAI: true })
+      send(ws, 'game_start', { mapName, seed: room.seed, vsAI: true, players: getRoomPlayers(room) })
       console.log(`[MP] Play vs AI: ${name} room ${id}`)
     }
 
@@ -221,7 +357,9 @@ wss.on('connection', (ws) => {
         // Auto-start
         found.started = true
         found.currentTurn = 0
-        broadcast(found, 'game_start', { mapName: found.mapName, seed: found.seed })
+        // Register both players
+        for (const [, info] of found.players) stmtUpsertPlayer.run(info.name)
+        broadcast(found, 'game_start', { mapName: found.mapName, seed: found.seed, players: getRoomPlayers(found) })
         console.log(`[MP] Quick play: ${name} joined room ${found.id}, auto-started`)
       } else {
         // Create new room and wait
@@ -282,7 +420,8 @@ wss.on('connection', (ws) => {
       if (!hostInfo || hostInfo.faction !== 0) return send(ws, 'error', { message: 'Only host can start' })
       room.started = true
       room.currentTurn = 0
-      broadcast(room, 'game_start', { mapName: room.mapName, seed: room.seed })
+      for (const [, info] of room.players) stmtUpsertPlayer.run(info.name)
+      broadcast(room, 'game_start', { mapName: room.mapName, seed: room.seed, players: getRoomPlayers(room) })
       console.log(`[MP] Room ${room.id} game started, map=${room.mapName}`)
     }
 

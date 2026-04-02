@@ -11,6 +11,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "better-sqlite3": "^12.8.0",
     "bitecs": "^0.3.40",
     "cors": "^2.8.6",
     "express": "^5.2.1",

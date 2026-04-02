@@ -7,6 +7,7 @@ import { Faction, IsBuilding, Dead, Health } from '../ecs/components'
 import { FACTION_PLAYER, FACTION_ENEMY } from '../game/config'
 import { getPlayerFaction } from './factions'
 import { isFPSMode, exitFPSMode } from '../input/fpsMode'
+import { isMultiplayer } from '../network/netClient'
 
 // ── Game stats (tracked continuously) ───────────────────────
 export const gameStats: Record<number, { unitsKilled: number; unitsLost: number; buildingsDestroyed: number; resourcesGathered: number }> = {
@@ -30,6 +31,54 @@ export function recordKill(killerFaction: number, victimIsBuilding: boolean) {
 
 export function recordGather(faction: number, amount: number) {
   gameStats[faction].resourcesGathered += amount
+}
+
+// ── Game metadata (set on game start) ──────────────────────
+let gameStartTime = 0
+let playerNames: Record<number, string> = { 0: 'Player 1', 1: 'Player 2' }
+let gameMapName = 'unknown'
+let gameMode = 'solo'
+
+export function setGameMeta(mapName: string, mode: string, names: Record<number, string>) {
+  gameStartTime = Date.now()
+  gameMapName = mapName
+  gameMode = mode
+  playerNames = { ...names }
+}
+
+async function submitGameResult(winnerFaction: number) {
+  const pf = getPlayerFaction()
+  const ef = pf === FACTION_PLAYER ? FACTION_ENEMY : FACTION_PLAYER
+  const ps = gameStats[pf]
+  const es = gameStats[ef]
+  const duration = (Date.now() - gameStartTime) / 1000
+
+  try {
+    await fetch('/api/stats/game', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        map_name: gameMapName,
+        mode: gameMode,
+        duration_sec: duration,
+        winner_name: playerNames[winnerFaction] || '',
+        player1_name: playerNames[0] || 'Player 1',
+        player1_faction: 0,
+        player1_kills: gameStats[0].unitsKilled,
+        player1_deaths: gameStats[0].unitsLost,
+        player1_buildings_destroyed: gameStats[0].buildingsDestroyed,
+        player1_resources: gameStats[0].resourcesGathered,
+        player2_name: playerNames[1] || 'AI',
+        player2_faction: 1,
+        player2_kills: gameStats[1].unitsKilled,
+        player2_deaths: gameStats[1].unitsLost,
+        player2_buildings_destroyed: gameStats[1].buildingsDestroyed,
+        player2_resources: gameStats[1].resourcesGathered,
+      }),
+    })
+  } catch (e) {
+    console.warn('[Stats] Failed to submit game result:', e)
+  }
 }
 
 // ── Victory check ───────────────────────────────────────────
@@ -66,6 +115,10 @@ export function checkVictory(world: IWorld, dt: number) {
 function showEndScreen(victory: boolean) {
   gameOver = true
   if (isFPSMode()) exitFPSMode()
+
+  // Submit game result to server
+  const winnerFaction = victory ? getPlayerFaction() : (getPlayerFaction() === 0 ? 1 : 0)
+  submitGameResult(winnerFaction)
 
   const pf = getPlayerFaction()
   const ef = pf === FACTION_PLAYER ? FACTION_ENEMY : FACTION_PLAYER
