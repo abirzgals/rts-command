@@ -69,6 +69,7 @@ interface MapSelection {
   map: 'random' | { name: string }
   fog: FogMode
   startingArmy: boolean
+  multiplayer?: { faction: number; seed: number }
 }
 
 async function showMapSelector(): Promise<MapSelection> {
@@ -132,6 +133,10 @@ async function showMapSelector(): Promise<MapSelection> {
       padding:10px 32px;border:1px solid #4a8a4a;border-radius:6px;
       background:#2a5a2a;color:#fff;cursor:pointer;font-size:14px;width:100%
     "></button>
+    <button id="btn-multiplayer" style="
+      margin-top:8px;padding:10px 32px;border:1px solid #4a6a9a;border-radius:6px;
+      background:#1a3a5a;color:#adf;cursor:pointer;font-size:14px;width:100%
+    ">Multiplayer</button>
   `
   overlay.appendChild(box)
   document.body.appendChild(overlay)
@@ -271,6 +276,22 @@ async function showMapSelector(): Promise<MapSelection> {
         resolve({ map: { name }, fog, startingArmy: army })
       })
     }
+
+    // Multiplayer button
+    document.getElementById('btn-multiplayer')!.addEventListener('click', async () => {
+      overlay.remove()
+      const mapNames = maps.map(m => m.name)
+      if (mapNames.length === 0) mapNames.push('random')
+      const { showMultiplayerLobby } = await import('./ui/lobbyUI')
+      const wsUrl = location.protocol === 'https:' ? `wss://${location.host}` : `ws://${location.host}`
+      const result = await showMultiplayerLobby(mapNames, () => wsUrl)
+      resolve({
+        map: result.mapName === 'random' ? 'random' : { name: result.mapName },
+        fog: 'normal',
+        startingArmy: false,
+        multiplayer: { faction: result.faction, seed: result.seed },
+      })
+    })
   })
 }
 
@@ -296,6 +317,13 @@ async function init() {
     isLoadedMap = true
   }
 
+  // Multiplayer setup
+  const isMP = !!selection.multiplayer
+  if (isMP) {
+    setPlayerFaction(selection.multiplayer!.faction)
+    seedAIRng(selection.multiplayer!.seed)
+  }
+
   // Apply fog of war setting
   setFogMode(selection.fog)
 
@@ -311,13 +339,74 @@ async function init() {
   buildSectorGraph()
 
   // Seed AI RNG deterministically from map seed
-  seedAIRng(Date.now())
+  if (!isMP) seedAIRng(Date.now())
 
   // 5. Load 3D models and create mesh pools
   await createMeshPools()
 
   // 6. Init input handling
   initInput(world)
+
+  // Register network command handlers for multiplayer
+  registerNetHandlers({
+    applyImmediate: (w, eids, cmd) => {
+      for (const eid of eids) {
+        clearQueue(eid)
+        if (hc2(w, AttackTarget, eid)) rc2(w, AttackTarget, eid)
+        if (hc2(w, PathFollower, eid)) rc2(w, PathFollower, eid)
+
+        if (cmd.type === 'attack' && cmd.targetEid !== undefined) {
+          ac2(w, AttackTarget, eid); AttackTarget.eid[eid] = cmd.targetEid
+          ac2(w, MoveTarget, eid)
+          MoveTarget.x[eid] = EcsPosition.x[cmd.targetEid]
+          MoveTarget.z[eid] = EcsPosition.z[cmd.targetEid]
+        } else if (cmd.type === 'attackMove' && cmd.x !== undefined) {
+          ac2(w, MoveTarget, eid); MoveTarget.x[eid] = cmd.x; MoveTarget.z[eid] = cmd.z!
+          ac2(w, AttackMove, eid); AttackMove.destX[eid] = cmd.x; AttackMove.destZ[eid] = cmd.z!
+        } else if (cmd.type === 'gather' && cmd.targetEid !== undefined) {
+          if (hc2(w, WorkerC, eid)) {
+            WorkerC.state[eid] = 1; WorkerC.targetNode[eid] = cmd.targetEid
+            ac2(w, MoveTarget, eid)
+            MoveTarget.x[eid] = EcsPosition.x[cmd.targetEid]
+            MoveTarget.z[eid] = EcsPosition.z[cmd.targetEid]
+          }
+        } else if (cmd.type === 'build' && cmd.targetEid !== undefined) {
+          if (hc2(w, WorkerC, eid)) {
+            WorkerC.state[eid] = 4; WorkerC.buildTarget[eid] = cmd.targetEid
+            ac2(w, MoveTarget, eid)
+            MoveTarget.x[eid] = EcsPosition.x[cmd.targetEid]
+            MoveTarget.z[eid] = EcsPosition.z[cmd.targetEid]
+          }
+        } else if (cmd.type === 'move' && cmd.x !== undefined) {
+          ac2(w, MoveTarget, eid); MoveTarget.x[eid] = cmd.x; MoveTarget.z[eid] = cmd.z!
+        }
+      }
+    },
+    applyProduce: (buildingEid, unitType) => {
+      const def = UNIT_DEFS[unitType]
+      if (!def) return
+      const faction = EcsFaction.id[buildingEid]
+      if (!gameState.canAfford(faction, def.cost)) return
+      const res = gameState.getResources(faction)
+      if (res.supplyCurrent + def.supply > res.supplyMax) return
+      gameState.spend(faction, def.cost)
+      res.supplyCurrent += def.supply
+      const queue = gameState.getQueue(buildingEid)
+      queue.push({ unitType, remaining: def.buildTime })
+      if (Producer.active[buildingEid] === 0 && queue.length === 1) {
+        Producer.active[buildingEid] = 1
+        Producer.unitType[buildingEid] = unitType
+        Producer.duration[buildingEid] = def.buildTime
+        Producer.progress[buildingEid] = 0
+      }
+    },
+    applyBuildPlace: (w, buildingType, x, z, faction, workerEids) => {
+      const eid = spawnBuilding(w, buildingType, faction, x, z)
+      for (const wid of workerEids) {
+        pushCommand(wid, { type: 'build', targetEid: eid })
+      }
+    },
+  })
 
   // 7. Camera — start at player base
   rtsCamera = new RTSCamera()
@@ -364,9 +453,16 @@ async function init() {
   requestAnimationFrame(gameLoop)
 }
 
-import { Producer, Position as EcsPosition, Faction as EcsFaction, IsBuilding, ResourceNode, Dead, CollisionRadius } from './ecs/components'
+import {
+  Producer, Position as EcsPosition, Faction as EcsFaction, IsBuilding, ResourceNode, Dead, CollisionRadius,
+  MoveTarget, AttackTarget, AttackMove, WorkerC, PathFollower,
+} from './ecs/components'
 import { spatialHash, updatePerfBudget, setRtsCameraRef } from './globals'
-import { defineQuery as dq2, hasComponent as hc2 } from 'bitecs'
+import { gameState } from './game/state'
+import { isMultiplayer, submitTurn, isTurnReady, consumeTurnCommands } from './network/netClient'
+import { setPlayerFaction } from './game/factions'
+import { applyNetworkCommands, registerNetHandlers, clearQueue, pushCommand } from './ecs/commandQueue'
+import { defineQuery as dq2, hasComponent as hc2, addComponent as ac2, removeComponent as rc2 } from 'bitecs'
 
 function initRallyPoints(world: IWorld) {
   const producers = dq2([Producer, EcsPosition, EcsFaction, IsBuilding])(world)
@@ -715,6 +811,27 @@ function prof(name: string, fn: () => void) {
   profilerEnd()
 }
 
+const MP_TURN_DURATION = 0.1 // 100ms per turn = 10 turns/sec
+let mpTurnAccum = 0
+let mpTurnSubmitted = false
+
+function runSimulation(dt: number) {
+  profilerBegin('ECS')
+  prof('Supply', () => supplySystem(world, dt))
+  prof('CommandQueue', () => commandQueueSystem(world, dt))
+  if (!isMultiplayer()) prof('AI', () => aiSystem(world, dt)) // AI disabled in MP
+  prof('Production', () => productionSystem(world, dt))
+  prof('Resources', () => resourceSystem(world, dt))
+  prof('Combat', () => combatSystem(world, dt))
+  prof('Projectiles', () => projectileSystem(world, dt))
+  prof('Pathfinding', () => pathfindingSystem(world, dt))
+  prof('Movement', () => movementSystem(world, dt))
+  prof('Death', () => deathSystem(world, dt))
+  prof('Animation', () => animationSystem(world, dt))
+  prof('RenderSys', () => renderSystem(world, dt))
+  profilerEnd()
+}
+
 function gameLoop(time: number) {
   requestAnimationFrame(gameLoop)
 
@@ -728,7 +845,6 @@ function gameLoop(time: number) {
   const activeCamera = fpsCamera || camera
 
   if (!fpsCamera) {
-    // Minimap click
     const minimapTarget = (window as any).__minimapTarget
     if (minimapTarget) {
       rtsCamera.target.x = minimapTarget.x
@@ -742,21 +858,28 @@ function gameLoop(time: number) {
   checkVictory(world, dt)
   if (isGameOver()) { profilerEndFrame(); return }
 
-  // ECS systems
-  profilerBegin('ECS')
-  prof('Supply', () => supplySystem(world, dt))
-  prof('CommandQueue', () => commandQueueSystem(world, dt))
-  prof('AI', () => aiSystem(world, dt))
-  prof('Production', () => productionSystem(world, dt))
-  prof('Resources', () => resourceSystem(world, dt))
-  prof('Combat', () => combatSystem(world, dt))
-  prof('Projectiles', () => projectileSystem(world, dt))
-  prof('Pathfinding', () => pathfindingSystem(world, dt))
-  prof('Movement', () => movementSystem(world, dt))
-  prof('Death', () => deathSystem(world, dt))
-  prof('Animation', () => animationSystem(world, dt))
-  prof('RenderSys', () => renderSystem(world, dt))
-  profilerEnd()
+  // ── Simulation tick ──
+  if (isMultiplayer()) {
+    // Turn-based: accumulate time, submit commands, wait for confirmation
+    mpTurnAccum += dt
+    if (mpTurnAccum >= MP_TURN_DURATION && !mpTurnSubmitted) {
+      submitTurn()
+      mpTurnSubmitted = true
+    }
+    if (isTurnReady()) {
+      const cmds = consumeTurnCommands()
+      if (cmds) {
+        applyNetworkCommands(world, cmds[0]) // faction 0 commands
+        applyNetworkCommands(world, cmds[1]) // faction 1 commands
+        runSimulation(MP_TURN_DURATION)
+        mpTurnAccum -= MP_TURN_DURATION
+        mpTurnSubmitted = false
+      }
+    }
+  } else {
+    // Single-player: run every frame as before
+    runSimulation(dt)
+  }
 
   // Visual updates
   profilerBegin('Visual')

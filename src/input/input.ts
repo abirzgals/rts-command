@@ -244,6 +244,8 @@ const LONG_PRESS_TIME = 400 // ms — hold this long to start box select
 /** Exported so camera can be panned from touch handler */
 // touchPan moved to globals.ts to break circular import with engine.ts
 import { setTouchPan } from '../globals'
+import { isMultiplayer, queueNetCommand } from '../network/netClient'
+import type { NetworkCommand } from '../network/netClient'
 
 export function initInput(world: IWorld) {
   currentWorld = world
@@ -846,21 +848,33 @@ function issueCommand(
 
   // ── Queue mode (shift held) — add to queue, don't interrupt ──
   if (queue) {
-    for (const eid of movableUnits) {
-      if (cmdType === 'attack' && closestEid >= 0) {
-        pushCommand(eid, { type: 'attack', targetEid: closestEid })
-      } else if (cmdType === 'gather' && closestEid >= 0) {
-        pushCommand(eid, { type: 'gather', targetEid: closestEid })
-      } else if (cmdType === 'build' && closestEid >= 0) {
-        pushCommand(eid, { type: 'build', targetEid: closestEid })
-      } else {
-        pushCommand(eid, { type: 'move', x: hit.x, z: hit.z })
-      }
+    let cmd: Command
+    if (cmdType === 'attack' && closestEid >= 0) cmd = { type: 'attack', targetEid: closestEid }
+    else if (cmdType === 'gather' && closestEid >= 0) cmd = { type: 'gather', targetEid: closestEid }
+    else if (cmdType === 'build' && closestEid >= 0) cmd = { type: 'build', targetEid: closestEid }
+    else cmd = { type: 'move', x: hit.x, z: hit.z }
+
+    if (isMultiplayer()) {
+      queueNetCommand({ entityIds: [...movableUnits], command: cmd, replace: false })
+    } else {
+      for (const eid of movableUnits) pushCommand(eid, cmd)
     }
     return
   }
 
   // ── Immediate mode — clear queue, execute now ──
+
+  // Multiplayer: send command to server, don't apply locally
+  if (isMultiplayer()) {
+    let cmd: Command
+    if (cmdType === 'attack' && closestEid >= 0) cmd = { type: 'attack', targetEid: closestEid }
+    else if (cmdType === 'gather' && closestEid >= 0) cmd = { type: 'gather', targetEid: closestEid }
+    else if (cmdType === 'build' && closestEid >= 0) cmd = { type: 'build', targetEid: closestEid }
+    else if (cmdType === 'repair' && closestEid >= 0) cmd = { type: 'build', targetEid: closestEid }
+    else cmd = { type: 'move', x: hit.x, z: hit.z }
+    queueNetCommand({ entityIds: [...movableUnits], command: cmd, replace: true })
+    return
+  }
 
   // Formation slots for move commands
   let slots: { x: number; z: number }[] | null = null
@@ -1118,7 +1132,14 @@ function forceAttackTarget(world: IWorld, sx: number, sy: number) {
   }
   playSfx(`${getSelectedUnitSoundKey(world)}-attack`)
 
-  if (targetEid >= 0) {
+  if (isMultiplayer()) {
+    const eids = selected.filter(eid => hasComponent(world, Position, eid))
+    if (targetEid >= 0) {
+      queueNetCommand({ entityIds: eids, command: { type: 'attack', targetEid }, replace: !shiftHeld })
+    } else {
+      queueNetCommand({ entityIds: eids, command: { type: 'attackMove', x: hit.x, z: hit.z }, replace: !shiftHeld })
+    }
+  } else if (targetEid >= 0) {
     const tr = hasComponent(world, Selectable, targetEid) ? Selectable.radius[targetEid] : 0.8
     spawnActionIndicator(Position.x[targetEid], Position.y[targetEid], Position.z[targetEid], tr + 0.3, 'attack')
     for (const eid of selected) {
@@ -1141,7 +1162,6 @@ function forceAttackTarget(world: IWorld, sx: number, sy: number) {
         addComponent(world, MoveTarget, eid)
         MoveTarget.x[eid] = hit.x
         MoveTarget.z[eid] = hit.z
-        // Mark as attack-move so combat system auto-acquires en route
         addComponent(world, AttackMove, eid)
         AttackMove.destX[eid] = hit.x
         AttackMove.destZ[eid] = hit.z
@@ -1318,6 +1338,12 @@ export function enterBuildMode(buildingType: number) {
 export function queueProduction(buildingEid: number, unitType: number) {
   const def = UNIT_DEFS[unitType]
   if (!def) return
+
+  // Multiplayer: send to server instead of applying locally
+  if (isMultiplayer()) {
+    queueNetCommand({ type: 'produce', buildingEid, unitType })
+    return
+  }
 
   const faction = Faction.id[buildingEid]
   if (!gameState.canAfford(faction, def.cost)) {

@@ -52,3 +52,50 @@ export function hasQueuedCommands(eid: number): boolean {
 export function removeFromQueues(eid: number) {
   queues.delete(eid)
 }
+
+// ── Network command application ────────────────────────────────
+// Used by multiplayer to replay commands received from the server.
+
+import type { NetCommand, NetworkCommand, ProductionCommand, BuildPlaceCommand } from '../network/netClient'
+
+let netApplyImmediate: ((world: any, eids: number[], cmd: Command) => void) | null = null
+let netApplyProduce: ((buildingEid: number, unitType: number) => void) | null = null
+let netApplyBuildPlace: ((world: any, type: number, x: number, z: number, faction: number, workerEids: number[]) => void) | null = null
+
+/** Register handlers from input.ts / main.ts (avoids circular imports) */
+export function registerNetHandlers(handlers: {
+  applyImmediate: (world: any, eids: number[], cmd: Command) => void
+  applyProduce: (buildingEid: number, unitType: number) => void
+  applyBuildPlace: (world: any, type: number, x: number, z: number, faction: number, workerEids: number[]) => void
+}) {
+  netApplyImmediate = handlers.applyImmediate
+  netApplyProduce = handlers.applyProduce
+  netApplyBuildPlace = handlers.applyBuildPlace
+}
+
+/** Apply a batch of network commands to the world */
+export function applyNetworkCommands(world: any, commands: NetCommand[]) {
+  for (const cmd of commands) {
+    if ('entityIds' in cmd) {
+      // Unit command (move, attack, gather, etc.)
+      const nc = cmd as NetworkCommand
+      if (nc.replace) {
+        // Immediate command — clear queue, apply now
+        if (netApplyImmediate) {
+          netApplyImmediate(world, nc.entityIds, nc.command)
+        }
+      } else {
+        // Shift-queue — append to queue
+        for (const eid of nc.entityIds) {
+          pushCommand(eid, nc.command)
+        }
+      }
+    } else if (cmd.type === 'produce') {
+      const pc = cmd as ProductionCommand
+      if (netApplyProduce) netApplyProduce(pc.buildingEid, pc.unitType)
+    } else if (cmd.type === 'build_place') {
+      const bp = cmd as BuildPlaceCommand
+      if (netApplyBuildPlace) netApplyBuildPlace(world, bp.buildingType, bp.x, bp.z, bp.faction, bp.workerEids)
+    }
+  }
+}
