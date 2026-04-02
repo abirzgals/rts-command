@@ -69,7 +69,7 @@ interface MapSelection {
   map: 'random' | { name: string }
   fog: FogMode
   startingArmy: boolean
-  multiplayer?: { faction: number; seed: number }
+  multiplayer?: { faction: number; seed: number; vsAI?: boolean }
 }
 
 async function showMapSelector(): Promise<MapSelection> {
@@ -133,10 +133,16 @@ async function showMapSelector(): Promise<MapSelection> {
       padding:10px 32px;border:1px solid #4a8a4a;border-radius:6px;
       background:#2a5a2a;color:#fff;cursor:pointer;font-size:14px;width:100%
     "></button>
-    <button id="btn-multiplayer" style="
-      margin-top:8px;padding:10px 32px;border:1px solid #4a6a9a;border-radius:6px;
-      background:#1a3a5a;color:#adf;cursor:pointer;font-size:14px;width:100%
-    ">Multiplayer</button>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button id="btn-multiplayer" style="
+        flex:1;padding:10px 12px;border:1px solid #4a6a9a;border-radius:6px;
+        background:#1a3a5a;color:#adf;cursor:pointer;font-size:14px
+      ">PvP Online</button>
+      <button id="btn-vs-ai" style="
+        flex:1;padding:10px 12px;border:1px solid #6a5a3a;border-radius:6px;
+        background:#3a2a1a;color:#fc8;cursor:pointer;font-size:14px
+      ">vs AI Online</button>
+    </div>
   `
   overlay.appendChild(box)
   document.body.appendChild(overlay)
@@ -277,13 +283,12 @@ async function showMapSelector(): Promise<MapSelection> {
       })
     }
 
-    // Quick Play multiplayer — one button, auto-matchmake
-    document.getElementById('btn-multiplayer')!.addEventListener('click', async () => {
-      const btn = document.getElementById('btn-multiplayer')! as HTMLButtonElement
+    // Shared multiplayer connect helper
+    async function startMultiplayer(btn: HTMLButtonElement, mode: 'pvp' | 'ai') {
       btn.textContent = 'Connecting...'
       btn.disabled = true
 
-      const { connect: wsConnect, quickPlay: wsQuickPlay, on: wsOn } = await import('./network/netClient')
+      const { connect: wsConnect, quickPlay: wsQuickPlay, playVsAI: wsPlayVsAI, on: wsOn } = await import('./network/netClient')
       const wsUrl = location.protocol === 'https:' ? `wss://${location.host}` : `ws://${location.host}`
       try {
         await wsConnect(wsUrl)
@@ -293,13 +298,18 @@ async function showMapSelector(): Promise<MapSelection> {
         return
       }
 
-      // Pick a map for matchmaking
+      // Pick a map
       const mapName = maps.length > 0 ? maps[Math.floor(Math.random() * maps.length)].name : 'random'
-      wsQuickPlay('Player', mapName)
-      btn.textContent = 'Waiting for opponent...'
+      if (mode === 'ai') {
+        wsPlayVsAI('Player', mapName)
+        btn.textContent = 'Starting vs AI...'
+      } else {
+        wsQuickPlay('Player', mapName)
+        btn.textContent = 'Waiting for opponent...'
+      }
 
       let mpFaction = 0
-      wsOn('room_created', (d: any) => { mpFaction = d.faction ?? 0; btn.textContent = 'Waiting for opponent...' })
+      wsOn('room_created', (d: any) => { mpFaction = d.faction ?? 0; if (mode === 'pvp') btn.textContent = 'Waiting for opponent...' })
       wsOn('room_joined', (d: any) => { mpFaction = d.faction ?? 1; btn.textContent = 'Starting...' })
 
       wsOn('game_start', (data: any) => {
@@ -308,10 +318,16 @@ async function showMapSelector(): Promise<MapSelection> {
           map: data.mapName === 'random' ? 'random' : { name: data.mapName },
           fog: 'normal',
           startingArmy: false,
-          multiplayer: { faction: mpFaction, seed: data.seed },
+          multiplayer: { faction: mpFaction, seed: data.seed, vsAI: !!data.vsAI },
         })
       })
+    }
 
+    document.getElementById('btn-multiplayer')!.addEventListener('click', () => {
+      startMultiplayer(document.getElementById('btn-multiplayer')! as HTMLButtonElement, 'pvp')
+    })
+    document.getElementById('btn-vs-ai')!.addEventListener('click', () => {
+      startMultiplayer(document.getElementById('btn-vs-ai')! as HTMLButtonElement, 'ai')
     })
   })
 }
@@ -480,7 +496,7 @@ import {
 } from './ecs/components'
 import { spatialHash, updatePerfBudget, setRtsCameraRef } from './globals'
 import { gameState } from './game/state'
-import { isMultiplayer, submitTurn, isTurnReady, consumeTurnCommands } from './network/netClient'
+import { isMultiplayer, isVsAI, submitTurn, isTurnReady, consumeTurnCommands } from './network/netClient'
 import { setPlayerFaction } from './game/factions'
 import { applyNetworkCommands, registerNetHandlers, clearQueue, pushCommand } from './ecs/commandQueue'
 import { defineQuery as dq2, hasComponent as hc2, addComponent as ac2, removeComponent as rc2 } from 'bitecs'
@@ -840,7 +856,7 @@ function runSimulation(dt: number) {
   profilerBegin('ECS')
   prof('Supply', () => supplySystem(world, dt))
   prof('CommandQueue', () => commandQueueSystem(world, dt))
-  if (!isMultiplayer()) prof('AI', () => aiSystem(world, dt)) // AI disabled in MP
+  if (!isMultiplayer() || isVsAI()) prof('AI', () => aiSystem(world, dt)) // AI runs in single-player and vs-AI multiplayer
   prof('Production', () => productionSystem(world, dt))
   prof('Resources', () => resourceSystem(world, dt))
   prof('Combat', () => combatSystem(world, dt))

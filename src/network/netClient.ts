@@ -37,6 +37,7 @@ type EventCb<T> = (data: T) => void
 let ws: WebSocket | null = null
 let connected = false
 let multiplayer = false
+let vsAI = false
 let localFaction = 0
 let roomId: string | null = null
 
@@ -59,6 +60,7 @@ function emit(event: string, data?: any) {
 // ── Public API ─────────────────────────────────────────────────
 
 export function isMultiplayer(): boolean { return multiplayer }
+export function isVsAI(): boolean { return vsAI }
 export function isConnected(): boolean { return connected }
 export function getLocalFaction(): number { return localFaction }
 export function getRoomId(): string | null { return roomId }
@@ -114,6 +116,7 @@ function send(type: string, data: Record<string, any> = {}) {
 export function createRoom(name: string) { send('create_room', { name }) }
 export function joinRoom(id: string, name: string) { send('join_room', { roomId: id, name }) }
 export function quickPlay(name: string, mapName: string) { send('quick_play', { name, mapName }) }
+export function playVsAI(name: string, mapName: string) { send('play_vs_ai', { name, mapName }) }
 export function leaveRoom() { send('leave_room'); roomId = null; multiplayer = false }
 export function setMap(mapName: string) { send('set_map', { mapName }) }
 export function startGame() { send('start_game') }
@@ -177,6 +180,7 @@ function handleMessage(msg: any) {
 
     case 'game_start':
       multiplayer = true
+      vsAI = !!msg.vsAI
       currentTurn = 0
       turnSubmitted = false
       turnReady = false

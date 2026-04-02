@@ -185,7 +185,22 @@ wss.on('connection', (ws) => {
     let msg
     try { msg = JSON.parse(raw) } catch { return }
 
-    if (msg.type === 'quick_play') {
+    if (msg.type === 'play_vs_ai') {
+      leaveRoom(ws)
+      const name = msg.name || 'Player'
+      const mapName = msg.mapName || 'random'
+      const id = genRoomId()
+      const room = { id, players: new Map(), mapName, started: true, currentTurn: 0, turnCmds: new Map(), seed: Math.floor(Math.random() * 0x7FFFFFFF), hasBot: true }
+      room.players.set(ws, { faction: 0, name })
+      // Bot placeholder — faction 1, no real ws
+      room.botFaction = 1
+      rooms.set(id, room)
+      send(ws, 'room_created', { roomId: id, faction: 0 })
+      send(ws, 'game_start', { mapName, seed: room.seed, vsAI: true })
+      console.log(`[MP] Play vs AI: ${name} room ${id}`)
+    }
+
+    else if (msg.type === 'quick_play') {
       leaveRoom(ws)
       const name = msg.name || 'Player'
       const mapName = msg.mapName || 'random'
@@ -282,11 +297,17 @@ wss.on('connection', (ws) => {
       const tc = room.turnCmds.get(turn)
       tc.set(info.faction, msg.commands || [])
 
-      // Both players submitted for this turn?
-      if (tc.size >= room.players.size) {
+      // Bot auto-submits empty commands
+      if (room.hasBot && room.botFaction !== undefined) {
+        tc.set(room.botFaction, [])
+      }
+
+      // Both sides submitted?
+      const needed = room.hasBot ? 2 : room.players.size
+      if (tc.size >= needed) {
         const cmds = [tc.get(0) || [], tc.get(1) || []]
         broadcast(room, 'turn_commands', { turn, commands: cmds })
-        room.turnCmds.delete(turn) // cleanup
+        room.turnCmds.delete(turn)
       }
     }
   })
