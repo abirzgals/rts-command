@@ -7,6 +7,37 @@ import { getPool, getAllPools } from '../../render/meshPools'
 import { getAnimManager } from '../../render/animatedMeshManager'
 import { isVisibleAt } from '../../render/fogOfWar'
 import { getPlayerFaction } from '../../game/factions'
+
+// ── Multiplayer interpolation ────────────────────────────────
+// Stores previous tick positions for smooth visual interpolation
+const prevX = new Float32Array(8000)
+const prevY = new Float32Array(8000)
+const prevZ = new Float32Array(8000)
+const prevRot = new Float32Array(8000)
+let lerpAlpha = 1.0 // 0 = prev tick, 1 = current tick
+
+/** Call BEFORE simulation tick to snapshot current positions */
+export function snapshotPositions(world: IWorld) {
+  const entities = renderQuery(world)
+  for (const eid of entities) {
+    prevX[eid] = Position.x[eid]
+    prevY[eid] = Position.y[eid]
+    prevZ[eid] = Position.z[eid]
+    prevRot[eid] = hasComponent(world, Rotation, eid) ? Rotation.y[eid] : 0
+  }
+}
+
+/** Set interpolation alpha (0-1) for rendering between ticks */
+export function setLerpAlpha(alpha: number) { lerpAlpha = alpha }
+
+function lerp(a: number, b: number, t: number): number { return a + (b - a) * t }
+
+function lerpAngle(a: number, b: number, t: number): number {
+  let d = b - a
+  if (d > Math.PI) d -= Math.PI * 2
+  if (d < -Math.PI) d += Math.PI * 2
+  return a + d * t
+}
 // Carry visual: small crystal for workers carrying resources
 const carryGeo = new THREE.OctahedronGeometry(0.15, 0)
 const carryMatMineral = new THREE.MeshBasicMaterial({ color: 0x44ccff, transparent: true, opacity: 0.9 })
@@ -22,10 +53,12 @@ export function renderSystem(world: IWorld, dt: number) {
     if (hasComponent(world, Dead, eid)) continue
 
     const poolId = MeshRef.poolId[eid]
-    const rotY = hasComponent(world, Rotation, eid) ? Rotation.y[eid] : 0
-    const x = Position.x[eid]
-    const y = Position.y[eid]
-    const z = Position.z[eid]
+    const rawRotY = hasComponent(world, Rotation, eid) ? Rotation.y[eid] : 0
+    // Interpolate between previous and current tick for smooth MP rendering
+    const x = lerpAlpha < 0.999 ? lerp(prevX[eid], Position.x[eid], lerpAlpha) : Position.x[eid]
+    const y = lerpAlpha < 0.999 ? lerp(prevY[eid], Position.y[eid], lerpAlpha) : Position.y[eid]
+    const z = lerpAlpha < 0.999 ? lerp(prevZ[eid], Position.z[eid], lerpAlpha) : Position.z[eid]
+    const rotY = lerpAlpha < 0.999 ? lerpAngle(prevRot[eid], rawRotY, lerpAlpha) : rawRotY
 
     // Try animated manager first
     const animMgr = getAnimManager(poolId)

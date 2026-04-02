@@ -24,7 +24,7 @@ import { resourceSystem } from './ecs/systems/resourceSystem'
 import { productionSystem } from './ecs/systems/productionSystem'
 import { projectileSystem } from './ecs/systems/projectileSystem'
 import { deathSystem } from './ecs/systems/deathSystem'
-import { renderSystem } from './ecs/systems/renderSystem'
+import { renderSystem, snapshotPositions, setLerpAlpha } from './ecs/systems/renderSystem'
 import { supplySystem } from './ecs/systems/supplySystem'
 import { aiSystem, seedAIRng } from './ecs/systems/aiSystem'
 import { selectionVisualSystem } from './ecs/systems/selectionVisualSystem'
@@ -1030,15 +1030,19 @@ function gameLoop(time: number) {
     if (isTurnReady()) {
       const cmds = consumeTurnCommands()
       if (cmds) {
-        applyNetworkCommands(world, cmds[0]) // faction 0 commands
-        applyNetworkCommands(world, cmds[1]) // faction 1 commands
+        snapshotPositions(world) // save positions BEFORE tick for interpolation
+        applyNetworkCommands(world, cmds[0])
+        applyNetworkCommands(world, cmds[1])
         runSimulation(MP_TURN_DURATION)
         mpTurnAccum -= MP_TURN_DURATION
         mpTurnSubmitted = false
       }
     }
+    // Interpolation alpha: how far between last tick and next tick
+    setLerpAlpha(Math.min(1, mpTurnAccum / MP_TURN_DURATION))
   } else {
-    // Single-player: run every frame as before
+    // Single-player: run every frame, no interpolation needed
+    setLerpAlpha(1)
     runSimulation(dt)
   }
 
