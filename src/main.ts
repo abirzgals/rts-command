@@ -24,7 +24,7 @@ import { resourceSystem } from './ecs/systems/resourceSystem'
 import { productionSystem } from './ecs/systems/productionSystem'
 import { projectileSystem } from './ecs/systems/projectileSystem'
 import { deathSystem } from './ecs/systems/deathSystem'
-import { renderSystem, snapshotPositions, setLerpAlpha } from './ecs/systems/renderSystem'
+import { renderSystem, snapshotBeforeTick, snapshotAfterTick, initInterpolation, setLerpAlpha } from './ecs/systems/renderSystem'
 import { supplySystem } from './ecs/systems/supplySystem'
 import { aiSystem, seedAIRng } from './ecs/systems/aiSystem'
 import { selectionVisualSystem } from './ecs/systems/selectionVisualSystem'
@@ -340,11 +340,13 @@ async function showMapSelector(): Promise<MapSelection> {
       wsOn('room_joined', (d: any) => { mpFaction = d.faction ?? 1; btn.textContent = 'Starting...' })
 
       wsOn('game_start', (data: any) => {
+        const fog = getSelectedFog()
+        const army = getStartingArmy()
         overlay.remove()
         resolve({
           map: data.mapName === 'random' ? 'random' : { name: data.mapName },
-          fog: 'normal',
-          startingArmy: false,
+          fog,
+          startingArmy: army,
           multiplayer: { faction: mpFaction, seed: data.seed, vsAI: !!data.vsAI, players: data.players },
         })
       })
@@ -591,6 +593,9 @@ async function init() {
 
   // Set rally points on CCs to nearest minerals
   initRallyPoints(world)
+
+  // Initialize interpolation buffers with initial positions
+  if (isMP) initInterpolation(world)
 
   // Set game metadata for stats tracking
   {
@@ -972,7 +977,7 @@ function prof(name: string, fn: () => void) {
   profilerEnd()
 }
 
-const MP_TURN_DURATION = 0.05 // 50ms per turn = 20 turns/sec
+const MP_TURN_DURATION = 0.2 // 200ms per turn = 5 turns/sec
 let mpTurnAccum = 0
 let mpTurnSubmitted = false
 
@@ -1027,20 +1032,20 @@ function gameLoop(time: number) {
       submitTurn()
       mpTurnSubmitted = true
     }
-    // Process all ready turns (may have queued up)
+    // Process ready turns
     while (isTurnReady()) {
       const cmds = consumeTurnCommands()
       if (cmds) {
-        snapshotPositions(world) // shift bufB→bufA, current→bufB
+        snapshotBeforeTick(world) // from = previous to, gets ready for new to
         applyNetworkCommands(world, cmds[0])
         applyNetworkCommands(world, cmds[1])
         runSimulation(MP_TURN_DURATION)
+        snapshotAfterTick(world) // to = new positions after simulation
         mpTurnAccum = Math.max(0, mpTurnAccum - MP_TURN_DURATION)
         mpTurnSubmitted = false
       } else break
     }
-    // Alpha: interpolation between bufA (tick N-1) and bufB (tick N)
-    // Clamped 0-1 — never jumps backwards
+    // Alpha 0→1 between from and to, with smoothstep in renderSystem
     setLerpAlpha(Math.min(1, mpTurnAccum / MP_TURN_DURATION))
   } else {
     // Single-player: run every frame, no interpolation needed

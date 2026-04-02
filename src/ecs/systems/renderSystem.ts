@@ -8,33 +8,53 @@ import { getAnimManager } from '../../render/animatedMeshManager'
 import { isVisibleAt } from '../../render/fogOfWar'
 import { getPlayerFaction } from '../../game/factions'
 
-// ── Multiplayer interpolation (one-tick-behind) ─────────────
-// Double-buffer: interpolate between tick N-1 and tick N.
-// Visual is always one tick behind simulation, but perfectly smooth.
+// ── Multiplayer interpolation (one-tick-behind + velocity) ───
+// Stores two past snapshots and derived velocities for smooth rendering.
 const SZ = 8000
-const bufAX = new Float32Array(SZ) // tick N-1 positions
-const bufAY = new Float32Array(SZ)
-const bufAZ = new Float32Array(SZ)
-const bufARot = new Float32Array(SZ)
-const bufBX = new Float32Array(SZ) // tick N positions
-const bufBY = new Float32Array(SZ)
-const bufBZ = new Float32Array(SZ)
-const bufBRot = new Float32Array(SZ)
+// Tick N-1 positions (start of interpolation)
+const fromX = new Float32Array(SZ)
+const fromY = new Float32Array(SZ)
+const fromZ = new Float32Array(SZ)
+const fromRot = new Float32Array(SZ)
+// Tick N positions (end of interpolation)
+const toX = new Float32Array(SZ)
+const toY = new Float32Array(SZ)
+const toZ = new Float32Array(SZ)
+const toRot = new Float32Array(SZ)
 let lerpAlpha = 1.0
+let interpActive = false
 
-/** Call BEFORE each simulation tick: shift bufB → bufA, snapshot current → bufB */
-export function snapshotPositions(world: IWorld) {
+/** Call BEFORE each simulation tick: shift current→from, post-tick positions become→to */
+export function snapshotBeforeTick(world: IWorld) {
   const entities = renderQuery(world)
   for (const eid of entities) {
-    // Shift B → A
-    bufAX[eid] = bufBX[eid]; bufAY[eid] = bufBY[eid]; bufAZ[eid] = bufBZ[eid]; bufARot[eid] = bufBRot[eid]
-    // Current → B
-    bufBX[eid] = Position.x[eid]; bufBY[eid] = Position.y[eid]; bufBZ[eid] = Position.z[eid]
-    bufBRot[eid] = hasComponent(world, Rotation, eid) ? Rotation.y[eid] : 0
+    fromX[eid] = toX[eid]; fromY[eid] = toY[eid]; fromZ[eid] = toZ[eid]; fromRot[eid] = toRot[eid]
+  }
+  interpActive = true
+}
+
+/** Call AFTER simulation tick: capture new positions as interpolation target */
+export function snapshotAfterTick(world: IWorld) {
+  const entities = renderQuery(world)
+  for (const eid of entities) {
+    toX[eid] = Position.x[eid]
+    toY[eid] = Position.y[eid]
+    toZ[eid] = Position.z[eid]
+    toRot[eid] = hasComponent(world, Rotation, eid) ? Rotation.y[eid] : 0
   }
 }
 
-/** Set interpolation alpha (0-1): 0 = tick N-1, 1 = tick N */
+/** Initialize both buffers (call on first tick) */
+export function initInterpolation(world: IWorld) {
+  const entities = renderQuery(world)
+  for (const eid of entities) {
+    const x = Position.x[eid], y = Position.y[eid], z = Position.z[eid]
+    const r = hasComponent(world, Rotation, eid) ? Rotation.y[eid] : 0
+    fromX[eid] = x; fromY[eid] = y; fromZ[eid] = z; fromRot[eid] = r
+    toX[eid] = x; toY[eid] = y; toZ[eid] = z; toRot[eid] = r
+  }
+}
+
 export function setLerpAlpha(alpha: number) { lerpAlpha = alpha }
 
 function lerp(a: number, b: number, t: number): number { return a + (b - a) * t }
@@ -44,6 +64,12 @@ function lerpAngle(a: number, b: number, t: number): number {
   if (d > Math.PI) d -= Math.PI * 2
   if (d < -Math.PI) d += Math.PI * 2
   return a + d * t
+}
+
+/** Smooth interpolation with ease for natural deceleration */
+function smoothT(t: number): number {
+  // Smoothstep — no abrupt starts or stops
+  return t * t * (3 - 2 * t)
 }
 // Carry visual: small crystal for workers carrying resources
 const carryGeo = new THREE.OctahedronGeometry(0.15, 0)
@@ -60,11 +86,18 @@ export function renderSystem(world: IWorld, dt: number) {
     if (hasComponent(world, Dead, eid)) continue
 
     const poolId = MeshRef.poolId[eid]
-    // Interpolate between tick N-1 (bufA) and tick N (bufB) for smooth MP rendering
-    const x = lerpAlpha < 0.999 ? lerp(bufAX[eid], bufBX[eid], lerpAlpha) : Position.x[eid]
-    const y = lerpAlpha < 0.999 ? lerp(bufAY[eid], bufBY[eid], lerpAlpha) : Position.y[eid]
-    const z = lerpAlpha < 0.999 ? lerp(bufAZ[eid], bufBZ[eid], lerpAlpha) : Position.z[eid]
-    const rotY = lerpAlpha < 0.999 ? lerpAngle(bufARot[eid], bufBRot[eid], lerpAlpha) : (hasComponent(world, Rotation, eid) ? Rotation.y[eid] : 0)
+    // Interpolate between from (tick N-1) and to (tick N) with smoothstep
+    let x: number, y: number, z: number, rotY: number
+    if (interpActive && lerpAlpha < 0.999) {
+      const t = smoothT(lerpAlpha)
+      x = lerp(fromX[eid], toX[eid], t)
+      y = lerp(fromY[eid], toY[eid], t)
+      z = lerp(fromZ[eid], toZ[eid], t)
+      rotY = lerpAngle(fromRot[eid], toRot[eid], t)
+    } else {
+      x = Position.x[eid]; y = Position.y[eid]; z = Position.z[eid]
+      rotY = hasComponent(world, Rotation, eid) ? Rotation.y[eid] : 0
+    }
 
     // Try animated manager first
     const animMgr = getAnimManager(poolId)
