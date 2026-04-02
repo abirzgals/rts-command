@@ -185,7 +185,41 @@ wss.on('connection', (ws) => {
     let msg
     try { msg = JSON.parse(raw) } catch { return }
 
-    if (msg.type === 'create_room') {
+    if (msg.type === 'quick_play') {
+      leaveRoom(ws)
+      const name = msg.name || 'Player'
+      const mapName = msg.mapName || 'random'
+      // Find a waiting room (not started, 1 player, same map)
+      let found = null
+      for (const room of rooms.values()) {
+        if (!room.started && room.players.size === 1 && room.mapName === mapName) {
+          found = room; break
+        }
+      }
+      if (found) {
+        // Join as player 2
+        found.players.set(ws, { faction: 1, name })
+        send(ws, 'room_joined', { roomId: found.id, faction: 1 })
+        for (const [other] of found.players) {
+          if (other !== ws) send(other, 'player_joined', { name, faction: 1 })
+        }
+        // Auto-start
+        found.started = true
+        found.currentTurn = 0
+        broadcast(found, 'game_start', { mapName: found.mapName, seed: found.seed })
+        console.log(`[MP] Quick play: ${name} joined room ${found.id}, auto-started`)
+      } else {
+        // Create new room and wait
+        const id = genRoomId()
+        const room = { id, players: new Map(), mapName, started: false, currentTurn: 0, turnCmds: new Map(), seed: Math.floor(Math.random() * 0x7FFFFFFF) }
+        room.players.set(ws, { faction: 0, name })
+        rooms.set(id, room)
+        send(ws, 'room_created', { roomId: id, faction: 0, waiting: true })
+        console.log(`[MP] Quick play: ${name} created room ${id}, waiting...`)
+      }
+    }
+
+    else if (msg.type === 'create_room') {
       // Leave current room if any
       leaveRoom(ws)
       const id = genRoomId()

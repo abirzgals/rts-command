@@ -277,20 +277,41 @@ async function showMapSelector(): Promise<MapSelection> {
       })
     }
 
-    // Multiplayer button
+    // Quick Play multiplayer — one button, auto-matchmake
     document.getElementById('btn-multiplayer')!.addEventListener('click', async () => {
-      overlay.remove()
-      const mapNames = maps.map(m => m.name)
-      if (mapNames.length === 0) mapNames.push('random')
-      const { showMultiplayerLobby } = await import('./ui/lobbyUI')
+      const btn = document.getElementById('btn-multiplayer')! as HTMLButtonElement
+      btn.textContent = 'Connecting...'
+      btn.disabled = true
+
+      const { connect: wsConnect, quickPlay: wsQuickPlay, on: wsOn } = await import('./network/netClient')
       const wsUrl = location.protocol === 'https:' ? `wss://${location.host}` : `ws://${location.host}`
-      const result = await showMultiplayerLobby(mapNames, () => wsUrl)
-      resolve({
-        map: result.mapName === 'random' ? 'random' : { name: result.mapName },
-        fog: 'normal',
-        startingArmy: false,
-        multiplayer: { faction: result.faction, seed: result.seed },
+      try {
+        await wsConnect(wsUrl)
+      } catch {
+        btn.textContent = 'Connection failed — retry'
+        btn.disabled = false
+        return
+      }
+
+      // Pick a map for matchmaking
+      const mapName = maps.length > 0 ? maps[Math.floor(Math.random() * maps.length)].name : 'random'
+      wsQuickPlay('Player', mapName)
+      btn.textContent = 'Waiting for opponent...'
+
+      let mpFaction = 0
+      wsOn('room_created', (d: any) => { mpFaction = d.faction ?? 0; btn.textContent = 'Waiting for opponent...' })
+      wsOn('room_joined', (d: any) => { mpFaction = d.faction ?? 1; btn.textContent = 'Starting...' })
+
+      wsOn('game_start', (data: any) => {
+        overlay.remove()
+        resolve({
+          map: data.mapName === 'random' ? 'random' : { name: data.mapName },
+          fog: 'normal',
+          startingArmy: false,
+          multiplayer: { faction: mpFaction, seed: data.seed },
+        })
       })
+
     })
   })
 }

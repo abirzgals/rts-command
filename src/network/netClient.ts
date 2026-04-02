@@ -113,6 +113,7 @@ function send(type: string, data: Record<string, any> = {}) {
 
 export function createRoom(name: string) { send('create_room', { name }) }
 export function joinRoom(id: string, name: string) { send('join_room', { roomId: id, name }) }
+export function quickPlay(name: string, mapName: string) { send('quick_play', { name, mapName }) }
 export function leaveRoom() { send('leave_room'); roomId = null; multiplayer = false }
 export function setMap(mapName: string) { send('set_map', { mapName }) }
 export function startGame() { send('start_game') }
