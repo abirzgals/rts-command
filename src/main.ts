@@ -993,8 +993,6 @@ function runSimulation(dt: number) {
   prof('Pathfinding', () => pathfindingSystem(world, dt))
   prof('Movement', () => movementSystem(world, dt))
   prof('Death', () => deathSystem(world, dt))
-  prof('Animation', () => animationSystem(world, dt))
-  prof('RenderSys', () => renderSystem(world, dt))
   profilerEnd()
 }
 
@@ -1053,8 +1051,10 @@ function gameLoop(time: number) {
     runSimulation(dt)
   }
 
-  // Visual updates
+  // Visual updates (run every frame for smooth rendering)
   profilerBegin('Visual')
+  prof('Animation', () => animationSystem(world, dt))
+  prof('RenderSys', () => renderSystem(world, dt))
   prof('AnimMeshes', () => updateAllAnimations(dt))
   prof('Effects', () => updateEffects(dt))
   prof('Debris', () => updateFallingPieces(dt))
