@@ -45,7 +45,7 @@ import { playMenuMusic, playIngameMusic, stopMusic, preloadSfx, setSoundEnabled 
 
 // UI
 import { updateHUD } from './ui/hud'
-import { initFogOfWar, updateFogOfWar, renderFogOverlay, fogTexture, setFogMode, type FogMode } from './render/fogOfWar'
+import { initFogOfWar, updateFogOfWar, renderFogOverlay, fogTexture, setFogMode, setFogViewFaction, type FogMode } from './render/fogOfWar'
 import { PRESETS, applyPreset, loadBindings, loadBindingsFromServer, listServerPresets, getPresetName, saveBindings } from './input/keybindings'
 import { openSettingsUI } from './ui/settingsUI'
 import { setTerrainFogMap, setFogDarkenMode } from './terrain/terrainMesh'
@@ -470,6 +470,7 @@ async function init() {
   const isMP = !!selection.multiplayer
   if (isMP) {
     setPlayerFaction(selection.multiplayer!.faction)
+    setFogViewFaction(selection.multiplayer!.faction)
     seedAIRng(selection.multiplayer!.seed)
   }
 
