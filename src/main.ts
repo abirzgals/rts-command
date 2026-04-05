@@ -324,9 +324,9 @@ async function showMapSelector(): Promise<MapSelection> {
         return
       }
 
-      // Pick a map
+      // Pick a map — for PvP quick play, use 'random' so matchmaking always works
       const nick = getNickname()
-      const mapName = maps.length > 0 ? maps[Math.floor(Math.random() * maps.length)].name : 'random'
+      const mapName = mode === 'pvp' ? 'random' : (maps.length > 0 ? maps[Math.floor(Math.random() * maps.length)].name : 'random')
       if (mode === 'ai') {
         wsPlayVsAI(nick, mapName)
         btn.textContent = 'Starting vs AI...'

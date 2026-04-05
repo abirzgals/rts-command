@@ -340,10 +340,10 @@ wss.on('connection', (ws) => {
       leaveRoom(ws)
       const name = msg.name || 'Player'
       const mapName = msg.mapName || 'random'
-      // Find a waiting room (not started, 1 player, same map)
+      // Find any waiting room (not started, 1 player)
       let found = null
       for (const room of rooms.values()) {
-        if (!room.started && room.players.size === 1 && room.mapName === mapName) {
+        if (!room.started && room.players.size === 1 && !room.hasBot) {
           found = room; break
         }
       }
