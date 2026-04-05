@@ -558,12 +558,13 @@ async function init() {
     },
   })
 
-  // 7. Camera — start at player base
+  // 7. Camera — start at local player's base
   rtsCamera = new RTSCamera()
   ;(window as any).__rtsCamera = rtsCamera
   setRtsCameraRef(rtsCamera)
-  const camX = mapSpawnPoints.player.x
-  const camZ = mapSpawnPoints.player.z
+  const mySpawn = (isMP && selection.multiplayer!.faction === 1) ? mapSpawnPoints.enemy : mapSpawnPoints.player
+  const camX = mySpawn.x
+  const camZ = mySpawn.z
   rtsCamera.target.set(camX, getTerrainHeight(camX, camZ), camZ)
   rtsCamera.setHeightFunction(getTerrainHeight)
 
